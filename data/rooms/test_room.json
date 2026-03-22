@@ -1,0 +1,21 @@
+{
+  "room_key": "test_room",
+  "name": "Test Room",
+  "schema_version": 1,
+  "width": 5,
+  "height": 5,
+  "tile_data": [
+    [0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 2]
+  ],
+  "exits": [
+    {"target_room": "other_room", "x": 4, "y": 4, "direction": "east"}
+  ],
+  "objects": [],
+  "spawn_points": [
+    {"type": "player", "x": 2, "y": 2}
+  ]
+}
