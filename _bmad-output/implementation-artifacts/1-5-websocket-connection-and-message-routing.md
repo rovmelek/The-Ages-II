@@ -1,6 +1,6 @@
 # Story 1.5: WebSocket Connection & Message Routing
 
-Status: review
+Status: done
 
 ## Story
 

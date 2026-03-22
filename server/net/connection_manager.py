@@ -10,16 +10,28 @@ class ConnectionManager:
     def __init__(self) -> None:
         self._connections: dict[str, WebSocket] = {}
         self._player_rooms: dict[str, str] = {}
+        self._ws_to_entity: dict[int, str] = {}
 
     def connect(self, entity_id: str, websocket: WebSocket, room_key: str) -> None:
         """Register a player's WebSocket connection."""
         self._connections[entity_id] = websocket
         self._player_rooms[entity_id] = room_key
+        self._ws_to_entity[id(websocket)] = entity_id
 
     def disconnect(self, entity_id: str) -> None:
         """Remove a player's connection."""
-        self._connections.pop(entity_id, None)
+        ws = self._connections.pop(entity_id, None)
         self._player_rooms.pop(entity_id, None)
+        if ws:
+            self._ws_to_entity.pop(id(ws), None)
+
+    def get_entity_id(self, websocket: WebSocket) -> str | None:
+        """Reverse lookup: find entity_id for a WebSocket."""
+        return self._ws_to_entity.get(id(websocket))
+
+    def get_room(self, entity_id: str) -> str | None:
+        """Get the room key for a player entity."""
+        return self._player_rooms.get(entity_id)
 
     def get_websocket(self, entity_id: str) -> WebSocket | None:
         """Get the WebSocket for a player entity."""

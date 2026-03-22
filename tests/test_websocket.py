@@ -3,10 +3,9 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 from fastapi.testclient import TestClient
 
-from server.app import app
+from server.app import app, game
 from server.net.connection_manager import ConnectionManager
 from server.net.message_router import MessageRouter
-from server.net import websocket as ws_module
 
 
 # --- WebSocket endpoint tests (using TestClient) ---
@@ -53,11 +52,11 @@ def test_websocket_missing_action():
 
 def test_websocket_routes_to_handler():
     """Test that a registered handler is called."""
-    # Register a test handler
+    # Register a test handler on the game's router
     async def handle_test(websocket, data):
         await websocket.send_json({"type": "test_response", "echo": data.get("msg")})
 
-    ws_module.router.register("test_action", handle_test)
+    game.router.register("test_action", handle_test)
     try:
         client = TestClient(app)
         with client.websocket_connect("/ws/game") as ws:
@@ -66,7 +65,7 @@ def test_websocket_routes_to_handler():
             assert resp == {"type": "test_response", "echo": "hello"}
     finally:
         # Clean up registered handler
-        ws_module.router._handlers.pop("test_action", None)
+        game.router._handlers.pop("test_action", None)
 
 
 # --- MessageRouter unit tests ---
@@ -158,3 +157,25 @@ async def test_connection_manager_broadcast_exclude():
     await mgr.broadcast_to_room("town", {"type": "moved"}, exclude="p1")
     ws1.send_json.assert_not_called()
     ws2.send_json.assert_called_once_with({"type": "moved"})
+
+
+def test_connection_manager_get_entity_id():
+    """Test reverse lookup from WebSocket to entity_id."""
+    mgr = ConnectionManager()
+    mock_ws = MagicMock()
+    mgr.connect("player_1", mock_ws, "town")
+    assert mgr.get_entity_id(mock_ws) == "player_1"
+
+    mgr.disconnect("player_1")
+    assert mgr.get_entity_id(mock_ws) is None
+
+
+def test_connection_manager_get_room():
+    """Test room lookup for an entity."""
+    mgr = ConnectionManager()
+    mock_ws = MagicMock()
+    mgr.connect("player_1", mock_ws, "town")
+    assert mgr.get_room("player_1") == "town"
+
+    mgr.update_room("player_1", "forest")
+    assert mgr.get_room("player_1") == "forest"

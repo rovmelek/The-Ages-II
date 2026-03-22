@@ -1,6 +1,6 @@
 # Story 1.3: Persistence Repositories
 
-Status: review
+Status: done
 
 ## Story
 
