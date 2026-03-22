@@ -36,6 +36,13 @@ class RoomInstance:
         self.spawn_points: list[dict] = spawn_points or []
         self._entities: dict[str, PlayerEntity] = {}
 
+        # Apply blocking static objects to the grid
+        for obj in self.objects:
+            if obj.get("category") == "static" and obj.get("blocking", False):
+                ox, oy = obj["x"], obj["y"]
+                if 0 <= oy < self.height and 0 <= ox < self.width:
+                    self._grid[oy][ox] = TileType.WALL
+
     # --- Entity management ---
 
     def add_entity(self, entity: PlayerEntity) -> None:
@@ -122,4 +129,5 @@ class RoomInstance:
             "tiles": self._grid,
             "entities": entities,
             "exits": self.exits,
+            "objects": self.objects,
         }

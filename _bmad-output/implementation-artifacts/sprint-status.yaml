@@ -1,5 +1,5 @@
 # generated: 2026-03-21
-# last_updated: 2026-03-21
+# last_updated: 2026-03-22
 # project: The-Ages-II
 # project_key: NOKEY
 # tracking_system: file-system
@@ -43,23 +43,23 @@ story_location: "{project-root}/_bmad-output/implementation-artifacts"
 
 development_status:
   # Epic 1: Player Registration & World Entry
-  epic-1: in-progress
+  epic-1: done
   1-1-project-scaffolding-and-configuration: done
   1-2-database-engine-and-base-models: done
-  1-3-persistence-repositories: review
-  1-4-tile-system-and-room-instance: review
-  1-5-websocket-connection-and-message-routing: review
-  1-6-player-registration: backlog
-  1-7-player-login-and-room-entry: backlog
-  1-8-game-orchestrator-and-server-lifecycle: backlog
+  1-3-persistence-repositories: done
+  1-4-tile-system-and-room-instance: done
+  1-5-websocket-connection-and-message-routing: done
+  1-6-player-registration: done
+  1-7-player-login-and-room-entry: done
+  1-8-game-orchestrator-and-server-lifecycle: done
   epic-1-retrospective: optional
 
   # Epic 2: Movement & Room Exploration
-  epic-2: backlog
-  2-1-player-movement-and-collision: backlog
-  2-2-static-room-objects: backlog
-  2-3-room-transitions-via-exit-tiles: backlog
-  2-4-room-chat-and-whispers: backlog
+  epic-2: done
+  2-1-player-movement-and-collision: done
+  2-2-static-room-objects: done
+  2-3-room-transitions-via-exit-tiles: done
+  2-4-room-chat-and-whispers: done
   epic-2-retrospective: optional
 
   # Epic 3: Room Objects & NPC Spawning

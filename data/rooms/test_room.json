@@ -14,7 +14,10 @@
   "exits": [
     {"target_room": "other_room", "x": 4, "y": 4, "direction": "east"}
   ],
-  "objects": [],
+  "objects": [
+    {"id": "rock_01", "type": "rock", "x": 3, "y": 1, "category": "static", "blocking": true},
+    {"id": "flower_01", "type": "flower", "x": 1, "y": 3, "category": "static", "blocking": false}
+  ],
   "spawn_points": [
     {"type": "player", "x": 2, "y": 2}
   ]
