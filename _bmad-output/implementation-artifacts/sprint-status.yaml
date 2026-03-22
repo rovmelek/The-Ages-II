@@ -1,0 +1,102 @@
+# generated: 2026-03-21
+# last_updated: 2026-03-21
+# project: The-Ages-II
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: "{project-root}/_bmad-output/implementation-artifacts"
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-03-21
+last_updated: 2026-03-22
+project: The-Ages-II
+project_key: NOKEY
+tracking_system: file-system
+story_location: "{project-root}/_bmad-output/implementation-artifacts"
+
+development_status:
+  # Epic 1: Player Registration & World Entry
+  epic-1: in-progress
+  1-1-project-scaffolding-and-configuration: done
+  1-2-database-engine-and-base-models: done
+  1-3-persistence-repositories: review
+  1-4-tile-system-and-room-instance: review
+  1-5-websocket-connection-and-message-routing: review
+  1-6-player-registration: backlog
+  1-7-player-login-and-room-entry: backlog
+  1-8-game-orchestrator-and-server-lifecycle: backlog
+  epic-1-retrospective: optional
+
+  # Epic 2: Movement & Room Exploration
+  epic-2: backlog
+  2-1-player-movement-and-collision: backlog
+  2-2-static-room-objects: backlog
+  2-3-room-transitions-via-exit-tiles: backlog
+  2-4-room-chat-and-whispers: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3: Room Objects & NPC Spawning
+  epic-3: backlog
+  3-1-interactive-object-framework: backlog
+  3-2-chests-with-one-time-loot: backlog
+  3-3-levers-and-room-shared-state: backlog
+  3-4-npc-entity-and-hostile-behavior: backlog
+  3-5-tiered-npc-spawn-system: backlog
+  3-6-global-rare-spawn-announcements: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4: Turn-Based Card Combat
+  epic-4: backlog
+  4-1-shared-effect-registry: backlog
+  4-2-card-definitions-and-hand-management: backlog
+  4-3-combat-instance-and-turn-structure: backlog
+  4-4-card-effect-resolution: backlog
+  4-5-combat-resolution-and-rewards: backlog
+  4-6-flee-combat: backlog
+  4-7-combat-entry-from-mob-encounter: backlog
+  epic-4-retrospective: optional
+
+  # Epic 5: Items & Inventory
+  epic-5: backlog
+  5-1-item-definitions-and-loading: backlog
+  5-2-player-inventory-management: backlog
+  5-3-use-items-outside-combat: backlog
+  5-4-use-items-during-combat: backlog
+  epic-5-retrospective: optional
+
+  # Epic 6: Integration, Sample Data & Testing
+  epic-6: backlog
+  6-1-sample-room-data: backlog
+  6-2-sample-cards-and-items-data: backlog
+  6-3-end-to-end-startup-and-gameplay-wiring: backlog
+  6-4-core-system-unit-tests: backlog
+  6-5-combat-and-item-unit-tests: backlog
+  6-6-websocket-integration-tests: backlog
+  epic-6-retrospective: optional

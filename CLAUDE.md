@@ -1,0 +1,113 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+**The-Ages-II** is a multiplayer room-based dungeon game with turn-based card combat. The project combines:
+- A **BMAD framework** (v6.2.0) for AI-assisted design, planning, and project management workflows
+- A **Python game server** (under active implementation) built with FastAPI + WebSockets
+
+The canonical implementation spec is `THE_AGES_SERVER_PLAN.md` — it contains the complete file-by-file server blueprint.
+
+## BMAD System Architecture
+
+### Core Concepts
+
+- **Agents**: Persona-based AI roles (Architect, PM, Developer, QA, Tech Writer, Scrum Master) defined in `_bmad/*/agents/` as Markdown files with menus and capabilities
+- **Skills**: 100+ structured task definitions in `.claude/skills/`, `.gemini/skills/`, `.github/skills/` — each with a `SKILL.md` metadata file
+- **Workflows**: Tri-modal (Create/Edit/Validate) step-file sequences in `_bmad/*/workflows/` that enforce strict LLM compliance through small sequential MD files
+- **Configuration Tokens**: Pathless tokens like `{project-root}`, `{user_name}`, `{communication_language}` signal relative paths to consuming agents
+
+### Installed Modules
+
+| Module | Version | Purpose |
+|--------|---------|---------|
+| core   | 6.2.0   | Base configuration and task system |
+| bmm    | 6.2.0   | Agent framework with personas |
+| bmb    | 1.1.0   | Workflow building with quality scanning |
+| cis    | 0.1.9   | Creative Intelligence (design thinking, innovation, storytelling) |
+| gds    | 0.2.2   | Game Dev Studio (game architecture, narrative, playtesting) |
+| tea    | 1.7.1   | Test Architecture Enterprise (ATDD, automation, CI, NFR) |
+| wds    | 0.3.0   | WDS Expansion (8-phase design workflow) |
+
+### Key Directories
+
+- `_bmad/` — Core BMAD system (agents, skills, workflows, config)
+- `_bmad/_config/` — Installation manifest, agent/skill/task/workflow manifests (CSV + YAML)
+- `_bmad-output/` — Generated outputs: `planning-artifacts/`, `implementation-artifacts/`, `test-artifacts/`
+- `design-artifacts/` — Design phase outputs (A-Product-Brief through G-Product-Development)
+- `.claude/skills/` — Claude Code skill definitions (primary IDE integration)
+
+### Configuration
+
+- User config: `_bmad/core/config.yaml` (user_name: Kevin, language: English)
+- Module configs: `_bmad/<module>/config.yaml`
+- Project context: When created, `project-context.md` serves as the foundational reference for all agents
+
+## Game Server (Implementation In Progress)
+
+### Tech Stack
+- **Python 3.11+**, FastAPI, WebSockets (real-time game communication)
+- **SQLAlchemy async** + SQLite (aiosqlite) for persistence
+- **Pydantic** for message schemas and settings
+- **bcrypt** for password hashing
+
+### Commands
+```bash
+pip install -e ".[dev]"        # install with dev dependencies
+python run.py                  # start server on port 8000
+pytest tests/                  # run tests
+curl localhost:8000/health     # health check
+```
+
+### Server Architecture
+
+`Game` class in `server/app.py` is the central orchestrator, owning all managers:
+
+- **RoomManager** (`server/game/room_manager.py`) — loads tile-based rooms from JSON files → SQLite → memory
+- **CombatManager** (`server/game/combat_manager.py`) — creates/tracks `CombatInstance` objects for turn-based card combat
+- **ConnectionManager** (`server/net/connection_manager.py`) — maps WebSocket connections ↔ player entity IDs
+- **MessageRouter** (`server/net/message_router.py`) — routes incoming JSON by `action` field to handler modules in `server/net/handlers/`
+- **TimerService** (`server/game/timer_service.py`) — async scheduling for mob respawns and combat countdowns
+
+### Directory Structure
+```
+server/
+├── models/        # SQLAlchemy models (Player, Room, RoomState, Card)
+├── game/          # Core logic (room, entity, tile, combat, cards, timers)
+├── net/           # WebSocket protocol, connection manager, message router
+│   └── handlers/  # auth, movement, chat, combat, inventory
+├── web/           # REST API routes (players, trades, filters)
+└── persistence/   # Repo classes (PlayerRepo, RoomRepo, CardRepo)
+data/
+├── rooms/         # Room definitions (JSON tile grids with exits/spawns)
+└── cards/         # Card set definitions (JSON)
+tests/             # pytest — room, combat, movement, card tests
+```
+
+### Endpoints
+- **WebSocket**: `/ws/game` — JSON messages with `action` field (login, register, move, chat, play_card, pass_turn, flee, inventory)
+- **REST**: `/api/players/{id}/build`, `/api/players/{id}/cards`, `/api/trades`, `/api/filters`
+
+## Working With This Project
+
+### Skills & Slash Commands
+
+Invoke BMAD workflows through slash commands. Key workflows:
+
+- `/bmad-help` — Get guidance on which workflow or agent to use next
+- `/gds-create-game-brief` — Start game brief creation
+- `/gds-create-gdd` — Create Game Design Document
+- `/gds-game-architecture` — Design game architecture
+- `/gds-create-epics-and-stories` — Break requirements into epics/stories
+- `/gds-dev-story` — Execute story implementation from a spec file
+- `/gds-quick-dev` — Flexible dev workflow for direct instructions or tech-specs
+- `/gds-code-review` — Thorough code review
+- `/gds-sprint-planning` — Generate sprint plans from epics
+- `/gds-sprint-status` — Check sprint progress and risks
+
+### Design Workflow Phases (WDS)
+
+The project follows an 8-phase design workflow:
+0. Project Setup → 1. Project Brief → 2. Trigger Mapping → 3. UX Scenarios → 4. UX Design → 5. Agentic Development → 6. Asset Generation → 7. Design System → 8. Product Evolution
