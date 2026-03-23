@@ -201,16 +201,17 @@ def test_move_entity_exit_detection():
 
 def test_move_entity_mob_encounter():
     tile_data = [[0] * 5 for _ in range(5)]
-    tile_data[2][3] = TileType.MOB_SPAWN
     room = _make_room(tile_data=tile_data)
     player = _make_entity(x=2, y=2)
-    mob = PlayerEntity(id="mob_goblin_1", name="Goblin", x=3, y=2, player_db_id=0)
     room.add_entity(player)
-    room.add_entity(mob)
+
+    from server.room.objects.npc import NpcEntity
+    npc = NpcEntity(id="npc_goblin_1", npc_key="goblin", name="Goblin", x=3, y=2, behavior_type="hostile")
+    room.add_npc(npc)
 
     result = room.move_entity("player_1", "right")
     assert result["success"] is True
-    assert result["mob_encounter"]["entity_id"] == "mob_goblin_1"
+    assert result["mob_encounter"]["entity_id"] == "npc_goblin_1"
     assert result["mob_encounter"]["name"] == "Goblin"
 
 

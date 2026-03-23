@@ -48,6 +48,14 @@ class ConnectionManager:
         if ws:
             await ws.send_json(message)
 
+    async def broadcast_to_all(self, message: dict) -> None:
+        """Send a JSON message to ALL connected players."""
+        for ws in list(self._connections.values()):
+            try:
+                await ws.send_json(message)
+            except Exception:
+                pass  # Skip dead connections
+
     async def broadcast_to_room(
         self, room_key: str, message: dict, exclude: str | None = None
     ) -> None:

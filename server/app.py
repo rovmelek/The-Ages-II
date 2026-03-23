@@ -11,6 +11,8 @@ from server.core.database import async_session, init_db
 from server.net.connection_manager import ConnectionManager
 from server.net.message_router import MessageRouter
 from server.player import repo as player_repo
+from server.core.events import EventBus
+from server.core.scheduler import Scheduler
 from server.room.manager import RoomManager
 from server.room.provider import JsonRoomProvider
 
@@ -22,6 +24,8 @@ class Game:
         self.router = MessageRouter()
         self.connection_manager = ConnectionManager()
         self.room_manager = RoomManager()
+        self.scheduler = Scheduler()
+        self.event_bus = EventBus()
         self.player_entities: dict[str, dict] = {}
 
     async def startup(self) -> None:
@@ -44,17 +48,28 @@ class Game:
                 for json_file in sorted(cards_dir.glob("*.json")):
                     await card_repo.load_cards_from_json(session, json_file)
 
+        # Load NPC templates
+        npcs_dir = settings.DATA_DIR / "npcs"
+        if npcs_dir.exists():
+            from server.room.objects.npc import load_npc_templates
+
+            load_npc_templates(npcs_dir)
+
         self._register_handlers()
+        self._register_events()
+
+        # Start scheduler after rooms and NPC templates are loaded
+        await self.scheduler.start(self)
 
     def shutdown(self) -> None:
         """Clean up resources on server shutdown."""
-        # TimerService cancellation will be added in later epics
-        pass
+        self.scheduler.stop()
 
     def _register_handlers(self) -> None:
         """Register all WebSocket action handlers."""
         from server.net.handlers.auth import handle_login, handle_register
         from server.net.handlers.chat import handle_chat
+        from server.net.handlers.interact import handle_interact
         from server.net.handlers.movement import handle_move
 
         self.router.register(
@@ -69,6 +84,42 @@ class Game:
         self.router.register(
             "chat", lambda ws, d: handle_chat(ws, d, game=self)
         )
+        self.router.register(
+            "interact", lambda ws, d: handle_interact(ws, d, game=self)
+        )
+
+    def _register_events(self) -> None:
+        """Register event bus subscribers."""
+
+        async def _on_rare_spawn(npc_name: str, room_name: str) -> None:
+            await self.connection_manager.broadcast_to_all(
+                {
+                    "type": "announcement",
+                    "message": f"{npc_name} has appeared in {room_name}!",
+                }
+            )
+
+        self.event_bus.subscribe("rare_spawn", _on_rare_spawn)
+
+    async def kill_npc(self, room_key: str, npc_id: str) -> None:
+        """Mark an NPC as dead and schedule respawn if persistent."""
+        room = self.room_manager.get_room(room_key)
+        if room is None:
+            return
+        npc = room.get_npc(npc_id)
+        if npc is None or not npc.is_alive:
+            return
+
+        npc.is_alive = False
+
+        # Schedule respawn for persistent NPCs
+        tmpl = None
+        from server.room.objects.npc import get_npc_template
+
+        tmpl = get_npc_template(npc.npc_key)
+        if tmpl and tmpl.get("spawn_type") == "persistent":
+            respawn_seconds = tmpl.get("spawn_config", {}).get("respawn_seconds", 60)
+            self.scheduler.schedule_respawn(room_key, npc_id, respawn_seconds)
 
     async def handle_disconnect(self, websocket: WebSocket) -> None:
         """Handle a player disconnecting: save state, clean up, notify room."""

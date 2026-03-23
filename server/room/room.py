@@ -1,8 +1,13 @@
 """RoomInstance — runtime room with tile grid, entities, and movement."""
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from server.player.entity import PlayerEntity
 from server.room.tile import TileType, is_walkable
+
+if TYPE_CHECKING:
+    from server.room.objects.npc import NpcEntity
 
 DIRECTION_DELTAS: dict[str, tuple[int, int]] = {
     "up": (0, -1),
@@ -35,6 +40,13 @@ class RoomInstance:
         self.objects: list[dict] = objects or []
         self.spawn_points: list[dict] = spawn_points or []
         self._entities: dict[str, PlayerEntity] = {}
+        self._npcs: dict[str, NpcEntity] = {}
+
+        # Index interactive objects by id for quick lookup
+        self._interactive_objects: dict[str, dict] = {}
+        for obj in self.objects:
+            if obj.get("id") and obj.get("category") == "interactive":
+                self._interactive_objects[obj["id"]] = obj
 
         # Apply blocking static objects to the grid
         for obj in self.objects:
@@ -67,6 +79,24 @@ class RoomInstance:
     def get_player_ids(self) -> list[str]:
         """Return all entity IDs currently in the room."""
         return list(self._entities.keys())
+
+    def get_object(self, object_id: str) -> dict | None:
+        """Return an interactive object dict by id, or None."""
+        return self._interactive_objects.get(object_id)
+
+    # --- NPC management ---
+
+    def add_npc(self, npc: NpcEntity) -> None:
+        """Add an NPC to the room."""
+        self._npcs[npc.id] = npc
+
+    def remove_npc(self, npc_id: str) -> NpcEntity | None:
+        """Remove and return an NPC, or None if not found."""
+        return self._npcs.pop(npc_id, None)
+
+    def get_npc(self, npc_id: str) -> NpcEntity | None:
+        """Get an NPC by id."""
+        return self._npcs.get(npc_id)
 
     # --- Movement ---
 
@@ -104,11 +134,10 @@ class RoomInstance:
             if exit_info:
                 result["exit"] = exit_info
 
-        # Mob encounter detection (non-player entities at target tile)
-        others = [e for e in self._entities.values() if e.x == nx and e.y == ny and e.id != entity_id]
-        for other in others:
-            if other.id.startswith("mob_"):
-                result["mob_encounter"] = {"entity_id": other.id, "name": other.name}
+        # NPC encounter detection
+        for npc in self._npcs.values():
+            if npc.x == nx and npc.y == ny and npc.is_alive and npc.behavior_type == "hostile":
+                result["mob_encounter"] = {"entity_id": npc.id, "name": npc.name}
                 break
 
         return result
@@ -121,6 +150,7 @@ class RoomInstance:
             {"id": e.id, "name": e.name, "x": e.x, "y": e.y}
             for e in self._entities.values()
         ]
+        npcs = [npc.to_dict() for npc in self._npcs.values()]
         return {
             "room_key": self.room_key,
             "name": self.name,
@@ -128,6 +158,7 @@ class RoomInstance:
             "height": self.height,
             "tiles": self._grid,
             "entities": entities,
+            "npcs": npcs,
             "exits": self.exits,
             "objects": self.objects,
         }

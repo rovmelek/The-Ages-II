@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from server.player.entity import PlayerEntity
 from server.room.models import Room as RoomModel
+from server.room.objects.npc import create_npc_from_template
 from server.room.room import RoomInstance
 
 
@@ -28,6 +29,15 @@ class RoomManager:
             objects=room_db.objects,
             spawn_points=room_db.spawn_points,
         )
+        # Spawn NPCs from spawn points
+        for sp in instance.spawn_points:
+            if sp.get("type") == "npc":
+                npc_key = sp.get("npc_key", "")
+                npc_id = f"{room_db.room_key}_{npc_key}_{sp['x']}_{sp['y']}"
+                npc = create_npc_from_template(npc_key, npc_id, sp["x"], sp["y"])
+                if npc:
+                    instance.add_npc(npc)
+
         self._rooms[room_db.room_key] = instance
         return instance
 
