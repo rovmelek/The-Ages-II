@@ -1,0 +1,95 @@
+"""Inventory and item usage handlers for WebSocket clients."""
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from fastapi import WebSocket
+
+if TYPE_CHECKING:
+    from server.app import Game
+
+
+async def handle_inventory(
+    websocket: WebSocket, data: dict, *, game: Game
+) -> None:
+    """Handle the 'inventory' action — return player's inventory."""
+    entity_id = game.connection_manager.get_entity_id(websocket)
+    if entity_id is None:
+        await websocket.send_json({"type": "error", "detail": "Not logged in"})
+        return
+
+    player_info = game.player_entities.get(entity_id)
+    if player_info is None:
+        await websocket.send_json({"type": "error", "detail": "Not logged in"})
+        return
+
+    inventory = player_info.get("inventory")
+    if inventory is None:
+        await websocket.send_json({"type": "inventory", "items": []})
+        return
+
+    await websocket.send_json({
+        "type": "inventory",
+        "items": inventory.get_inventory(),
+    })
+
+
+async def handle_use_item(
+    websocket: WebSocket, data: dict, *, game: Game
+) -> None:
+    """Handle the 'use_item' action outside of combat."""
+    entity_id = game.connection_manager.get_entity_id(websocket)
+    if entity_id is None:
+        await websocket.send_json({"type": "error", "detail": "Not logged in"})
+        return
+
+    player_info = game.player_entities.get(entity_id)
+    if player_info is None:
+        await websocket.send_json({"type": "error", "detail": "Not logged in"})
+        return
+
+    entity = player_info["entity"]
+
+    # Cannot use items this way during combat
+    if entity.in_combat:
+        await websocket.send_json(
+            {"type": "error", "detail": "Cannot use items this way during combat"}
+        )
+        return
+
+    item_key = data.get("item_key", "")
+    if not item_key:
+        await websocket.send_json({"type": "error", "detail": "Missing item_key"})
+        return
+
+    inventory = player_info.get("inventory")
+    if inventory is None or not inventory.has_item(item_key):
+        await websocket.send_json({"type": "error", "detail": "Item not in inventory"})
+        return
+
+    item_def = inventory.get_item(item_key)
+    if not item_def.usable_outside_combat:
+        await websocket.send_json({"type": "error", "detail": "This item cannot be used"})
+        return
+
+    # Resolve effects through EffectRegistry
+    effect_results = []
+    player_stats = entity.stats
+    player_stats.setdefault("hp", 100)
+    player_stats.setdefault("max_hp", 100)
+    player_stats.setdefault("shield", 0)
+    for effect in item_def.effects:
+        result = await game.effect_registry.resolve(
+            effect, player_stats, player_stats
+        )
+        effect_results.append(result)
+
+    # Consume one charge (removes one from quantity)
+    inventory.use_charge(item_key)
+
+    await websocket.send_json({
+        "type": "item_used",
+        "item_key": item_key,
+        "item_name": item_def.name,
+        "effect_results": effect_results,
+    })

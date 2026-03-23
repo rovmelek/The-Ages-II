@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from fastapi import WebSocket
 
 from server.core.database import async_session
+from server.items.inventory import Inventory
 from server.player import repo as player_repo
 from server.player.auth import hash_password, verify_password
 from server.player.entity import PlayerEntity
@@ -99,11 +100,12 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
         room.add_entity(entity)
         game.connection_manager.connect(entity_id, websocket, room_key)
 
-        # Track player entity
+        # Track player entity with inventory
         game.player_entities[entity_id] = {
             "entity": entity,
             "room_key": room_key,
             "db_id": player.id,
+            "inventory": Inventory(),
         }
 
         # Send login success and full room state

@@ -117,6 +117,59 @@ async def handle_flee(
         game.combat_manager.remove_instance(instance.instance_id)
 
 
+async def handle_use_item_combat(
+    websocket: WebSocket, data: dict, *, game: Game
+) -> None:
+    """Handle 'use_item' action during combat — uses item as turn action."""
+    entity_id = game.connection_manager.get_entity_id(websocket)
+    if entity_id is None:
+        await websocket.send_json({"type": "error", "detail": "Not logged in"})
+        return
+
+    instance = game.combat_manager.get_player_instance(entity_id)
+    if instance is None:
+        await websocket.send_json({"type": "error", "detail": "Not in combat"})
+        return
+
+    item_key = data.get("item_key", "")
+    if not item_key:
+        await websocket.send_json({"type": "error", "detail": "Missing item_key"})
+        return
+
+    # Get player inventory
+    player_info = game.player_entities.get(entity_id)
+    if player_info is None:
+        await websocket.send_json({"type": "error", "detail": "Not logged in"})
+        return
+
+    inventory = player_info.get("inventory")
+    if inventory is None or not inventory.has_item(item_key):
+        await websocket.send_json({"type": "error", "detail": "Item not in inventory"})
+        return
+
+    item_def = inventory.get_item(item_key)
+    if not item_def.usable_in_combat:
+        await websocket.send_json(
+            {"type": "error", "detail": "This item cannot be used in combat"}
+        )
+        return
+
+    try:
+        result = await instance.use_item(entity_id, item_def)
+    except ValueError as e:
+        await websocket.send_json({"type": "error", "detail": str(e)})
+        return
+
+    # Consume one charge from inventory
+    inventory.use_charge(item_key)
+
+    # Broadcast updated combat state with action result to all participants
+    await _broadcast_combat_state(instance, result, game)
+
+    # Check if combat has ended
+    await _check_combat_end(instance, game)
+
+
 async def handle_pass_turn(
     websocket: WebSocket, data: dict, *, game: Game
 ) -> None:

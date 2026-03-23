@@ -39,6 +39,7 @@ async def test_init_db_creates_all_tables(db_engine):
         "player_object_states",
         "cards",
         "spawn_checkpoints",
+        "items",
     }
     async with db_engine.connect() as conn:
         table_names = await conn.run_sync(lambda sync_conn: inspect(sync_conn).get_table_names())

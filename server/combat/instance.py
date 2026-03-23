@@ -136,6 +136,47 @@ class CombatInstance:
 
         return result
 
+    async def use_item(self, entity_id: str, item_def) -> dict:
+        """Player uses an item as their combat action. Validates turn, resolves effects, advances turn.
+
+        Returns dict with item info, effect results, and any mob attack from cycle end.
+        """
+        if entity_id != self.get_current_turn():
+            raise ValueError("Not your turn")
+        if self.participant_stats[entity_id]["hp"] <= 0:
+            raise ValueError("You are dead")
+
+        if self._effect_registry is None:
+            effect_results: list[dict] = []
+        else:
+            effect_results = []
+            player_stats = self.participant_stats[entity_id]
+            for effect in item_def.effects:
+                effect_type = effect.get("type", "")
+                if effect_type in ("heal", "shield", "draw"):
+                    source = player_stats
+                    target = player_stats
+                else:
+                    source = player_stats
+                    target = self.mob_stats
+                result = await self._effect_registry.resolve(effect, source, target)
+                effect_results.append(result)
+
+        result: dict = {
+            "action": "use_item",
+            "entity_id": entity_id,
+            "item_key": item_def.item_key,
+            "item_name": item_def.name,
+            "effect_results": effect_results,
+        }
+
+        # Advance turn — may trigger mob attack at end of cycle
+        mob_attack = self._advance_turn()
+        if mob_attack:
+            result["mob_attack"] = mob_attack
+
+        return result
+
     async def pass_turn(self, entity_id: str) -> dict:
         """Player passes. Mob attacks the passer, then advance turn."""
         if entity_id != self.get_current_turn():

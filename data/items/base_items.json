@@ -1,0 +1,46 @@
+[
+  {
+    "item_key": "healing_potion",
+    "name": "Healing Potion",
+    "category": "consumable",
+    "stackable": true,
+    "charges": 3,
+    "effects": [{"type": "heal", "value": 25}],
+    "usable_in_combat": true,
+    "usable_outside_combat": true,
+    "description": "Restores 25 HP. 3 uses."
+  },
+  {
+    "item_key": "antidote",
+    "name": "Antidote",
+    "category": "consumable",
+    "stackable": true,
+    "charges": 1,
+    "effects": [{"type": "heal", "value": 10}],
+    "usable_in_combat": true,
+    "usable_outside_combat": true,
+    "description": "Cures minor ailments. 1 use."
+  },
+  {
+    "item_key": "fire_essence",
+    "name": "Fire Essence",
+    "category": "material",
+    "stackable": true,
+    "charges": 0,
+    "effects": [],
+    "usable_in_combat": false,
+    "usable_outside_combat": false,
+    "description": "A glowing ember of elemental fire. Used for crafting."
+  },
+  {
+    "item_key": "iron_shard",
+    "name": "Iron Shard",
+    "category": "material",
+    "stackable": true,
+    "charges": 0,
+    "effects": [],
+    "usable_in_combat": false,
+    "usable_outside_combat": false,
+    "description": "A rough piece of iron. Used for crafting."
+  }
+]

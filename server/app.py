@@ -52,6 +52,15 @@ class Game:
                 for json_file in sorted(cards_dir.glob("*.json")):
                     await card_repo.load_cards_from_json(session, json_file)
 
+        # Load items from JSON if any item files exist
+        items_dir = settings.DATA_DIR / "items"
+        if items_dir.exists():
+            from server.items import item_repo
+
+            async with async_session() as session:
+                for json_file in sorted(items_dir.glob("*.json")):
+                    await item_repo.load_items_from_json(session, json_file)
+
         # Load NPC templates
         npcs_dir = settings.DATA_DIR / "npcs"
         if npcs_dir.exists():
@@ -73,8 +82,14 @@ class Game:
         """Register all WebSocket action handlers."""
         from server.net.handlers.auth import handle_login, handle_register
         from server.net.handlers.chat import handle_chat
-        from server.net.handlers.combat import handle_flee, handle_pass_turn, handle_play_card
+        from server.net.handlers.combat import (
+            handle_flee,
+            handle_pass_turn,
+            handle_play_card,
+            handle_use_item_combat,
+        )
         from server.net.handlers.interact import handle_interact
+        from server.net.handlers.inventory import handle_inventory, handle_use_item
         from server.net.handlers.movement import handle_move
 
         self.router.register(
@@ -100,6 +115,16 @@ class Game:
         )
         self.router.register(
             "flee", lambda ws, d: handle_flee(ws, d, game=self)
+        )
+        self.router.register(
+            "inventory", lambda ws, d: handle_inventory(ws, d, game=self)
+        )
+        self.router.register(
+            "use_item", lambda ws, d: handle_use_item(ws, d, game=self)
+        )
+        self.router.register(
+            "use_item_combat",
+            lambda ws, d: handle_use_item_combat(ws, d, game=self),
         )
 
     def _register_events(self) -> None:
