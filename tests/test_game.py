@@ -1,6 +1,7 @@
 """Tests for Game orchestrator and server lifecycle (Story 1.8)."""
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -58,14 +59,20 @@ async def test_game_startup_initializes_db(test_session_factory):
 
     game = Game()
     with patch("server.app.init_db") as mock_init, \
-         patch("server.app.async_session", test_session_factory):
+         patch("server.app.async_session", test_session_factory), \
+         patch("server.app.settings") as mock_settings:
         mock_init.return_value = None
+        # Point DATA_DIR to a temp path so card/item loading is skipped
+        mock_settings.DATA_DIR = Path("/tmp/nonexistent_data_dir")
         with patch("server.app.JsonRoomProvider") as MockProvider:
             instance = MockProvider.return_value
             instance.load_rooms = AsyncMock(return_value=[])
             await game.startup()
-            mock_init.assert_called_once()
-            instance.load_rooms.assert_called_once()
+            try:
+                mock_init.assert_called_once()
+                instance.load_rooms.assert_called_once()
+            finally:
+                game.shutdown()
 
 
 @pytest.mark.asyncio
@@ -76,12 +83,17 @@ async def test_game_startup_registers_handlers(test_session_factory):
     game = Game()
     with patch("server.app.init_db", return_value=None), \
          patch("server.app.async_session", test_session_factory), \
+         patch("server.app.settings") as mock_settings, \
          patch("server.app.JsonRoomProvider") as MockProvider:
+        mock_settings.DATA_DIR = Path("/tmp/nonexistent_data_dir")
         instance = MockProvider.return_value
         instance.load_rooms = AsyncMock(return_value=[])
         await game.startup()
-        assert "login" in game.router._handlers
-        assert "register" in game.router._handlers
+        try:
+            assert "login" in game.router._handlers
+            assert "register" in game.router._handlers
+        finally:
+            game.shutdown()
 
 
 @pytest.mark.asyncio
@@ -104,11 +116,16 @@ async def test_game_startup_loads_rooms_into_manager(test_session_factory):
     game = Game()
     with patch("server.app.init_db", return_value=None), \
          patch("server.app.async_session", test_session_factory), \
+         patch("server.app.settings") as mock_settings, \
          patch("server.app.JsonRoomProvider") as MockProvider:
+        mock_settings.DATA_DIR = Path("/tmp/nonexistent_data_dir")
         instance = MockProvider.return_value
         instance.load_rooms = AsyncMock(return_value=[mock_room])
         await game.startup()
-        assert game.room_manager.get_room("test_room") is not None
+        try:
+            assert game.room_manager.get_room("test_room") is not None
+        finally:
+            game.shutdown()
 
 
 # ---------------------------------------------------------------------------

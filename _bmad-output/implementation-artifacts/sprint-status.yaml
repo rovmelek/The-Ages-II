@@ -84,18 +84,18 @@ development_status:
   epic-4-retrospective: optional
 
   # Epic 5: Items & Inventory
-  epic-5: backlog
-  5-1-item-definitions-and-loading: backlog
-  5-2-player-inventory-management: backlog
-  5-3-use-items-outside-combat: backlog
-  5-4-use-items-during-combat: backlog
+  epic-5: done
+  5-1-item-definitions-and-loading: done
+  5-2-player-inventory-management: done
+  5-3-use-items-outside-combat: done
+  5-4-use-items-during-combat: done
   epic-5-retrospective: optional
 
   # Epic 6: Integration, Sample Data & Testing
-  epic-6: backlog
-  6-1-sample-room-data: backlog
-  6-2-sample-cards-and-items-data: backlog
-  6-3-end-to-end-startup-and-gameplay-wiring: backlog
+  epic-6: in-progress
+  6-1-sample-room-data: done
+  6-2-sample-cards-and-items-data: done
+  6-3-end-to-end-startup-and-gameplay-wiring: done
   6-4-core-system-unit-tests: backlog
   6-5-combat-and-item-unit-tests: backlog
   6-6-websocket-integration-tests: backlog

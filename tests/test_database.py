@@ -12,6 +12,7 @@ async def db_engine():
     engine = create_async_engine("sqlite+aiosqlite://", echo=True)
     # Import all models so Base.metadata knows about them
     import server.combat.cards.models  # noqa: F401
+    import server.items.models  # noqa: F401
     import server.player.models  # noqa: F401
     import server.room.models  # noqa: F401
     import server.room.spawn_models  # noqa: F401

@@ -37,5 +37,33 @@
     },
     "stats": {"hp": 500, "max_hp": 500, "attack": 25, "defense": 15},
     "loot_table": "dragon_loot"
+  },
+  {
+    "npc_key": "slime",
+    "name": "Slime",
+    "behavior_type": "hostile",
+    "spawn_type": "persistent",
+    "spawn_config": {
+      "respawn_seconds": 60
+    },
+    "stats": {"hp": 30, "max_hp": 30, "attack": 6, "defense": 2},
+    "loot_table": "slime_loot"
+  },
+  {
+    "npc_key": "cave_troll",
+    "name": "Cave Troll",
+    "behavior_type": "hostile",
+    "spawn_type": "rare",
+    "spawn_config": {
+      "check_interval_hours": 12,
+      "spawn_chance": 0.15,
+      "despawn_after_hours": 6,
+      "max_active": 1,
+      "room_key": "dark_cave",
+      "x": 50,
+      "y": 50
+    },
+    "stats": {"hp": 200, "max_hp": 200, "attack": 20, "defense": 10},
+    "loot_table": "troll_loot"
   }
 ]
