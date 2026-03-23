@@ -1,0 +1,67 @@
+[
+  {
+    "card_key": "fire_bolt",
+    "name": "Fire Bolt",
+    "cost": 1,
+    "effects": [{"type": "damage", "subtype": "fire", "value": 20}],
+    "description": "Hurls a bolt of fire at the enemy."
+  },
+  {
+    "card_key": "ice_shard",
+    "name": "Ice Shard",
+    "cost": 1,
+    "effects": [{"type": "damage", "subtype": "ice", "value": 15}],
+    "description": "Launches a shard of ice."
+  },
+  {
+    "card_key": "slash",
+    "name": "Slash",
+    "cost": 1,
+    "effects": [{"type": "damage", "subtype": "physical", "value": 12}],
+    "description": "A quick melee slash."
+  },
+  {
+    "card_key": "heal_light",
+    "name": "Light Heal",
+    "cost": 1,
+    "effects": [{"type": "heal", "value": 15}],
+    "description": "Restores a small amount of health."
+  },
+  {
+    "card_key": "iron_shield",
+    "name": "Iron Shield",
+    "cost": 1,
+    "effects": [{"type": "shield", "value": 12}],
+    "description": "Raises a protective shield."
+  },
+  {
+    "card_key": "poison_strike",
+    "name": "Poison Strike",
+    "cost": 2,
+    "effects": [
+      {"type": "damage", "subtype": "physical", "value": 8},
+      {"type": "dot", "subtype": "poison", "value": 4, "duration": 3}
+    ],
+    "description": "A poisoned blade that deals damage over time."
+  },
+  {
+    "card_key": "arcane_surge",
+    "name": "Arcane Surge",
+    "cost": 2,
+    "effects": [
+      {"type": "damage", "subtype": "arcane", "value": 10},
+      {"type": "draw", "value": 1}
+    ],
+    "description": "Deals arcane damage and draws an extra card."
+  },
+  {
+    "card_key": "fortify",
+    "name": "Fortify",
+    "cost": 1,
+    "effects": [
+      {"type": "shield", "value": 8},
+      {"type": "heal", "value": 5}
+    ],
+    "description": "Raises a small shield and heals slightly."
+  }
+]

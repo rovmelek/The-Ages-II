@@ -73,10 +73,10 @@ development_status:
   epic-3-retrospective: optional
 
   # Epic 4: Turn-Based Card Combat
-  epic-4: backlog
-  4-1-shared-effect-registry: backlog
-  4-2-card-definitions-and-hand-management: backlog
-  4-3-combat-instance-and-turn-structure: backlog
+  epic-4: in-progress
+  4-1-shared-effect-registry: done
+  4-2-card-definitions-and-hand-management: done
+  4-3-combat-instance-and-turn-structure: done
   4-4-card-effect-resolution: backlog
   4-5-combat-resolution-and-rewards: backlog
   4-6-flee-combat: backlog

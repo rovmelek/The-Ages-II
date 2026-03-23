@@ -11,6 +11,7 @@ from server.core.database import async_session, init_db
 from server.net.connection_manager import ConnectionManager
 from server.net.message_router import MessageRouter
 from server.player import repo as player_repo
+from server.combat.manager import CombatManager
 from server.core.events import EventBus
 from server.core.scheduler import Scheduler
 from server.room.manager import RoomManager
@@ -26,6 +27,7 @@ class Game:
         self.room_manager = RoomManager()
         self.scheduler = Scheduler()
         self.event_bus = EventBus()
+        self.combat_manager = CombatManager()
         self.player_entities: dict[str, dict] = {}
 
     async def startup(self) -> None:
@@ -69,6 +71,7 @@ class Game:
         """Register all WebSocket action handlers."""
         from server.net.handlers.auth import handle_login, handle_register
         from server.net.handlers.chat import handle_chat
+        from server.net.handlers.combat import handle_pass_turn, handle_play_card
         from server.net.handlers.interact import handle_interact
         from server.net.handlers.movement import handle_move
 
@@ -86,6 +89,12 @@ class Game:
         )
         self.router.register(
             "interact", lambda ws, d: handle_interact(ws, d, game=self)
+        )
+        self.router.register(
+            "play_card", lambda ws, d: handle_play_card(ws, d, game=self)
+        )
+        self.router.register(
+            "pass_turn", lambda ws, d: handle_pass_turn(ws, d, game=self)
         )
 
     def _register_events(self) -> None:
