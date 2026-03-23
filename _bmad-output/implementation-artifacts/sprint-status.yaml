@@ -73,14 +73,14 @@ development_status:
   epic-3-retrospective: optional
 
   # Epic 4: Turn-Based Card Combat
-  epic-4: in-progress
+  epic-4: done
   4-1-shared-effect-registry: done
   4-2-card-definitions-and-hand-management: done
   4-3-combat-instance-and-turn-structure: done
-  4-4-card-effect-resolution: backlog
-  4-5-combat-resolution-and-rewards: backlog
-  4-6-flee-combat: backlog
-  4-7-combat-entry-from-mob-encounter: backlog
+  4-4-card-effect-resolution: done
+  4-5-combat-resolution-and-rewards: done
+  4-6-flee-combat: done
+  4-7-combat-entry-from-mob-encounter: done
   epic-4-retrospective: optional
 
   # Epic 5: Items & Inventory

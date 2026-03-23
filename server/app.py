@@ -12,6 +12,7 @@ from server.net.connection_manager import ConnectionManager
 from server.net.message_router import MessageRouter
 from server.player import repo as player_repo
 from server.combat.manager import CombatManager
+from server.core.effects import create_default_registry
 from server.core.events import EventBus
 from server.core.scheduler import Scheduler
 from server.room.manager import RoomManager
@@ -27,7 +28,8 @@ class Game:
         self.room_manager = RoomManager()
         self.scheduler = Scheduler()
         self.event_bus = EventBus()
-        self.combat_manager = CombatManager()
+        self.effect_registry = create_default_registry()
+        self.combat_manager = CombatManager(effect_registry=self.effect_registry)
         self.player_entities: dict[str, dict] = {}
 
     async def startup(self) -> None:
@@ -71,7 +73,7 @@ class Game:
         """Register all WebSocket action handlers."""
         from server.net.handlers.auth import handle_login, handle_register
         from server.net.handlers.chat import handle_chat
-        from server.net.handlers.combat import handle_pass_turn, handle_play_card
+        from server.net.handlers.combat import handle_flee, handle_pass_turn, handle_play_card
         from server.net.handlers.interact import handle_interact
         from server.net.handlers.movement import handle_move
 
@@ -95,6 +97,9 @@ class Game:
         )
         self.router.register(
             "pass_turn", lambda ws, d: handle_pass_turn(ws, d, game=self)
+        )
+        self.router.register(
+            "flee", lambda ws, d: handle_flee(ws, d, game=self)
         )
 
     def _register_events(self) -> None:
@@ -135,6 +140,22 @@ class Game:
         entity_id = self.connection_manager.get_entity_id(websocket)
         if entity_id is None:
             return  # Unauthenticated connection, nothing to clean up
+
+        # Remove from combat if in combat
+        combat_instance = self.combat_manager.get_player_instance(entity_id)
+        if combat_instance:
+            combat_instance.remove_participant(entity_id)
+            self.combat_manager.remove_player(entity_id)
+            # If no participants left, clean up instance
+            if not combat_instance.participants:
+                self.combat_manager.remove_instance(combat_instance.instance_id)
+            else:
+                # Notify remaining participants of updated state
+                state = combat_instance.get_state()
+                for eid in combat_instance.participants:
+                    ws = self.connection_manager.get_websocket(eid)
+                    if ws:
+                        await ws.send_json({"type": "combat_update", **state})
 
         player_info = self.player_entities.pop(entity_id, None)
         if player_info:

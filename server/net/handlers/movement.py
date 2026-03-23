@@ -80,6 +80,68 @@ async def handle_move(websocket: WebSocket, data: dict, *, game: Game) -> None:
         },
     )
 
+    # Check for mob encounter — initiate combat
+    mob_encounter = result.get("mob_encounter")
+    if mob_encounter:
+        await _handle_mob_encounter(
+            websocket, game, entity_id, entity, player_info, room, mob_encounter,
+        )
+
+
+async def _handle_mob_encounter(
+    websocket: WebSocket,
+    game: Game,
+    entity_id: str,
+    entity,
+    player_info: dict,
+    room,
+    mob_encounter: dict,
+) -> None:
+    """Initiate combat when player encounters a hostile mob."""
+    npc_id = mob_encounter["entity_id"]
+    npc = room.get_npc(npc_id)
+    if npc is None or not npc.is_alive:
+        return  # Already dead or in combat
+
+    # Mark NPC as not alive (in combat)
+    npc.is_alive = False
+
+    # Load card definitions for player deck
+    from server.combat.cards.card_def import CardDef
+    from server.combat.cards import card_repo
+
+    card_defs: list[CardDef] = []
+    async with async_session() as session:
+        cards = await card_repo.get_all(session)
+        card_defs = [CardDef.from_db(c) for c in cards]
+
+    # Fallback: if no cards in DB, create basic cards
+    if not card_defs:
+        card_defs = [
+            CardDef(card_key=f"basic_attack_{i}", name="Basic Attack", cost=1,
+                    effects=[{"type": "damage", "value": 10}])
+            for i in range(10)
+        ]
+
+    # Create combat instance
+    mob_stats = dict(npc.stats) if npc.stats else {"hp": 50, "max_hp": 50, "attack": 10}
+    instance = game.combat_manager.create_instance(npc.name, mob_stats)
+    # Ensure player stats have required combat keys
+    player_stats = dict(entity.stats)
+    player_stats.setdefault("hp", 100)
+    player_stats.setdefault("max_hp", player_stats["hp"])
+    player_stats.setdefault("attack", 10)
+    player_stats.setdefault("shield", 0)
+    instance.add_participant(entity_id, player_stats, card_defs)
+    game.combat_manager.add_player_to_instance(entity_id, instance.instance_id)
+
+    # Mark player as in combat
+    entity.in_combat = True
+
+    # Send combat_start to player
+    state = instance.get_state()
+    await websocket.send_json({"type": "combat_start", **state})
+
 
 async def _handle_exit_transition(
     websocket: WebSocket,

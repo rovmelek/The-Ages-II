@@ -2,17 +2,21 @@
 from __future__ import annotations
 
 import uuid
+from typing import TYPE_CHECKING
 
-from server.combat.cards.card_def import CardDef
 from server.combat.instance import CombatInstance
+
+if TYPE_CHECKING:
+    from server.core.effects.registry import EffectRegistry
 
 
 class CombatManager:
     """Manages all active combat instances and player-to-instance mappings."""
 
-    def __init__(self) -> None:
+    def __init__(self, effect_registry: EffectRegistry | None = None) -> None:
         self._instances: dict[str, CombatInstance] = {}
         self._player_to_instance: dict[str, str] = {}  # entity_id -> instance_id
+        self._effect_registry = effect_registry
 
     def create_instance(
         self,
@@ -25,6 +29,7 @@ class CombatManager:
             instance_id=instance_id,
             mob_name=mob_name,
             mob_stats=mob_stats,
+            effect_registry=self._effect_registry,
         )
         self._instances[instance_id] = instance
         return instance

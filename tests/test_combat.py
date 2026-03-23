@@ -93,10 +93,11 @@ def test_get_current_turn_two_players():
 # --- play_card ---
 
 
-def test_play_card_advances_turn():
+@pytest.mark.asyncio
+async def test_play_card_advances_turn():
     instance = _make_instance_with_two_players()
     card_key = instance.hands["player_1"].hand[0].card_key
-    result = instance.play_card("player_1", card_key)
+    result = await instance.play_card("player_1", card_key)
     assert result["action"] == "play_card"
     assert result["entity_id"] == "player_1"
     assert result["card"]["card_key"] == card_key
@@ -104,25 +105,28 @@ def test_play_card_advances_turn():
     assert instance.get_current_turn() == "player_2"
 
 
-def test_play_card_wrong_turn_raises():
+@pytest.mark.asyncio
+async def test_play_card_wrong_turn_raises():
     instance = _make_instance_with_two_players()
     card_key = instance.hands["player_2"].hand[0].card_key
     with pytest.raises(ValueError, match="Not your turn"):
-        instance.play_card("player_2", card_key)
+        await instance.play_card("player_2", card_key)
 
 
-def test_play_card_invalid_card_raises():
+@pytest.mark.asyncio
+async def test_play_card_invalid_card_raises():
     instance = _make_instance_with_player()
     with pytest.raises(ValueError, match="Card not in hand"):
-        instance.play_card("player_1", "nonexistent")
+        await instance.play_card("player_1", "nonexistent")
 
 
 # --- pass_turn ---
 
 
-def test_pass_turn_mob_attacks_passer():
+@pytest.mark.asyncio
+async def test_pass_turn_mob_attacks_passer():
     instance = _make_instance_with_player()
-    result = instance.pass_turn("player_1")
+    result = await instance.pass_turn("player_1")
     assert result["action"] == "pass_turn"
     assert result["mob_attack"]["target"] == "player_1"
     assert result["mob_attack"]["damage"] > 0
@@ -130,49 +134,53 @@ def test_pass_turn_mob_attacks_passer():
     assert instance.participant_stats["player_1"]["hp"] < 100
 
 
-def test_pass_turn_wrong_turn_raises():
+@pytest.mark.asyncio
+async def test_pass_turn_wrong_turn_raises():
     instance = _make_instance_with_two_players()
     with pytest.raises(ValueError, match="Not your turn"):
-        instance.pass_turn("player_2")
+        await instance.pass_turn("player_2")
 
 
 # --- Full cycle mob attack ---
 
 
-def test_full_cycle_triggers_mob_attack():
+@pytest.mark.asyncio
+async def test_full_cycle_triggers_mob_attack():
     instance = _make_instance_with_two_players()
     # Player 1 plays card
     card_key = instance.hands["player_1"].hand[0].card_key
-    result1 = instance.play_card("player_1", card_key)
+    result1 = await instance.play_card("player_1", card_key)
     assert "mob_attack" not in result1  # not yet a full cycle
 
     # Player 2 plays card — completes cycle
     card_key2 = instance.hands["player_2"].hand[0].card_key
-    result2 = instance.play_card("player_2", card_key2)
+    result2 = await instance.play_card("player_2", card_key2)
     assert "mob_attack" in result2  # cycle complete, mob attacks
 
 
-def test_single_player_cycle():
+@pytest.mark.asyncio
+async def test_single_player_cycle():
     instance = _make_instance_with_player()
     # Single player — each action is a full cycle
     card_key = instance.hands["player_1"].hand[0].card_key
-    result = instance.play_card("player_1", card_key)
+    result = await instance.play_card("player_1", card_key)
     assert "mob_attack" in result  # one player = one action = full cycle
 
 
 # --- Turn alternation (two players) ---
 
 
-def test_turn_alternation():
+@pytest.mark.asyncio
+async def test_turn_alternation():
     instance = _make_instance_with_two_players()
     assert instance.get_current_turn() == "player_1"
 
     card_key = instance.hands["player_1"].hand[0].card_key
-    instance.play_card("player_1", card_key)
+    await instance.play_card("player_1", card_key)
     assert instance.get_current_turn() == "player_2"
 
     card_key2 = instance.hands["player_2"].hand[0].card_key
-    instance.play_card("player_2", card_key2)
+    await instance.play_card("player_2", card_key2)
     # After cycle, back to player_1
     assert instance.get_current_turn() == "player_1"
 
@@ -274,7 +282,8 @@ def test_combat_manager_unknown_instance():
 # --- Code review fixes ---
 
 
-def test_remove_current_turn_player_advances_to_next():
+@pytest.mark.asyncio
+async def test_remove_current_turn_player_advances_to_next():
     """Fix #11: removing current-turn player should advance to next, not previous."""
     instance = CombatInstance(
         instance_id="test", mob_name="Mob", mob_stats=_make_mob_stats()
@@ -285,25 +294,48 @@ def test_remove_current_turn_player_advances_to_next():
     instance.add_participant("C", _make_player_stats(), cards)
     # Turn is A's (index 0). Play A's card to advance to B.
     card_key = instance.hands["A"].hand[0].card_key
-    instance.play_card("A", card_key)
+    await instance.play_card("A", card_key)
     assert instance.get_current_turn() == "B"
     # Remove B — C should be next, not A
     instance.remove_participant("B")
     assert instance.get_current_turn() == "C"
 
 
-def test_dead_player_cannot_play_card():
+@pytest.mark.asyncio
+async def test_dead_player_cannot_play_card():
     """Fix #16: dead players can't take actions."""
     instance = _make_instance_with_player()
     instance.participant_stats["player_1"]["hp"] = 0
     card_key = instance.hands["player_1"].hand[0].card_key
     with pytest.raises(ValueError, match="You are dead"):
-        instance.play_card("player_1", card_key)
+        await instance.play_card("player_1", card_key)
 
 
-def test_dead_player_cannot_pass():
+@pytest.mark.asyncio
+async def test_dead_player_cannot_pass():
     """Fix #16: dead players can't take actions."""
     instance = _make_instance_with_player()
     instance.participant_stats["player_1"]["hp"] = 0
     with pytest.raises(ValueError, match="You are dead"):
-        instance.pass_turn("player_1")
+        await instance.pass_turn("player_1")
+
+
+# --- Epic 4 code review fixes ---
+
+
+@pytest.mark.asyncio
+async def test_dead_player_skipped_in_turn_order():
+    """After mob attack kills a player, their turn is automatically skipped."""
+    instance = CombatInstance(
+        instance_id="test", mob_name="Mob", mob_stats=_make_mob_stats(attack=0)
+    )
+    cards = _make_cards()
+    instance.add_participant("A", _make_player_stats(), cards)
+    instance.add_participant("B", _make_player_stats(hp=1), cards)  # Will die if attacked
+    instance.add_participant("C", _make_player_stats(), cards)
+    # Kill B manually to simulate mob attack
+    instance.participant_stats["B"]["hp"] = 0
+    # A plays — turn should advance past dead B to C
+    card_key = instance.hands["A"].hand[0].card_key
+    await instance.play_card("A", card_key)
+    assert instance.get_current_turn() == "C"
