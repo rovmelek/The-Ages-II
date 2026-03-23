@@ -1,5 +1,5 @@
 # generated: 2026-03-21
-# last_updated: 2026-03-22
+# last_updated: 2026-03-23
 # project: The-Ages-II
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-21
-last_updated: 2026-03-22
+last_updated: 2026-03-23
 project: The-Ages-II
 project_key: NOKEY
 tracking_system: file-system
@@ -92,11 +92,11 @@ development_status:
   epic-5-retrospective: optional
 
   # Epic 6: Integration, Sample Data & Testing
-  epic-6: in-progress
+  epic-6: done
   6-1-sample-room-data: done
   6-2-sample-cards-and-items-data: done
   6-3-end-to-end-startup-and-gameplay-wiring: done
-  6-4-core-system-unit-tests: backlog
-  6-5-combat-and-item-unit-tests: backlog
-  6-6-websocket-integration-tests: backlog
+  6-4-core-system-unit-tests: done
+  6-5-combat-and-item-unit-tests: done
+  6-6-websocket-integration-tests: done
   epic-6-retrospective: optional
