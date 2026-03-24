@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **The-Ages-II** is a multiplayer room-based dungeon game with turn-based card combat. The project combines:
 - A **BMAD framework** (v6.2.0) for AI-assisted design, planning, and project management workflows
-- A **Python game server** (under active implementation) built with FastAPI + WebSockets
+- A **Python game server** (Epics 1-6 complete) built with FastAPI + WebSockets
+- A **web demo client** (`web-demo/`) — vanilla HTML/CSS/JS proof-of-concept for testing and demos; production client planned in Godot
 
 The canonical implementation spec is `THE_AGES_SERVER_PLAN.md` — it contains the complete file-by-file server blueprint.
 
@@ -59,36 +60,59 @@ pip install -e ".[dev]"        # install with dev dependencies
 python run.py                  # start server on port 8000
 pytest tests/                  # run tests
 curl localhost:8000/health     # health check
+open http://localhost:8000     # web demo client (requires server running)
 ```
 
 ### Server Architecture
 
 `Game` class in `server/app.py` is the central orchestrator, owning all managers:
 
-- **RoomManager** (`server/game/room_manager.py`) — loads tile-based rooms from JSON files → SQLite → memory
-- **CombatManager** (`server/game/combat_manager.py`) — creates/tracks `CombatInstance` objects for turn-based card combat
+- **RoomManager** (`server/room/manager.py`) — loads tile-based rooms from JSON files → SQLite → memory
+- **CombatManager** (`server/combat/manager.py`) — creates/tracks `CombatInstance` objects for turn-based card combat
 - **ConnectionManager** (`server/net/connection_manager.py`) — maps WebSocket connections ↔ player entity IDs
 - **MessageRouter** (`server/net/message_router.py`) — routes incoming JSON by `action` field to handler modules in `server/net/handlers/`
-- **TimerService** (`server/game/timer_service.py`) — async scheduling for mob respawns and combat countdowns
+- **Scheduler** (`server/core/scheduler.py`) — async scheduling for mob respawns and combat countdowns
+- **EventBus** (`server/core/events.py`) — global announcements, cross-system triggers
+- **EffectRegistry** (`server/core/effects/`) — shared card + item effect resolution
 
 ### Directory Structure
 ```
 server/
-├── models/        # SQLAlchemy models (Player, Room, RoomState, Card)
-├── game/          # Core logic (room, entity, tile, combat, cards, timers)
+├── core/          # Config, database, scheduler, event bus, shared effect registry
 ├── net/           # WebSocket protocol, connection manager, message router
-│   └── handlers/  # auth, movement, chat, combat, inventory
-├── web/           # REST API routes (players, trades, filters)
-└── persistence/   # Repo classes (PlayerRepo, RoomRepo, CardRepo)
+│   └── handlers/  # auth, movement, chat, combat, inventory, interact
+├── player/        # Player model, repo, entity, auth (bcrypt)
+├── room/          # Room model, repo, tile system, room instance, manager, provider
+│   └── objects/   # NPC entity, spawner, static/interactive objects
+├── combat/        # Combat instance, manager, turn resolution
+│   └── cards/     # Card definitions, hand management, card repo
+├── items/         # Item definitions, item repo, inventory
+└── web/           # REST API routes (players, trades, filters)
 data/
-├── rooms/         # Room definitions (JSON tile grids with exits/spawns)
-└── cards/         # Card set definitions (JSON)
-tests/             # pytest — room, combat, movement, card tests
+├── rooms/         # Room definitions (4 rooms: town_square, dark_cave, test_room, other_room)
+├── cards/         # Card set definitions (JSON)
+├── items/         # Item definitions (JSON)
+└── npcs/          # NPC template definitions (JSON)
+tests/             # pytest — room, combat, movement, card, integration tests
+web-demo/          # Browser-based test/demo client (vanilla HTML/CSS/JS)
+├── index.html     # Auth, game viewport, combat overlay
+├── css/style.css  # Dark theme, tiles, cards
+├── js/game.js     # WebSocket client, state, all UI
+└── jsconfig.json  # IDE type-checking
 ```
 
 ### Endpoints
+- **Web Demo**: `GET /` — serves `web-demo/index.html` (test client)
+- **Static Assets**: `/static/*` — serves `web-demo/` directory
 - **WebSocket**: `/ws/game` — JSON messages with `action` field (login, register, move, chat, play_card, pass_turn, flee, inventory)
 - **REST**: `/api/players/{id}/build`, `/api/players/{id}/cards`, `/api/trades`, `/api/filters`
+
+### Room Topology
+4 rooms connected in a circular loop (each room has 2 exits):
+```
+town_square ←→ test_room ←→ other_room ←→ dark_cave ←→ town_square
+```
+Default player spawn room: `town_square` (100x100)
 
 ## Working With This Project
 

@@ -5205,7 +5205,7 @@
       0,
       0,
       0,
-      1
+      2
     ],
     [
       1,
@@ -10214,6 +10214,14 @@
       "direction": "south",
       "entry_x": 50,
       "entry_y": 1
+    },
+    {
+      "target_room": "test_room",
+      "x": 99,
+      "y": 50,
+      "direction": "east",
+      "entry_x": 1,
+      "entry_y": 2
     }
   ],
   "objects": [

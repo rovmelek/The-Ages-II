@@ -13,7 +13,7 @@ The original plan remains useful as a code-level reference for individual file i
 **The Ages II** is a multiplayer room-based dungeon game server with turn-based card combat.
 
 - **Server**: Python 3.11+, FastAPI, WebSockets (real-time), SQLAlchemy async + SQLite
-- **Client**: Not in scope yet — server tested via pytest, curl, websocat
+- **Client**: Web demo client (`web-demo/`) for testing and proof-of-concept; production client planned in Godot
 - **Architecture style**: Domain-driven, JSON-configured, designed for future web-based room editor
 
 ---
@@ -135,9 +135,11 @@ server/
     └── routes.py               # Player profiles, trades, filters
 
 data/
-├── rooms/                      # Room JSON definitions
-│   ├── town_square.json
-│   └── dark_cave.json
+├── rooms/                      # Room JSON definitions (4 rooms in circular loop)
+│   ├── town_square.json        # 100x100 — default spawn room
+│   ├── dark_cave.json          # 100x100 — cave with NPCs
+│   ├── test_room.json          # 5x5 — small test room
+│   └── other_room.json         # 5x5 — secondary small room
 ├── cards/                      # Card set JSON definitions
 │   └── base_set.json
 ├── items/                      # Item JSON definitions
@@ -146,6 +148,14 @@ data/
     └── base_npcs.json
 
 tests/                          # pytest test suite
+
+web-demo/                       # Browser-based test/demo client (vanilla HTML/CSS/JS)
+├── index.html                  # Main page with auth, game viewport, combat overlay
+├── css/
+│   └── style.css               # Dark theme, tile rendering, card styling
+├── js/
+│   └── game.js                 # WebSocket client, state management, all UI logic
+└── jsconfig.json               # IDE type-checking config
 ```
 
 ### 3.2 System Relationships

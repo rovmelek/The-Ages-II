@@ -48,14 +48,14 @@ def test_session_factory(async_engine):
 
 @pytest.fixture
 def room_manager():
-    """RoomManager with test_room (with chest + NPC) and cave."""
+    """RoomManager with town_square (with chest + NPC) and cave."""
     mgr = RoomManager()
 
     tiles = [[0] * 10 for _ in range(10)]
     tiles[5][9] = 2  # EXIT at (9, 5)
 
     room = RoomInstance(
-        room_key="test_room", name="Test Room", width=10, height=10,
+        room_key="town_square", name="Town Square", width=10, height=10,
         tile_data=tiles,
         exits=[{"x": 9, "y": 5, "target_room": "cave", "entry_x": 1, "entry_y": 5}],
         objects=[{
@@ -65,7 +65,7 @@ def room_manager():
         }],
         spawn_points=[{"type": "player", "x": 0, "y": 0}],
     )
-    mgr._rooms["test_room"] = room
+    mgr._rooms["town_square"] = room
 
     npc = NpcEntity(
         id="npc_slime_1", npc_key="slime", name="Slime",
@@ -78,7 +78,7 @@ def room_manager():
     cave = RoomInstance(
         room_key="cave", name="Dark Cave", width=10, height=10,
         tile_data=cave_tiles,
-        exits=[{"x": 0, "y": 5, "target_room": "test_room", "entry_x": 8, "entry_y": 5}],
+        exits=[{"x": 0, "y": 5, "target_room": "town_square", "entry_x": 8, "entry_y": 5}],
         spawn_points=[{"type": "player", "x": 1, "y": 5}],
     )
     mgr._rooms["cave"] = cave
@@ -136,7 +136,7 @@ def _login(ws, username="hero", password="secret123"):
 
 
 def _reset_npc(room_manager, hp=1, attack=1):
-    npc = room_manager._rooms["test_room"].get_npc("npc_slime_1")
+    npc = room_manager._rooms["town_square"].get_npc("npc_slime_1")
     if npc:
         npc.is_alive = True
         npc.x = 0
@@ -162,7 +162,7 @@ class TestRegisterAndLogin:
             assert login_resp["type"] == "login_success"
             assert login_resp["username"] == "hero"
             assert room_resp["type"] == "room_state"
-            assert room_resp["room_key"] == "test_room"
+            assert room_resp["room_key"] == "town_square"
             assert "entities" in room_resp
             assert "tiles" in room_resp
 

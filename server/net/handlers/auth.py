@@ -82,8 +82,8 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
             stats=player.stats or {},
         )
 
-        # Determine room (default to test_room for first login)
-        room_key = player.current_room_id or "test_room"
+        # Determine room (default to town_square for first login)
+        room_key = player.current_room_id or "town_square"
 
         # Load room if not already in memory
         room = game.room_manager.get_room(room_key)
@@ -95,6 +95,17 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
                 )
                 return
             room = game.room_manager.load_room(room_db)
+
+        # Override position for new players spawning at DB default (0,0)
+        if entity.x == 0 and entity.y == 0:
+            sx, sy = room.get_player_spawn()
+            if sx != 0 or sy != 0:
+                entity.x = sx
+                entity.y = sy
+            else:
+                # Fallback to room center if no spawn point
+                entity.x = room.width // 2
+                entity.y = room.height // 2
 
         # Place entity in room and register WebSocket connection
         room.add_entity(entity)

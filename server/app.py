@@ -5,6 +5,8 @@ import json
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import FileResponse
 
 from server.core.config import settings
 from server.core.database import async_session, init_db
@@ -253,3 +255,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             await game.router.route(websocket, data)
     except WebSocketDisconnect:
         await game.handle_disconnect(websocket)
+
+
+@app.get("/")
+async def index():
+    return FileResponse("web-demo/index.html")
+
+
+app.mount("/static", StaticFiles(directory="web-demo"), name="static")

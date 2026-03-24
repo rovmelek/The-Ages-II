@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="/static/">
+  <title>The Ages II</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Connection Status -->
+  <div id="connection-status">
+    <span id="status-dot" class="dot dot-disconnected"></span>
+    <span id="status-text">Disconnected</span>
+  </div>
+
+  <!-- Auth Screen -->
+  <div id="auth-screen">
+    <div class="auth-card">
+      <h1>The Ages II</h1>
+      <div id="auth-message"></div>
+
+      <div class="auth-section">
+        <h2>Register</h2>
+        <form id="register-form">
+          <input type="text" id="reg-username" placeholder="Username (3+ chars)" minlength="3" required>
+          <input type="password" id="reg-password" placeholder="Password (6+ chars)" minlength="6" required>
+          <button type="submit">Register</button>
+        </form>
+      </div>
+
+      <div class="auth-divider">or</div>
+
+      <div class="auth-section">
+        <h2>Login</h2>
+        <form id="login-form">
+          <input type="text" id="login-username" placeholder="Username" required>
+          <input type="password" id="login-password" placeholder="Password" required>
+          <button type="submit">Login</button>
+        </form>
+      </div>
+
+      <div id="auth-error" class="error-text"></div>
+    </div>
+  </div>
+
+  <!-- Game Screen -->
+  <div id="game-screen" class="hidden">
+    <!-- Left Panel: Stats & Inventory -->
+    <div id="left-panel">
+      <div class="panel-section">
+        <h3>Player</h3>
+        <div id="player-name"></div>
+        <div id="player-position"></div>
+        <div id="room-name"></div>
+      </div>
+
+      <div class="panel-section">
+        <h3>Stats</h3>
+        <div id="stats-display">
+          <div id="hp-section" class="hidden">
+            <div class="stat-label">HP</div>
+            <div class="hp-bar-track">
+              <div id="hp-bar" class="hp-bar-fill"></div>
+            </div>
+            <div id="hp-text" class="stat-value"></div>
+          </div>
+          <div id="shield-section" class="hidden">
+            <div class="stat-label">Shield</div>
+            <div id="shield-text" class="stat-value"></div>
+          </div>
+          <div id="no-stats-text">No combat stats</div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h3>Inventory</h3>
+        <div id="inventory-list"></div>
+      </div>
+    </div>
+
+    <!-- Center Panel: Game Viewport -->
+    <div id="center-panel">
+      <div id="move-error" class="hidden"></div>
+      <div id="game-viewport">
+        <div id="tile-grid"></div>
+      </div>
+    </div>
+
+    <!-- Right Panel: Chat & Message Log -->
+    <div id="right-panel">
+      <div class="panel-section chat-section">
+        <h3>Chat</h3>
+        <div id="chat-log"></div>
+        <div id="chat-input-area">
+          <select id="whisper-target">
+            <option value="">Room (all)</option>
+          </select>
+          <input type="text" id="chat-input" placeholder="Type a message...">
+          <button id="chat-send">Send</button>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="collapsible-header" id="msglog-toggle">
+          <h3>Message Log</h3>
+          <span class="toggle-icon">▼</span>
+        </div>
+        <div id="message-log" class="collapsed"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Combat Overlay -->
+  <div id="combat-overlay" class="hidden">
+    <div id="combat-panel">
+      <h2>Combat</h2>
+      <div id="combat-status"></div>
+
+      <div id="mob-info">
+        <div id="mob-name"></div>
+        <div class="hp-bar-track">
+          <div id="mob-hp-bar" class="hp-bar-fill"></div>
+        </div>
+        <div id="mob-hp-text"></div>
+      </div>
+
+      <div id="combat-player-info">
+        <div id="combat-player-name"></div>
+        <div class="hp-bar-track">
+          <div id="combat-hp-bar" class="hp-bar-fill"></div>
+        </div>
+        <div id="combat-hp-text"></div>
+        <div id="combat-shield-text"></div>
+      </div>
+
+      <div id="combat-result"></div>
+
+      <div id="card-hand"></div>
+
+      <div id="combat-actions">
+        <button id="btn-pass-turn">Pass Turn</button>
+        <button id="btn-flee">Flee</button>
+      </div>
+
+      <div id="combat-inventory">
+        <h4>Items</h4>
+        <div id="combat-inventory-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/game.js"></script>
+</body>
+</html>

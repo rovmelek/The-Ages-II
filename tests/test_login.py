@@ -41,14 +41,14 @@ def room_manager():
 
     mgr = RoomManager()
     room = RoomInstance(
-        room_key="test_room",
-        name="Test Room",
+        room_key="town_square",
+        name="Town Square",
         width=5,
         height=5,
         tile_data=[[0] * 5 for _ in range(5)],
         exits=[{"x": 4, "y": 4, "target_room": "cave_1", "entry_x": 0, "entry_y": 0}],
     )
-    mgr._rooms["test_room"] = room
+    mgr._rooms["town_square"] = room
     return mgr
 
 
@@ -205,14 +205,14 @@ def test_login_empty_password(client):
 
 
 def test_login_no_current_room_uses_default(client, room_manager):
-    """New player with no current_room_id should land in test_room."""
+    """New player with no current_room_id should land in town_square."""
     _register_player(client)
     with client.websocket_connect("/ws/game") as ws:
         ws.send_json({"action": "login", "username": "hero", "password": "secret123"})
         ws.receive_json()  # login_success
         room_resp = ws.receive_json()
         assert room_resp["type"] == "room_state"
-        assert room_resp["room_key"] == "test_room"
+        assert room_resp["room_key"] == "town_square"
 
 
 def test_login_room_not_found(client, room_manager, test_session_factory):

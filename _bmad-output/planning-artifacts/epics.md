@@ -1,9 +1,10 @@
 ---
-stepsCompleted: ["step-01-validate-prerequisites", "step-02-design-epics", "step-03-create-stories"]
+stepsCompleted: ["step-01-validate-prerequisites", "step-02-design-epics", "step-03-create-stories", "step-04-final-validation"]
 inputDocuments:
   - "THE_AGES_SERVER_PLAN.md"
   - "_bmad-output/planning-artifacts/architecture.md"
   - "_bmad-output/planning-artifacts/execution-plan.md"
+  - "_bmad-output/implementation-artifacts/tech-spec-web-test-client.md"
 ---
 
 # The-Ages-II - Epic Breakdown
@@ -66,6 +67,14 @@ FR47: Item effect resolution via same shared effect registry as cards
 FR48: Game class as central orchestrator owning all managers and services
 FR49: Server startup sequence: init DB, load rooms, spawn NPCs, load cards/items, register handlers
 FR50: Player disconnect handling: save position, remove from room, notify other players
+FR51: Spawn point resolution — new players placed at room's configured player spawn point, not default (0,0) which may be a wall tile; spawn point must be validated as walkable after static objects are applied, with fallback to first walkable floor tile; change default room from "test_room" to "town_square" and call get_player_spawn() for first-time players (detect via current_room_id is None); save current_room_id to DB after first placement to avoid re-detecting first-time on subsequent logins
+FR52: Player stats persistence — hp, max_hp, and attack are persisted to database on every HP change (save once after the complete action resolves, not after each individual effect within an action) and restored on login; shield resets to 0 on combat end and is NOT persisted (combat-only buffer); defaults (hp=100, max_hp=100, attack=10) applied only on first login when stats are empty; only whitelisted keys (hp, max_hp, attack) are persisted — unknown keys stripped before save to prevent injection; when an action modifies both stats and inventory (e.g., using a consumable), both changes must be committed in a single DB transaction; on disconnect, batch all player-state saves (stats + inventory + position) into one transaction
+FR53: Death/respawn mechanic — defeated players respawn at town_square spawn point with full HP (deliberate design choice: town is safe zone, walking back is the time cost); no death penalty for prototype (no XP/item/gold loss); synchronous cleanup sequence: combat removal → in_combat flag clear → set stats to respawn values → save all state to DB (stats + position + room_key = town_square) → THEN in-memory room transfer and broadcast (DB save before transfer ensures crash recovery places player correctly); respawn logic encapsulated as game.respawn_player(entity_id) method on Game class, not in combat handler directly; no immediate re-encounter with respawning mobs; unclean disconnect during combat is treated as flee (player removed from combat, combat continues for others)
+FR54: Inventory persistence — player inventory saved to database on every mutation (pickup, use, trade, loot, and disconnect) and restored on login, not recreated empty on each login; items retained on death (no item loss for prototype); Inventory class needs to_dict/from_dict methods for DB round-tripping — from_dict takes an item lookup callable (str) -> ItemDef to hydrate runtime objects without coupling Inventory to Game; chest loot granting must use upsert pattern to prevent duplication under concurrent access
+FR55: Duplicate login protection — server kicks existing session when same account logs in concurrently; for prototype, kick immediately (deferred kick until current message handler completes is a production optimization); kick cleanup order: remove entity from room → remove from connection_manager immediately (do not wait for disconnect event) → close WebSocket → proceed with new login; old session's state is saved before kick; any active combat is forfeited (player removed from combat instance)
+FR56: NPC death state broadcast — after combat victory, server rebroadcasts room_state to all players in the room so all clients see the NPC as dead (using existing room_state format ensures consistent state); also fix pre-existing bug: NPC is_alive is currently set False at encounter time (movement.py:101), not at victory — must change to set is_alive=False only on combat victory and use an in_combat flag at encounter instead; add in_combat: bool field to NpcEntity dataclass; to_dict() must NOT expose in_combat (server-internal); encounter check must verify both is_alive and not in_combat; NPC in_combat flag is purely in-memory, not persisted to DB — server restart resets all NPCs to available state; note: targeted npc_update message is the production optimization path but room_state rebroadcast is sufficient for prototype
+FR57: Card cost enforcement — implement mana/energy resource system so card cost field has mechanical meaning, or remove cost field
+FR58: Vertical room exits — support stairs/ladders with new tile types (STAIRS_UP, STAIRS_DOWN); requires direction disambiguation since movement "up"/"down" means north/south on grid while vertical exit "up"/"down" means ascend/descend — consider "ascend"/"descend" exit directions or interact-based triggering
 
 ### NonFunctional Requirements
 
@@ -92,7 +101,7 @@ NFR8: Room entry payload optimized (~50KB for 100x100 grid with integer tile typ
 
 ### UX Design Requirements
 
-N/A — no client UI in scope for this prototype. Server-only implementation tested via pytest, curl, and websocat.
+Web demo client (`web-demo/`) implemented as a proof-of-concept test tool. Vanilla HTML/CSS/JS served by FastAPI StaticFiles mount. Covers: auth, tile viewport, movement, chat, combat with cards, inventory, object interaction, stats display, server message log. Production client planned in Godot. Tech spec: `_bmad-output/implementation-artifacts/tech-spec-web-test-client.md`.
 
 ### FR Coverage Map
 
@@ -148,6 +157,14 @@ N/A — no client UI in scope for this prototype. Server-only implementation tes
 | FR48 | Epic 1 | Game orchestrator class |
 | FR49 | Epic 1 | Server startup sequence |
 | FR50 | Epic 1 | Disconnect handling |
+| FR51 | Epic 7 | Spawn point resolution |
+| FR52 | Epic 7 | Player stats persistence |
+| FR53 | Epic 7 | Death/respawn mechanic |
+| FR54 | Epic 7 | Inventory persistence |
+| FR55 | Epic 7 | Duplicate login protection |
+| FR56 | Epic 7 | NPC death state broadcast |
+| FR57 | Epic 8 | Card cost enforcement |
+| FR58 | Epic 8 | Vertical room exits |
 
 ## Epic List
 
@@ -173,6 +190,16 @@ Players can collect items from chests, manage an inventory with unlimited stacki
 
 ### Epic 6: Integration, Sample Data & Testing
 The complete prototype gameplay loop works end-to-end with sample content — two rooms (Town Square, Dark Cave), a 15-card base set, consumable items, hostile NPCs. Comprehensive test suite covers all systems. Full gameplay loop verified: Register → Login → Explore → Interact → Combat → Collect → Transition.
+
+### Epic 7: Server Hardening
+Players experience a reliable, persistent game world — spawning at valid positions, keeping their stats and inventory across sessions, recovering from defeat, seeing accurate NPC states, and being protected from concurrent login abuse.
+**FRs covered:** FR51, FR52, FR53, FR54, FR55, FR56
+**Dependencies:** Only FR52 → FR53 is a hard dependency (death/respawn needs persisted stats). All other stories are logically independent but FR51, FR52, FR54, FR55 all modify auth.py, so sequencing avoids merge conflicts. Recommended order (score-optimized): FR51 (quick win, player impact) → FR52 (highest priority, blocks FR53) → FR54 (high risk persistence) → FR53 (needs FR52) → FR55 (robustness) → FR56 (low-impact visual fix).
+**Cross-cutting AC:** Each story must update existing tests to reflect new behavior and leave the full test suite green. Known test impacts: test_login.py:215 (spawn position), test_integration.py:165 (empty inventory).
+
+### Epic 8: World Expansion
+The game world grows with new mechanics — vertical room exits (stairs/ladders), and a mana/energy resource system that gives card costs mechanical meaning. Note: FR57 and FR58 are independent features grouped by implementation phase (both require design decisions before implementation), not by user journey.
+**FRs covered:** FR57, FR58
 
 ---
 
@@ -1073,3 +1100,303 @@ So that the end-to-end player experience is verified.
 14. Disconnect → position saved, other players notified
 
 **And** all integration tests pass with `pytest tests/`
+
+---
+
+## Epic 7: Server Hardening
+
+Players experience a reliable, persistent game world — spawning at valid positions, keeping their stats and inventory across sessions, recovering from defeat, seeing accurate NPC states, and being protected from concurrent login abuse.
+
+### Story 7.1: Spawn Point Resolution
+
+As a new player,
+I want to spawn at a safe, walkable location when I first log in,
+So that I can immediately start exploring without being stuck in a wall.
+
+**Acceptance Criteria:**
+
+**Given** a newly registered player logs in for the first time (current_room_id is None)
+**When** the server processes the login
+**Then** the default room is "town_square" (not "test_room")
+**And** the player is placed at the room's configured player spawn point via `get_player_spawn()`
+**And** the spawn point is validated as walkable after static objects are applied
+**And** if the spawn point is blocked, the player is placed at the first walkable floor tile
+**And** `current_room_id`, `position_x`, and `position_y` are saved to the DB after placement
+
+**Given** a returning player logs in (current_room_id is not None)
+**When** the server processes the login
+**Then** the player is placed at their saved position in their saved room (existing behavior unchanged)
+
+**Given** existing tests assert spawn at (0,0) or default room "test_room"
+**When** the story is complete
+**Then** all affected tests are updated to reflect "town_square" and spawn point placement
+**And** `pytest tests/` passes with no failures
+
+### Story 7.2: Player Stats Persistence
+
+As a player,
+I want my HP and stats to be saved and restored between sessions,
+So that damage I take and progress I make persists across logins and server restarts.
+
+**Acceptance Criteria:**
+
+**Given** a first-time player logs in with empty stats in DB
+**When** the server creates their entity
+**Then** defaults are applied: hp=100, max_hp=100, attack=10
+**And** these defaults are saved to the DB
+
+**Given** a player's HP changes during combat (damage taken, heal, shield consumed)
+**When** the complete action resolves (not per individual effect)
+**Then** stats are saved to the DB with only whitelisted keys: hp, max_hp, attack
+**And** unknown keys are stripped before save
+
+**Given** a player uses a consumable item that modifies both stats and inventory
+**When** the action completes
+**Then** both stats and inventory changes are committed in a single DB transaction
+
+**Given** a player disconnects
+**When** the disconnect handler fires
+**Then** all player state (stats + inventory + position) is batched into one DB transaction
+
+**Given** combat ends
+**When** cleanup runs
+**Then** shield is reset to 0 (NOT persisted — combat-only buffer)
+
+**Given** a player logs back in after disconnect or server restart
+**When** the server loads their entity
+**Then** stats are restored from DB (hp, max_hp, attack) — not reset to defaults
+
+**Given** `player/repo.py` currently has no `update_stats()` method
+**When** the story is complete
+**Then** a stats update method exists and all affected tests pass
+
+### Story 7.3: Inventory Persistence
+
+As a player,
+I want my inventory to be saved and restored between sessions,
+So that items I collect aren't lost when I log out or the server restarts.
+
+**Acceptance Criteria:**
+
+**Given** a player picks up an item (chest loot, combat reward)
+**When** the item is added to inventory
+**Then** the inventory is saved to the DB immediately
+
+**Given** a player uses a consumable item
+**When** the charge is consumed
+**Then** the inventory is saved to the DB (in the same transaction as any stats changes)
+
+**Given** a player logs in
+**When** the server creates their entity
+**Then** inventory is restored from the DB `inventory` JSON column using `Inventory.from_dict(data, item_lookup)`
+**And** `from_dict` takes an item lookup callable `(str) -> ItemDef` to hydrate runtime objects without coupling Inventory to Game
+
+**Given** `Inventory` class currently has no `to_dict()`/`from_dict()` methods
+**When** the story is complete
+**Then** `to_dict()` serializes to `{item_key: quantity}` pairs suitable for DB storage
+**And** `from_dict(data, item_lookup)` reconstructs the Inventory with hydrated ItemDef objects
+**And** round-trip is verified: `from_dict(to_dict()) == original`
+
+**Given** a player dies in combat
+**When** respawn occurs
+**Then** items are retained (no item loss for prototype)
+
+**Given** two concurrent sessions interact with the same chest (before FR55)
+**When** both attempt to loot
+**Then** chest loot granting uses upsert pattern (INSERT ON CONFLICT DO NOTHING) to prevent duplication
+
+**Given** `test_integration.py:165` asserts empty inventory on login
+**When** the story is complete
+**Then** the test is updated and `pytest tests/` passes
+
+### Story 7.4: Death & Respawn
+
+As a player,
+I want to respawn in town after being defeated,
+So that death isn't permanent and I can try again.
+
+**Acceptance Criteria:**
+
+**Given** all players' HP reaches 0 in combat (defeat)
+**When** combat ends
+**Then** `game.respawn_player(entity_id)` is called for each defeated player
+
+**Given** `game.respawn_player(entity_id)` is called
+**When** the respawn executes
+**Then** the synchronous cleanup sequence runs: combat removal → in_combat flag clear → set HP to max_hp → save all state to DB (stats + position + room_key = "town_square") → THEN in-memory room transfer to town_square at spawn point → broadcast entity_entered to town players
+**And** DB save happens BEFORE in-memory room transfer (crash recovery places player correctly)
+
+**Given** a player respawns in town_square
+**When** the respawn completes
+**Then** no death penalty is applied (no XP/item/gold loss — prototype)
+**And** the player has full HP at the town spawn point
+
+**Given** a player disconnects uncleanly during combat
+**When** the disconnect handler fires
+**Then** the player is treated as having fled (removed from combat, combat continues for others)
+
+**Given** a player respawns in town_square
+**When** an NPC is near the town_square spawn point
+**Then** the player does not immediately re-enter combat (town_square has no hostile NPCs)
+
+**Given** the server crashes mid-respawn (after DB save, before room transfer)
+**When** the player logs back in
+**Then** they are placed in town_square at the spawn point with full HP (from DB state)
+
+### Story 7.5: Duplicate Login Protection
+
+As a player,
+I want to be able to reconnect if my browser crashes,
+So that I'm not locked out of my account by a stale session.
+
+**Acceptance Criteria:**
+
+**Given** a player is already logged in with an active WebSocket session
+**When** the same account logs in from a new connection
+**Then** the old session is kicked immediately (deferred kick is a production optimization)
+
+**Given** the old session is kicked
+**When** the kick executes
+**Then** the cleanup order is: save old session's state (stats + inventory + position) → remove entity from room → remove from connection_manager immediately (do not wait for disconnect event) → close old WebSocket → proceed with new login
+
+**Given** the old session is in active combat when kicked
+**When** the kick fires
+**Then** the player is removed from the combat instance (forfeited)
+**And** combat continues for remaining participants
+
+**Given** the old WebSocket close handshake fails (network degraded)
+**When** the close attempt times out or errors
+**Then** the entity and connection_manager entries are already cleaned up (cleanup happens before close)
+**And** no zombie socket blocks future broadcasts
+
+**Given** no existing session for the account
+**When** the player logs in
+**Then** login proceeds normally (no kick needed)
+
+### Story 7.6: NPC Death State Broadcast
+
+As a player,
+I want to see NPCs disappear from the room when someone defeats them,
+So that the world state is consistent for all players.
+
+**Acceptance Criteria:**
+
+**Given** `NpcEntity` dataclass exists
+**When** the story is complete
+**Then** an `in_combat: bool = False` field is added to `NpcEntity`
+**And** `to_dict()` does NOT include `in_combat` (server-internal state)
+
+**Given** a player walks onto a hostile NPC's tile
+**When** the encounter is detected in `room.py:move_entity`
+**Then** the encounter check verifies both `is_alive` and `not in_combat`
+**And** `npc.in_combat` is set to `True` (NOT `is_alive = False`)
+**And** `is_alive` remains `True` until combat victory
+
+**Given** combat ends with victory (mob HP ≤ 0)
+**When** combat resolution runs
+**Then** `npc.is_alive` is set to `False`
+**And** `npc.in_combat` is set to `False`
+**And** a `room_state` rebroadcast is sent to all players in the room
+
+**Given** combat ends with defeat or all players flee
+**When** combat resolution runs
+**Then** `npc.in_combat` is set to `False` (NPC returns to available)
+**And** `npc.is_alive` remains `True`
+
+**Given** the server restarts
+**When** NPCs are reloaded
+**Then** `in_combat` defaults to `False` (purely in-memory, not persisted to DB)
+**And** all NPCs are available for encounters
+
+**Given** `movement.py:101` currently sets `npc.is_alive = False` at encounter
+**When** the story is complete
+**Then** this line is changed to set `npc.in_combat = True` instead
+**And** all affected tests are updated and `pytest tests/` passes
+
+---
+
+## Epic 8: World Expansion
+
+The game world grows with new mechanics — vertical room exits (stairs/ladders), and a mana/energy resource system that gives card costs mechanical meaning. Note: FR57 and FR58 are independent features grouped by implementation phase (both require design decisions before implementation), not by user journey.
+
+### Story 8.1: Card Cost & Energy System
+
+As a player,
+I want cards to cost energy to play so I have to make strategic choices each turn,
+So that combat has meaningful resource management beyond just picking the best card.
+
+**Acceptance Criteria:**
+
+**Given** a player enters combat
+**When** the CombatInstance is created
+**Then** the player starts with a configured energy amount (default: 10)
+**And** energy is included in the `combat_start` message
+**And** energy is included in every `combat_turn` message
+
+**Given** it is a player's turn and they play a card with cost > 0
+**When** the card is played
+**Then** the player's energy is reduced by the card's cost
+**And** if the player doesn't have enough energy, the play is rejected with error: "Not enough energy"
+
+**Given** a new combat cycle begins (all participants have acted)
+**When** the cycle resets
+**Then** each player regenerates a configured amount of energy (default: 3 per cycle, capped at max)
+
+**Given** a player uses an item during combat
+**When** the item is used
+**Then** no energy is consumed (items are free — energy is a card-only resource)
+
+**Given** a player passes their turn
+**When** the pass is processed
+**Then** no energy is consumed
+
+**Given** `data/cards/base_set.json` has cards with `cost: 0`
+**When** the story is complete
+**Then** card costs are rebalanced: cheap cards (cost 1-2), medium cards (cost 3-4), expensive cards (cost 5-7)
+**And** the sum of costs across a typical hand allows meaningful play with starting energy
+
+**Given** energy values need to be tunable
+**When** the story is complete
+**Then** `COMBAT_STARTING_ENERGY` and `COMBAT_ENERGY_REGEN` are added to server config (Pydantic BaseSettings)
+
+**And** all existing combat tests are updated and `pytest tests/` passes
+
+### Story 8.2: Vertical Room Exits
+
+As a player,
+I want to climb stairs and descend ladders to reach rooms above or below,
+So that the world has vertical depth beyond flat horizontal connections.
+
+**Acceptance Criteria:**
+
+**Given** the `TileType` enum exists with FLOOR=0, WALL=1, EXIT=2, MOB_SPAWN=3, WATER=4
+**When** the story is complete
+**Then** `STAIRS_UP=5` and `STAIRS_DOWN=6` are added to the enum
+**And** both are added to `WALKABLE_TILES`
+
+**Given** a player walks onto a `STAIRS_UP` or `STAIRS_DOWN` tile
+**When** `room.py:move_entity` processes the move
+**Then** exit detection triggers for stairs tiles (same as EXIT tiles)
+**And** the exit info is returned in the move result
+
+**Given** room JSON `exits` array has entries for vertical exits
+**When** the exit is configured
+**Then** vertical exits use `"direction": "ascend"` or `"direction": "descend"` (NOT "up"/"down" which collide with movement direction strings)
+
+**Given** movement direction strings are "up"/"down"/"left"/"right" (grid directions)
+**When** a vertical exit is processed
+**Then** "ascend"/"descend" are used exclusively for exit metadata — no collision with movement input
+
+**Given** the client renders tiles
+**When** a STAIRS_UP or STAIRS_DOWN tile is encountered
+**Then** the tile type ID (5 or 6) is included in the room_state tiles grid for client rendering
+
+**Given** existing room JSON files use tile values 0-4
+**When** the new tile types are added
+**Then** no existing room data is affected (5 and 6 were not used previously)
+
+**Given** existing tests assert `TileType` has specific values
+**When** the story is complete
+**Then** tile tests are updated to include STAIRS_UP and STAIRS_DOWN
+**And** walkability tests verify both are walkable
+**And** `pytest tests/` passes

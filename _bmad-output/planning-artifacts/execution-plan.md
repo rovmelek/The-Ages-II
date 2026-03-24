@@ -17,7 +17,7 @@ Implementing the game server using the BMAD GDS module workflow. The architectur
 - **Skip GDS Phases 1–2** (Game Brief, GDD) — architecture designed directly in planning sessions
 - **Architecture designed in Phase 3** — captured in `architecture.md`
 - **No storyline/narrative** for now — focus on playable gameplay core
-- **No game client yet** — test server-side with pytest, curl, websocat
+- **Web demo client implemented** (`web-demo/`) — vanilla HTML/CSS/JS proof-of-concept for testing and demos; production client planned in Godot
 - **Story-by-story granularity** — one story per session for easier verification
 - **Domain-driven directory structure** — `core/`, `net/`, `player/`, `room/`, `combat/`, `items/`, `web/`
 - **JSON-driven game content** — rooms, cards, items, NPCs defined in JSON config files
@@ -48,7 +48,7 @@ Implementing the game server using the BMAD GDS module workflow. The architectur
 
 Each step should be run in a **fresh context window** per BMAD best practice.
 
-### Step 1: Create Epics and Stories [CURRENT]
+### Step 1: Create Epics and Stories [DONE]
 
 - **Command**: `/gds-create-epics-and-stories`
 - **Input**: `architecture.md` + `THE_AGES_SERVER_PLAN.md`
@@ -85,3 +85,4 @@ Each step should be run in a **fresh context window** per BMAD best practice.
 - **After each story**: `pytest tests/`
 - **After networking stories**: `websocat ws://localhost:8000/ws/game`
 - **After full sprint**: `curl localhost:8000/health` + end-to-end WebSocket gameplay test
+- **Web demo client**: Open `http://localhost:8000/` to test visually in browser
