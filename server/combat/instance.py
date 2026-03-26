@@ -21,10 +21,14 @@ class CombatInstance:
         mob_name: str = "",
         mob_stats: dict | None = None,
         effect_registry: EffectRegistry | None = None,
+        npc_id: str | None = None,
+        room_key: str | None = None,
     ) -> None:
         self.instance_id = instance_id or str(uuid.uuid4())
         self.mob_name = mob_name
         self.mob_stats: dict = dict(mob_stats) if mob_stats else {"hp": 50, "max_hp": 50, "attack": 10}
+        self.npc_id = npc_id
+        self.room_key = room_key
         self.participants: list[str] = []  # entity_ids in turn order
         self.participant_stats: dict[str, dict] = {}  # entity_id -> stats dict
         self.hands: dict[str, CardHand] = {}  # entity_id -> CardHand
@@ -36,9 +40,13 @@ class CombatInstance:
         self, entity_id: str, player_stats: dict, card_defs: list[CardDef]
     ) -> CardHand:
         """Add a player to this combat. Returns their CardHand."""
+        from server.core.config import settings
+
         self.participants.append(entity_id)
         self.participant_stats[entity_id] = dict(player_stats)
         self.participant_stats[entity_id].setdefault("shield", 0)
+        self.participant_stats[entity_id].setdefault("energy", settings.COMBAT_STARTING_ENERGY)
+        self.participant_stats[entity_id].setdefault("max_energy", settings.COMBAT_STARTING_ENERGY)
         hand = CardHand(card_defs)
         self.hands[entity_id] = hand
         return hand
@@ -116,18 +124,40 @@ class CombatInstance:
         if self.participant_stats[entity_id]["hp"] <= 0:
             raise ValueError("You are dead")
 
+        # Process DoT effects at start of turn
+        dot_ticks = self._process_dot_effects(self.mob_stats, self.mob_name)
+        dot_ticks += self._process_dot_effects(self.participant_stats[entity_id], entity_id)
+
+        # If DoT killed the mob or this player, skip the action
+        if self.is_finished:
+            result: dict = {"action": "play_card", "entity_id": entity_id}
+            if dot_ticks:
+                result["dot_ticks"] = dot_ticks
+            return result
+
         hand = self.hands[entity_id]
+        stats = self.participant_stats[entity_id]
+
+        # Check energy cost before playing
+        card_cost = hand.get_card_cost(card_key)
+        if stats.get("energy", 0) < card_cost:
+            raise ValueError("Not enough energy")
+
         played = hand.play_card(card_key)
+        stats["energy"] -= card_cost
 
         # Resolve card effects through EffectRegistry
         effect_results = await self.resolve_card_effects(entity_id, played)
 
-        result: dict = {
+        result = {
             "action": "play_card",
             "entity_id": entity_id,
             "card": played.to_dict(),
             "effect_results": effect_results,
         }
+
+        if dot_ticks:
+            result["dot_ticks"] = dot_ticks
 
         # Advance turn — may trigger mob attack at end of cycle
         mob_attack = self._advance_turn()
@@ -145,6 +175,17 @@ class CombatInstance:
             raise ValueError("Not your turn")
         if self.participant_stats[entity_id]["hp"] <= 0:
             raise ValueError("You are dead")
+
+        # Process DoT effects at start of turn
+        dot_ticks = self._process_dot_effects(self.mob_stats, self.mob_name)
+        dot_ticks += self._process_dot_effects(self.participant_stats[entity_id], entity_id)
+
+        # If DoT killed the mob or this player, skip the action
+        if self.is_finished:
+            result: dict = {"action": "use_item", "entity_id": entity_id}
+            if dot_ticks:
+                result["dot_ticks"] = dot_ticks
+            return result
 
         if self._effect_registry is None:
             effect_results: list[dict] = []
@@ -170,6 +211,9 @@ class CombatInstance:
             "effect_results": effect_results,
         }
 
+        if dot_ticks:
+            result["dot_ticks"] = dot_ticks
+
         # Advance turn — may trigger mob attack at end of cycle
         mob_attack = self._advance_turn()
         if mob_attack:
@@ -184,6 +228,17 @@ class CombatInstance:
         if self.participant_stats[entity_id]["hp"] <= 0:
             raise ValueError("You are dead")
 
+        # Process DoT effects at start of turn
+        dot_ticks = self._process_dot_effects(self.mob_stats, self.mob_name)
+        dot_ticks += self._process_dot_effects(self.participant_stats[entity_id], entity_id)
+
+        # If DoT killed the mob or this player, skip the action
+        if self.is_finished:
+            result: dict = {"action": "pass_turn", "entity_id": entity_id}
+            if dot_ticks:
+                result["dot_ticks"] = dot_ticks
+            return result
+
         # Mob attacks the player who passed
         mob_attack = self._mob_attack_target(entity_id)
 
@@ -193,12 +248,60 @@ class CombatInstance:
             "mob_attack": mob_attack,
         }
 
+        if dot_ticks:
+            result["dot_ticks"] = dot_ticks
+
         # Advance turn — may also trigger cycle-end mob attack
         cycle_attack = self._advance_turn()
         if cycle_attack:
             result["cycle_mob_attack"] = cycle_attack
 
         return result
+
+    def _process_dot_effects(self, target_stats: dict, target_label: str) -> list[dict]:
+        """Tick all active DoT effects on a target.
+
+        Applies damage (respecting shield), decrements remaining, removes expired.
+        Returns list of tick result dicts for client display.
+        """
+        active = target_stats.get("active_effects")
+        if not active:
+            return []
+
+        results: list[dict] = []
+        surviving: list[dict] = []
+
+        for dot in active:
+            if dot.get("type") != "dot":
+                surviving.append(dot)
+                continue
+
+            value = dot.get("value", 0)
+
+            # Apply damage respecting shield
+            shield = target_stats.get("shield", 0)
+            absorbed = min(shield, value)
+            target_stats["shield"] = shield - absorbed
+            actual_damage = value - absorbed
+            target_stats["hp"] = max(0, target_stats["hp"] - actual_damage)
+
+            dot["remaining"] -= 1
+
+            results.append({
+                "type": "dot_tick",
+                "subtype": dot.get("subtype", "generic"),
+                "value": actual_damage,
+                "shield_absorbed": absorbed,
+                "target": target_label,
+                "target_hp": target_stats["hp"],
+                "remaining": dot["remaining"],
+            })
+
+            if dot["remaining"] > 0:
+                surviving.append(dot)
+
+        target_stats["active_effects"] = surviving
+        return results
 
     def _advance_turn(self) -> dict | None:
         """Advance to next participant. Returns mob attack if cycle complete."""
@@ -211,6 +314,16 @@ class CombatInstance:
             if self.participants:
                 target = random.choice(self.participants)
                 mob_attack = self._mob_attack_target(target)
+
+                # Regenerate energy for all alive participants at cycle end
+                from server.core.config import settings
+                for eid in self.participants:
+                    s = self.participant_stats[eid]
+                    if s["hp"] > 0:
+                        s["energy"] = min(
+                            s.get("energy", 0) + settings.COMBAT_ENERGY_REGEN,
+                            s.get("max_energy", settings.COMBAT_STARTING_ENERGY),
+                        )
 
         self._turn_index = (self._turn_index + 1) % max(1, len(self.participants))
 
@@ -251,6 +364,8 @@ class CombatInstance:
                 "hp": s["hp"],
                 "max_hp": s["max_hp"],
                 "shield": s.get("shield", 0),
+                "energy": s.get("energy", 0),
+                "max_energy": s.get("max_energy", 0),
             })
 
         hands = {}

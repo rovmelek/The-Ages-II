@@ -76,6 +76,20 @@ class RoomInstance:
                 return (sp["x"], sp["y"])
         return (0, 0)
 
+    def is_walkable(self, x: int, y: int) -> bool:
+        """Check if tile at (x, y) is walkable and within bounds."""
+        if not (0 <= x < self.width and 0 <= y < self.height):
+            return False
+        return is_walkable(self._grid[y][x])
+
+    def find_first_walkable(self) -> tuple[int, int]:
+        """Scan row-by-row for the first walkable floor tile. Fallback to (0,0)."""
+        for row in range(self.height):
+            for col in range(self.width):
+                if is_walkable(self._grid[row][col]):
+                    return (col, row)
+        return (0, 0)
+
     def get_player_ids(self) -> list[str]:
         """Return all entity IDs currently in the room."""
         return list(self._entities.keys())
@@ -127,7 +141,7 @@ class RoomInstance:
         result: dict = {"success": True, "x": nx, "y": ny}
 
         # Exit detection
-        if tile_value == TileType.EXIT:
+        if tile_value in (TileType.EXIT, TileType.STAIRS_UP, TileType.STAIRS_DOWN):
             exit_info = next(
                 (e for e in self.exits if e["x"] == nx and e["y"] == ny), None
             )
@@ -136,7 +150,7 @@ class RoomInstance:
 
         # NPC encounter detection
         for npc in self._npcs.values():
-            if npc.x == nx and npc.y == ny and npc.is_alive and npc.behavior_type == "hostile":
+            if npc.x == nx and npc.y == ny and npc.is_alive and not npc.in_combat and npc.behavior_type == "hostile":
                 result["mob_encounter"] = {"entity_id": npc.id, "name": npc.name}
                 break
 

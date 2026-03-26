@@ -8,9 +8,14 @@ class TileType(IntEnum):
     EXIT = 2
     MOB_SPAWN = 3
     WATER = 4
+    STAIRS_UP = 5
+    STAIRS_DOWN = 6
 
 
-WALKABLE_TILES: frozenset[TileType] = frozenset({TileType.FLOOR, TileType.EXIT, TileType.MOB_SPAWN})
+WALKABLE_TILES: frozenset[TileType] = frozenset({
+    TileType.FLOOR, TileType.EXIT, TileType.MOB_SPAWN,
+    TileType.STAIRS_UP, TileType.STAIRS_DOWN,
+})
 
 
 def is_walkable(tile_type: int) -> bool:

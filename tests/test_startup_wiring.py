@@ -65,7 +65,7 @@ class TestHandlerRegistration:
                 assert handler_name in game.router._handlers, \
                     f"Handler '{handler_name}' not registered"
         finally:
-            game.shutdown()
+            await game.shutdown()
 
     @pytest.mark.asyncio
     async def test_effect_registry_initialized(self, test_session_factory):
@@ -113,7 +113,7 @@ class TestStartupDataLoading:
         try:
             assert game.room_manager.get_room("town_square") is not None
         finally:
-            game.shutdown()
+            await game.shutdown()
 
     @pytest.mark.asyncio
     async def test_startup_initializes_scheduler(self, test_session_factory):
@@ -130,7 +130,7 @@ class TestStartupDataLoading:
             await game.startup()
 
         assert game.scheduler._running is True
-        game.shutdown()
+        await game.shutdown()
         assert game.scheduler._running is False
 
 

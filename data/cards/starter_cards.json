@@ -30,7 +30,7 @@
   {
     "card_key": "iron_shield",
     "name": "Iron Shield",
-    "cost": 1,
+    "cost": 2,
     "effects": [{"type": "shield", "value": 12}],
     "description": "Raises a protective shield."
   },
@@ -47,7 +47,7 @@
   {
     "card_key": "arcane_surge",
     "name": "Arcane Surge",
-    "cost": 2,
+    "cost": 3,
     "effects": [
       {"type": "damage", "subtype": "arcane", "value": 10},
       {"type": "draw", "value": 1}
@@ -57,7 +57,7 @@
   {
     "card_key": "fortify",
     "name": "Fortify",
-    "cost": 1,
+    "cost": 2,
     "effects": [
       {"type": "shield", "value": 8},
       {"type": "heal", "value": 5}
@@ -67,35 +67,35 @@
   {
     "card_key": "heavy_strike",
     "name": "Heavy Strike",
-    "cost": 2,
+    "cost": 3,
     "effects": [{"type": "damage", "subtype": "physical", "value": 25}],
     "description": "A powerful melee blow."
   },
   {
     "card_key": "flame_wave",
     "name": "Flame Wave",
-    "cost": 2,
+    "cost": 3,
     "effects": [{"type": "damage", "subtype": "fire", "value": 18}],
     "description": "A wave of fire scorches the enemy."
   },
   {
     "card_key": "greater_heal",
     "name": "Greater Heal",
-    "cost": 2,
+    "cost": 3,
     "effects": [{"type": "heal", "value": 30}],
     "description": "Restores a large amount of health."
   },
   {
     "card_key": "steel_wall",
     "name": "Steel Wall",
-    "cost": 2,
+    "cost": 3,
     "effects": [{"type": "shield", "value": 20}],
     "description": "Erects a massive protective barrier."
   },
   {
     "card_key": "venom_fang",
     "name": "Venom Fang",
-    "cost": 1,
+    "cost": 2,
     "effects": [
       {"type": "dot", "subtype": "poison", "value": 6, "duration": 3}
     ],
@@ -111,7 +111,7 @@
   {
     "card_key": "fire_shield",
     "name": "Fire Shield",
-    "cost": 2,
+    "cost": 3,
     "effects": [
       {"type": "shield", "value": 10},
       {"type": "damage", "subtype": "fire", "value": 10}

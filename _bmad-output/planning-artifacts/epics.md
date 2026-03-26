@@ -165,6 +165,9 @@ Web demo client (`web-demo/`) implemented as a proof-of-concept test tool. Vanil
 | FR56 | Epic 7 | NPC death state broadcast |
 | FR57 | Epic 8 | Card cost enforcement |
 | FR58 | Epic 8 | Vertical room exits |
+| FR59 | Epic 9 | Admin authentication (shared secret) |
+| FR60 | Epic 9 | Admin-triggered graceful shutdown |
+| FR61 | Epic 9 | Admin-triggered server restart |
 
 ## Epic List
 
@@ -1400,3 +1403,99 @@ So that the world has vertical depth beyond flat horizontal connections.
 **Then** tile tests are updated to include STAIRS_UP and STAIRS_DOWN
 **And** walkability tests verify both are walkable
 **And** `pytest tests/` passes
+
+---
+
+## Epic 9: Server Administration
+
+Server operators can manage the game server without SSH process management — triggering graceful shutdown or restart via authenticated admin commands, with proper player state preservation and client notification.
+**FRs covered:** FR59, FR60, FR61
+**Dependencies:** 9.1 → 9.2, 9.1 → 9.3 (admin auth must come first). 9.2 and 9.3 are independent of each other.
+
+### Story 9.1: Admin Authentication
+
+As a server operator,
+I want to authenticate as an admin using a shared secret,
+So that only authorized users can trigger server management commands.
+
+**Acceptance Criteria:**
+
+**Given** the server configuration
+**When** the story is complete
+**Then** `ADMIN_SECRET` is added to server config (Pydantic BaseSettings) with no default (must be set to enable admin features)
+
+**Given** an admin REST endpoint is called without the correct secret
+**When** the request is processed
+**Then** it is rejected with 403 Forbidden
+
+**Given** `ADMIN_SECRET` is not configured (empty/None)
+**When** any admin endpoint is called
+**Then** it is rejected with 403 Forbidden and a log warning "Admin endpoints disabled — ADMIN_SECRET not configured"
+
+**Given** the admin secret is provided correctly
+**When** the request is processed
+**Then** the admin action proceeds normally
+
+**And** all existing tests pass after implementation
+
+### Story 9.2: Admin Shutdown Command
+
+As a server operator,
+I want to trigger a graceful server shutdown via an authenticated REST endpoint,
+So that I can shut down the server remotely without killing the process.
+
+**Acceptance Criteria:**
+
+**Given** the admin is authenticated (valid ADMIN_SECRET)
+**When** `POST /admin/shutdown` is called
+**Then** the server responds with `{"status": "shutting_down"}` immediately
+
+**Given** shutdown has been triggered
+**When** the shutdown process runs
+**Then** `Game.shutdown()` is called (saves all player states, notifies clients, closes WebSockets)
+**And** the uvicorn server process exits cleanly after shutdown completes
+
+**Given** a shutdown is already in progress
+**When** another shutdown request arrives
+**Then** it is rejected with `{"status": "already_shutting_down"}`
+
+**Given** players are connected when shutdown is triggered
+**When** the shutdown completes
+**Then** all players have received `server_shutdown` message
+**And** all player states (position, stats, inventory) are saved to DB
+**And** all WebSocket connections are closed with code 1001
+
+**And** all existing tests pass after implementation
+
+### Story 9.3: Server Restart Mechanism
+
+As a server operator,
+I want to trigger a graceful server restart via an authenticated REST endpoint,
+So that I can apply updates or recover from issues without manual process management.
+
+**Acceptance Criteria:**
+
+**Given** the admin is authenticated (valid ADMIN_SECRET)
+**When** `POST /admin/restart` is called
+**Then** the server responds with `{"status": "restarting"}` immediately
+
+**Given** restart has been triggered
+**When** the restart process runs
+**Then** `Game.shutdown()` is called first (saves all states, notifies clients, closes WebSockets)
+**And** the server process re-executes itself (same Python interpreter, same arguments)
+**And** the new process completes startup (init_db, load rooms/cards/items, start scheduler)
+
+**Given** players were connected before restart
+**When** the server comes back up
+**Then** players can reconnect and login to find their saved state (position, stats, inventory) intact
+
+**Given** the restart re-execution fails (e.g., syntax error in updated code)
+**When** the new process cannot start
+**Then** the failure is visible in the process output (no silent failure)
+**And** the old process has already exited (no zombie process)
+
+**Given** a shutdown or restart is already in progress
+**When** a restart request arrives
+**Then** it is rejected with `{"status": "already_shutting_down"}`
+
+**And** all existing tests pass after implementation

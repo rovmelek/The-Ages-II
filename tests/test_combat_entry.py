@@ -129,6 +129,8 @@ def test_combat_start_state_has_required_fields():
     assert state["current_turn"] == "p1"
     assert "participants" in state
     assert len(state["participants"]) == 1
+    assert state["participants"][0]["energy"] == 3
+    assert state["participants"][0]["max_energy"] == 3
     assert state["mob"]["name"] == "Goblin"
     assert state["mob"]["hp"] == 50
     assert "hands" in state

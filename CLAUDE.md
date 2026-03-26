@@ -6,10 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **The-Ages-II** is a multiplayer room-based dungeon game with turn-based card combat. The project combines:
 - A **BMAD framework** (v6.2.0) for AI-assisted design, planning, and project management workflows
-- A **Python game server** (Epics 1-6 complete) built with FastAPI + WebSockets
+- A **Python game server** (Epics 1-9 complete, 53 stories + 8 bug fixes) built with FastAPI + WebSockets
 - A **web demo client** (`web-demo/`) — vanilla HTML/CSS/JS proof-of-concept for testing and demos; production client planned in Godot
 
-The canonical implementation spec is `THE_AGES_SERVER_PLAN.md` — it contains the complete file-by-file server blueprint.
+**Key reference documents:**
+- `_bmad-output/planning-artifacts/architecture.md` — **Authoritative** architecture spec (structure, systems, data models, design decisions)
+- `_bmad-output/project-context.md` — AI agent rules and implementation patterns
+- `THE_AGES_SERVER_PLAN.md` — Original file-by-file blueprint (superseded by architecture.md where conflicts arise)
 
 ## BMAD System Architecture
 
@@ -46,13 +49,14 @@ The canonical implementation spec is `THE_AGES_SERVER_PLAN.md` — it contains t
 - Module configs: `_bmad/<module>/config.yaml`
 - Project context: When created, `project-context.md` serves as the foundational reference for all agents
 
-## Game Server (Implementation In Progress)
+## Game Server
 
 ### Tech Stack
 - **Python 3.11+**, FastAPI, WebSockets (real-time game communication)
 - **SQLAlchemy async** + SQLite (aiosqlite) for persistence
 - **Pydantic** for message schemas and settings
 - **bcrypt** for password hashing
+- **pytest** + **pytest-asyncio** for testing (421 tests total)
 
 ### Commands
 ```bash
@@ -69,31 +73,42 @@ open http://localhost:8000     # web demo client (requires server running)
 
 - **RoomManager** (`server/room/manager.py`) — loads tile-based rooms from JSON files → SQLite → memory
 - **CombatManager** (`server/combat/manager.py`) — creates/tracks `CombatInstance` objects for turn-based card combat
-- **ConnectionManager** (`server/net/connection_manager.py`) — maps WebSocket connections ↔ player entity IDs
+- **ConnectionManager** (`server/net/connection_manager.py`) — maps WebSocket connections ↔ player entity IDs + room tracking
 - **MessageRouter** (`server/net/message_router.py`) — routes incoming JSON by `action` field to handler modules in `server/net/handlers/`
-- **Scheduler** (`server/core/scheduler.py`) — async scheduling for mob respawns and combat countdowns
+- **Scheduler** (`server/core/scheduler.py`) — async scheduling for mob respawns and rare spawn checks
 - **EventBus** (`server/core/events.py`) — global announcements, cross-system triggers
-- **EffectRegistry** (`server/core/effects/`) — shared card + item effect resolution
+- **EffectRegistry** (`server/core/effects/`) — shared card + item effect resolution (damage, heal, shield, dot, draw)
+
+### Key Server Features
+
+- **Combat**: Turn-based card combat with DoT effect ticking (poison/bleed tick each turn), shield absorption, multi-player support
+- **Persistence**: Player stats (`hp`, `max_hp`, `attack`, `xp`), position, and inventory saved on disconnect, room transition, combat end, and server shutdown
+- **Death & Respawn**: Defeated players respawn in `town_square` with full HP
+- **Duplicate Login Protection**: Old session kicked (state saved) when same account logs in from another connection
+- **Graceful Shutdown**: All player states saved, clients notified, WebSockets closed cleanly
+- **NPC Spawning**: Three-tier system (persistent, timed, rare with chance roll + global announcements)
+- **Card Energy System**: Cards cost energy to play (configurable starting energy + per-cycle regen); items and pass are free
+- **Vertical Exits**: Stairs tiles (`STAIRS_UP`/`STAIRS_DOWN`) with `"ascend"`/`"descend"` exit directions (distinct from movement `"up"`/`"down"`)
+- **Admin REST API**: Authenticated endpoints (`/admin/status`, `/admin/shutdown`, `/admin/restart`) protected by `ADMIN_SECRET` env var with `hmac.compare_digest`
 
 ### Directory Structure
 ```
 server/
 ├── core/          # Config, database, scheduler, event bus, shared effect registry
-├── net/           # WebSocket protocol, connection manager, message router
-│   └── handlers/  # auth, movement, chat, combat, inventory, interact
-├── player/        # Player model, repo, entity, auth (bcrypt)
+├── net/           # WebSocket connection manager, message router
+│   └── handlers/  # auth, movement, chat, combat, inventory, interact, admin
+├── player/        # Player model, repo (stats whitelist), entity, auth (bcrypt)
 ├── room/          # Room model, repo, tile system, room instance, manager, provider
-│   └── objects/   # NPC entity, spawner, static/interactive objects
-├── combat/        # Combat instance, manager, turn resolution
+│   └── objects/   # NPC entity, chest, lever, base classes, registry, state
+├── combat/        # Combat instance (DoT ticking, turn resolution), manager
 │   └── cards/     # Card definitions, hand management, card repo
-├── items/         # Item definitions, item repo, inventory
-└── web/           # REST API routes (players, trades, filters)
+├── items/         # Item definitions, item repo, inventory (serialization)
 data/
 ├── rooms/         # Room definitions (4 rooms: town_square, dark_cave, test_room, other_room)
 ├── cards/         # Card set definitions (JSON)
 ├── items/         # Item definitions (JSON)
 └── npcs/          # NPC template definitions (JSON)
-tests/             # pytest — room, combat, movement, card, integration tests
+tests/             # pytest — 33 test files (flat structure)
 web-demo/          # Browser-based test/demo client (vanilla HTML/CSS/JS)
 ├── index.html     # Auth, game viewport, combat overlay
 ├── css/style.css  # Dark theme, tiles, cards
@@ -104,8 +119,9 @@ web-demo/          # Browser-based test/demo client (vanilla HTML/CSS/JS)
 ### Endpoints
 - **Web Demo**: `GET /` — serves `web-demo/index.html` (test client)
 - **Static Assets**: `/static/*` — serves `web-demo/` directory
-- **WebSocket**: `/ws/game` — JSON messages with `action` field (login, register, move, chat, play_card, pass_turn, flee, inventory)
-- **REST**: `/api/players/{id}/build`, `/api/players/{id}/cards`, `/api/trades`, `/api/filters`
+- **WebSocket**: `/ws/game` — JSON messages with `action` field (login, register, move, chat, play_card, pass_turn, flee, use_item, use_item_combat, interact, inventory)
+- **Admin REST**: `/admin/status`, `/admin/shutdown`, `/admin/restart` — requires `Authorization: Bearer <ADMIN_SECRET>` header
+- **Health**: `GET /health` — basic health check
 
 ### Room Topology
 4 rooms connected in a circular loop (each room has 2 exits):

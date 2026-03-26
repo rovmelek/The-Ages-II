@@ -13,5 +13,8 @@ class Settings(BaseSettings):
     MOB_RESPAWN_SECONDS: int = 60
     COMBAT_TURN_TIMEOUT_SECONDS: int = 30
     MAX_PLAYERS_PER_ROOM: int = 30
+    COMBAT_STARTING_ENERGY: int = 3
+    COMBAT_ENERGY_REGEN: int = 3
+    ADMIN_SECRET: str = ""
 
 settings = Settings()

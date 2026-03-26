@@ -101,11 +101,21 @@ def client(test_session_factory, room_manager, connection_manager):
     with patch("server.net.handlers.auth.async_session", test_session_factory), \
          patch("server.net.handlers.movement.async_session", test_session_factory), \
          patch("server.net.handlers.movement.player_repo") as mock_player_repo, \
+         patch("server.net.handlers.combat.async_session", test_session_factory), \
+         patch("server.net.handlers.combat.player_repo") as mock_combat_player_repo, \
+         patch("server.net.handlers.inventory.async_session", test_session_factory), \
+         patch("server.net.handlers.inventory.player_repo") as mock_inv_player_repo, \
          patch("server.room.objects.chest.async_session", test_session_factory), \
          patch("server.app.async_session", test_session_factory), \
          patch("server.app.player_repo") as mock_app_player_repo:
         mock_player_repo.update_position = AsyncMock()
         mock_app_player_repo.update_position = AsyncMock()
+        mock_app_player_repo.update_stats = AsyncMock()
+        mock_app_player_repo.update_inventory = AsyncMock()
+        mock_combat_player_repo.update_stats = AsyncMock()
+        mock_combat_player_repo.update_inventory = AsyncMock()
+        mock_inv_player_repo.update_stats = AsyncMock()
+        mock_inv_player_repo.update_inventory = AsyncMock()
         with TestClient(app) as c:
             # Swap managers AFTER startup to avoid real rooms overwriting test rooms
             game.room_manager = room_manager
@@ -315,6 +325,10 @@ class TestCombatFlow:
             assert end["victory"] is True
             assert end["rewards"]["xp"] == 25
 
+            # Victory triggers room_state rebroadcast (NPC death state)
+            room_update = ws.receive_json()
+            assert room_update["type"] == "room_state"
+
     def test_flee_combat(self, client, room_manager):
         _reset_npc(room_manager, hp=999, attack=1)
         _register(client, "runner", "pass1234")
@@ -439,11 +453,12 @@ class TestDisconnect:
         _register(client, "dan", "pass1111")
         _register(client, "eve", "pass2222")
 
-        with client.websocket_connect("/ws/game") as ws_a:
+        with client.websocket_connect("/ws/game") as ws_a, \
+             client.websocket_connect("/ws/game") as ws_b:
             _login(ws_a, "dan", "pass1111")
-            with client.websocket_connect("/ws/game") as ws_b:
-                _login(ws_b, "eve", "pass2222")
-                ws_a.receive_json()  # entity_entered
+            _login(ws_b, "eve", "pass2222")
+            ws_a.receive_json()  # entity_entered
+            ws_b.close()
             left = ws_a.receive_json()
             assert left["type"] == "entity_left"
 

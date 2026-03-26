@@ -1,5 +1,5 @@
 # generated: 2026-03-21
-# last_updated: 2026-03-24
+# last_updated: 2026-03-25
 # project: The-Ages-II
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-21
-last_updated: 2026-03-24
+last_updated: 2026-03-25
 project: The-Ages-II
 project_key: NOKEY
 tracking_system: file-system
@@ -104,3 +104,43 @@ development_status:
   # Web Test Client (Proof of Concept)
   web-test-client: done
   web-test-client-notes: "Implemented via /gds-quick-dev from tech-spec-web-test-client.md. Folder: web-demo/"
+
+  # Bug Fixes (found during web client smoke testing)
+  # See: _bmad-output/implementation-artifacts/issues/ISS-00X-*.md
+  ISS-001-npc-template-loading-order: done   # Critical — NPCs never spawned (startup order bug)
+  ISS-002-insufficient-mob-density: done     # Medium — too few mobs to find in large rooms
+  ISS-003-default-room-was-test-room: done   # Medium — new players spawned in debug room
+  ISS-004-new-players-spawn-at-origin: done  # High — new players placed at (0,0) not spawn point
+  web-client-icon-legend: done               # Enhancement — added map icon legend below viewport
+
+  # Bugs found during test design (gds-test-design workflow)
+  # See: _bmad-output/implementation-artifacts/issues/ISS-00X-*.md
+  ISS-005-dot-effects-never-tick: done  # Critical — Fixed: DoT poison/bleed effects now tick each turn
+  ISS-006-victory-xp-not-applied: done       # High — Fixed in Story 7.2 (XP now applied on victory)
+  ISS-007-chest-loot-not-in-runtime: done    # Critical — Fixed in Story 7.3 (chest loot synced to runtime + DB restore on login)
+  ISS-008-npc-dead-at-encounter: done         # High — Fixed in Story 7.6
+
+  # Epic 7: Server Hardening
+  epic-7: done
+  7-1-spawn-point-resolution: done
+  7-2-player-stats-persistence: done
+  7-3-inventory-persistence: done
+  7-4-death-and-respawn: done
+  7-5-duplicate-login-protection: done
+  7-6-npc-death-state-broadcast: done
+  7-7-graceful-server-shutdown: done
+  7-8-client-disconnect-login-screen: done
+  epic-7-retrospective: optional
+
+  # Epic 8: World Expansion
+  epic-8: done
+  8-1-card-cost-and-energy-system: done
+  8-2-vertical-room-exits: done
+  epic-8-retrospective: optional
+
+  # Epic 9: Server Administration
+  epic-9: done
+  9-1-admin-authentication: done
+  9-2-admin-shutdown-command: done
+  9-3-server-restart-mechanism: done
+  epic-9-retrospective: optional

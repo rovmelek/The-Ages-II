@@ -110,6 +110,7 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT = 5;
 /** @type {number|null} */
 let reconnectTimer = null;
+let serverShuttingDown = false;
 /** @type {number|null} */
 let moveErrorTimer = null;
 const LOG_MAX = 200;
@@ -136,6 +137,11 @@ const $moveError = /** @type {HTMLElement} */ (document.getElementById('move-err
 // =========================================================================
 
 function connectWebSocket() {
+  // Guard against duplicate connections
+  if (gameState.ws && (gameState.ws.readyState === WebSocket.CONNECTING || gameState.ws.readyState === WebSocket.OPEN)) {
+    return;
+  }
+
   const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
   const wsUrl = `${wsProto}://${location.host}/ws/game`;
   const ws = new WebSocket(wsUrl);
@@ -145,8 +151,10 @@ function connectWebSocket() {
     reconnectAttempts = 0;
     setConnectionStatus('connected');
 
-    // Auto re-login on reconnect
-    if (gameState.credentials) {
+    // Auto re-send pending action on reconnect (login or register)
+    if (gameState.credentials && gameState.pendingAction) {
+      sendAction(gameState.pendingAction, gameState.credentials);
+    } else if (gameState.credentials) {
       gameState.pendingAction = 'login';
       sendAction('login', gameState.credentials);
     }
@@ -156,11 +164,17 @@ function connectWebSocket() {
     gameState.ws = null;
     setConnectionStatus('disconnected');
 
+    // Don't reconnect if server is shutting down
+    if (serverShuttingDown) return;
+
     if (gameState.player && reconnectAttempts < MAX_RECONNECT) {
       setConnectionStatus('reconnecting');
       const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 15000);
       reconnectAttempts++;
       reconnectTimer = window.setTimeout(connectWebSocket, delay);
+    } else if (gameState.player) {
+      // All reconnect attempts exhausted
+      resetToLogin('Connection lost. Please log in again.');
     }
   };
 
@@ -187,6 +201,58 @@ function setConnectionStatus(status) {
   $statusText.textContent = status === 'connected' ? 'Connected'
     : status === 'reconnecting' ? 'Reconnecting...'
     : 'Disconnected';
+}
+
+/**
+ * Reset client to login screen after permanent disconnect.
+ * Clears all game state but preserves credentials for convenience.
+ * @param {string} statusMessage - Message to show on the auth screen
+ */
+function resetToLogin(statusMessage) {
+  // Close active WebSocket if still open
+  if (gameState.ws) {
+    try { gameState.ws.close(); } catch { /* ignore */ }
+    gameState.ws = null;
+  }
+
+  // Clear reconnect state
+  reconnectAttempts = 0;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+
+  // Clear move error timer
+  if (moveErrorTimer) {
+    clearTimeout(moveErrorTimer);
+    moveErrorTimer = null;
+  }
+
+  // Clear game state (preserve credentials)
+  gameState.player = null;
+  gameState.room = null;
+  gameState.combat = null;
+  gameState.inventory = [];
+  gameState.pendingAction = null;
+  gameState.movePending = false;
+
+  // Clear UI
+  $tileGrid.innerHTML = '';
+  $chatLog.innerHTML = '';
+  $combatOverlay.classList.add('hidden');
+
+  // Switch to auth screen
+  setMode('auth');
+
+  // Show status message
+  $authError.textContent = '';
+  $authMessage.textContent = statusMessage;
+
+  // Pre-fill login form from stored credentials
+  if (gameState.credentials) {
+    const $loginUser = /** @type {HTMLInputElement} */ (document.getElementById('login-username'));
+    if ($loginUser) $loginUser.value = gameState.credentials.username;
+  }
 }
 
 /**
@@ -223,6 +289,9 @@ function dispatchMessage(data) {
     interact_result: handleInteractResult,
     tile_changed: handleTileChanged,
     announcement: handleAnnouncement,
+    server_shutdown: handleServerShutdown,
+    kicked: handleKicked,
+    respawn: handleRespawn,
     error: handleError,
   };
 
@@ -284,6 +353,31 @@ function handleError(data) {
   }
   // Reset movePending on error
   gameState.movePending = false;
+}
+
+/** @param {Object} data */
+function handleServerShutdown(data) {
+  serverShuttingDown = true;
+  const reason = data.reason || 'Server is shutting down.';
+  resetToLogin(`Server is shutting down. ${reason}`);
+}
+
+/** @param {Object} data */
+function handleKicked(data) {
+  resetToLogin(data.reason || 'Disconnected from server.');
+}
+
+/** @param {Object} data */
+function handleRespawn(data) {
+  if (gameState.player) {
+    gameState.player.x = data.x;
+    gameState.player.y = data.y;
+  }
+  gameState.combat = null;
+  setMode('explore');
+  renderRoom();
+  updateStatsPanel();
+  appendChat('You have been respawned.', 'system');
 }
 
 // =========================================================================
@@ -357,6 +451,8 @@ function tileClass(type) {
     case 2: return 'tile-exit';
     case 3: return 'tile-spawn';
     case 4: return 'tile-water';
+    case 5: return 'tile-stairs-up';
+    case 6: return 'tile-stairs-down';
     default: return 'tile-floor';
   }
 }
@@ -655,6 +751,21 @@ function handleCombatTurn(data) {
       resultText += ` Cycle attack: ${ca.target} took ${ca.damage} damage`;
       if (ca.shield_absorbed) resultText += ` (${ca.shield_absorbed} absorbed)`;
       resultText += '.';
+    }
+
+    // DoT tick results
+    if (result.dot_ticks && result.dot_ticks.length > 0) {
+      for (const tick of result.dot_ticks) {
+        const sub = tick.subtype.charAt(0).toUpperCase() + tick.subtype.slice(1);
+        resultText += ` ${sub} dealt ${tick.value} damage to ${tick.target}`;
+        if (tick.shield_absorbed) resultText += ` (${tick.shield_absorbed} absorbed)`;
+        if (tick.remaining > 0) {
+          resultText += ` (${tick.remaining} turn${tick.remaining !== 1 ? 's' : ''} remaining)`;
+        } else {
+          resultText += ' (expired)';
+        }
+        resultText += '.';
+      }
     }
   }
 
@@ -1114,9 +1225,15 @@ document.getElementById('register-form')?.addEventListener('submit', (e) => {
   const password = /** @type {HTMLInputElement} */ (document.getElementById('reg-password')).value;
   $authError.textContent = '';
   $authMessage.textContent = '';
+  serverShuttingDown = false;
   gameState.credentials = { username, password };
   gameState.pendingAction = 'register';
-  sendAction('register', { username, password });
+
+  if (!gameState.ws || gameState.ws.readyState !== WebSocket.OPEN) {
+    connectWebSocket();
+  } else {
+    sendAction('register', { username, password });
+  }
 });
 
 document.getElementById('login-form')?.addEventListener('submit', (e) => {
@@ -1125,9 +1242,16 @@ document.getElementById('login-form')?.addEventListener('submit', (e) => {
   const password = /** @type {HTMLInputElement} */ (document.getElementById('login-password')).value;
   $authError.textContent = '';
   $authMessage.textContent = '';
+  serverShuttingDown = false;
   gameState.credentials = { username, password };
   gameState.pendingAction = 'login';
-  sendAction('login', { username, password });
+
+  // Establish new WebSocket if needed (e.g., after permanent disconnect)
+  if (!gameState.ws || gameState.ws.readyState !== WebSocket.OPEN) {
+    connectWebSocket();
+  } else {
+    sendAction('login', { username, password });
+  }
 });
 
 // =========================================================================

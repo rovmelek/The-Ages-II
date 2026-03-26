@@ -254,6 +254,8 @@ body {
 .tile-exit { background: #1a3a1a; border: 1px solid #2a5a2a; }
 .tile-spawn { background: #2a2a2a; }
 .tile-water { background: #1a1a3a; }
+.tile-stairs-up { background: #3a2a1a; border: 1px solid #5a4a2a; }
+.tile-stairs-down { background: #2a1a1a; border: 1px solid #4a2a2a; }
 
 /* === Entities === */
 .entity {
@@ -552,6 +554,50 @@ body {
   gap: 6px;
   flex-wrap: wrap;
   justify-content: center;
+}
+
+/* === Map Legend === */
+#map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  justify-content: center;
+  padding: 8px 12px;
+  margin-top: 6px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #999;
+  max-width: 500px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.legend-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-family: monospace;
+  font-weight: bold;
+  font-size: 13px;
+  background: #2a2a2a;
+  border-radius: 2px;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  border: 1px solid #444;
 }
 
 /* === Animations === */

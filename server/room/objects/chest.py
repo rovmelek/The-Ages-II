@@ -4,6 +4,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from server.core.database import async_session
+from server.items.item_def import ItemDef
+from server.items import item_repo as items_repo
 from server.player import repo as player_repo
 from server.room.objects.base import InteractiveObject
 from server.room.objects.state import get_player_object_state, set_player_object_state
@@ -53,15 +55,27 @@ class ChestObject(InteractiveObject):
             loot_table = self.config.get("loot_table", "common_chest")
             items = generate_loot(loot_table)
 
-            # Add items to player inventory
+            # Add items to player DB inventory
             player = await player_repo.get_by_id(session, player_id)
             if player is not None:
-                inventory = dict(player.inventory or {})
+                db_inventory = dict(player.inventory or {})
                 for item in items:
                     key = item["item_key"]
-                    inventory[key] = inventory.get(key, 0) + item["quantity"]
-                player.inventory = inventory
+                    db_inventory[key] = db_inventory.get(key, 0) + item["quantity"]
+                player.inventory = db_inventory
                 await session.commit()
+
+            # Sync to runtime inventory (items immediately visible)
+            entity_id = f"player_{player_id}"
+            player_info = game.player_entities.get(entity_id)
+            if player_info:
+                runtime_inv = player_info.get("inventory")
+                if runtime_inv:
+                    for item in items:
+                        item_db = await items_repo.get_by_key(session, item["item_key"])
+                        if item_db:
+                            item_def = ItemDef.from_db(item_db)
+                            runtime_inv.add_item(item_def, item["quantity"])
 
             # Mark as opened
             await set_player_object_state(session, player_id, room_key, self.id, {"opened": True})

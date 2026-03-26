@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -17,6 +18,7 @@ from server.combat.manager import CombatManager
 from server.core.effects import create_default_registry
 from server.core.events import EventBus
 from server.core.scheduler import Scheduler
+from server.net.handlers.admin import admin_router
 from server.room.manager import RoomManager
 from server.room.provider import JsonRoomProvider
 
@@ -33,10 +35,18 @@ class Game:
         self.effect_registry = create_default_registry()
         self.combat_manager = CombatManager(effect_registry=self.effect_registry)
         self.player_entities: dict[str, dict] = {}
+        self._shutting_down: bool = False
 
     async def startup(self) -> None:
         """Initialize database, load data, register handlers."""
         await init_db()
+
+        # Load NPC templates first (needed before room NPC spawning)
+        npcs_dir = settings.DATA_DIR / "npcs"
+        if npcs_dir.exists():
+            from server.room.objects.npc import load_npc_templates
+
+            load_npc_templates(npcs_dir)
 
         # Load rooms from JSON into DB, then into memory
         async with async_session() as session:
@@ -63,22 +73,66 @@ class Game:
                 for json_file in sorted(items_dir.glob("*.json")):
                     await item_repo.load_items_from_json(session, json_file)
 
-        # Load NPC templates
-        npcs_dir = settings.DATA_DIR / "npcs"
-        if npcs_dir.exists():
-            from server.room.objects.npc import load_npc_templates
-
-            load_npc_templates(npcs_dir)
-
         self._register_handlers()
         self._register_events()
 
         # Start scheduler after rooms and NPC templates are loaded
         await self.scheduler.start(self)
 
-    def shutdown(self) -> None:
-        """Clean up resources on server shutdown."""
+    async def shutdown(self) -> None:
+        """Gracefully shut down: save all player states, notify, and disconnect."""
+        logger = logging.getLogger(__name__)
         self.scheduler.stop()
+
+        player_count = 0
+        for entity_id, player_info in list(self.player_entities.items()):
+            entity = player_info["entity"]
+            room_key = player_info["room_key"]
+            inventory = player_info.get("inventory")
+
+            # Remove from combat if in combat
+            combat_instance = self.combat_manager.get_player_instance(entity_id)
+            if combat_instance:
+                combat_instance.remove_participant(entity_id)
+                self.combat_manager.remove_player(entity_id)
+                if not combat_instance.participants:
+                    self.combat_manager.remove_instance(combat_instance.instance_id)
+
+            # Save all state to DB
+            try:
+                async with async_session() as session:
+                    await player_repo.update_position(
+                        session, entity.player_db_id, room_key, entity.x, entity.y
+                    )
+                    await player_repo.update_stats(
+                        session, entity.player_db_id, entity.stats
+                    )
+                    if inventory:
+                        await player_repo.update_inventory(
+                            session, entity.player_db_id, inventory.to_dict()
+                        )
+            except Exception:
+                logger.exception("Failed to save state for %s", entity_id)
+
+            # Notify and close WebSocket
+            ws = self.connection_manager.get_websocket(entity_id)
+            if ws:
+                try:
+                    await ws.send_json(
+                        {"type": "server_shutdown", "reason": "Server is shutting down"}
+                    )
+                except Exception:
+                    pass
+                try:
+                    await ws.close(code=1001)
+                except Exception:
+                    pass
+
+            self.connection_manager.disconnect(entity_id)
+            player_count += 1
+
+        self.player_entities.clear()
+        logger.info("Shutdown complete: %d players saved and disconnected.", player_count)
 
     def _register_handlers(self) -> None:
         """Register all WebSocket action handlers."""
@@ -152,6 +206,7 @@ class Game:
             return
 
         npc.is_alive = False
+        npc.in_combat = False
 
         # Schedule respawn for persistent NPCs
         tmpl = None
@@ -161,6 +216,81 @@ class Game:
         if tmpl and tmpl.get("spawn_type") == "persistent":
             respawn_seconds = tmpl.get("spawn_config", {}).get("respawn_seconds", 60)
             self.scheduler.schedule_respawn(room_key, npc_id, respawn_seconds)
+
+    async def respawn_player(self, entity_id: str) -> None:
+        """Respawn a defeated player in town_square with full HP."""
+        player_info = self.player_entities.get(entity_id)
+        if player_info is None:
+            return
+
+        entity = player_info["entity"]
+        old_room_key = player_info["room_key"]
+
+        # Restore HP to max
+        entity.in_combat = False
+        entity.stats["hp"] = entity.stats.get("max_hp", 100)
+        entity.stats.pop("shield", None)
+
+        # Determine spawn point in town_square
+        spawn_room_key = "town_square"
+        spawn_room = self.room_manager.get_room(spawn_room_key)
+        if spawn_room is None:
+            return  # Cannot respawn without town_square
+
+        sx, sy = spawn_room.get_player_spawn()
+        if not spawn_room.is_walkable(sx, sy):
+            sx, sy = spawn_room.find_first_walkable()
+
+        # Save to DB FIRST (crash recovery: player placed correctly on re-login)
+        try:
+            async with async_session() as session:
+                await player_repo.update_position(
+                    session, entity.player_db_id, spawn_room_key, sx, sy
+                )
+                await player_repo.update_stats(
+                    session, entity.player_db_id, entity.stats
+                )
+        except Exception:
+            pass  # Best-effort DB save
+
+        # In-memory room transfer
+        old_room = self.room_manager.get_room(old_room_key)
+        if old_room and old_room_key != spawn_room_key:
+            old_room.remove_entity(entity_id)
+            await self.connection_manager.broadcast_to_room(
+                old_room_key,
+                {"type": "entity_left", "entity_id": entity_id},
+                exclude=entity_id,
+            )
+
+        entity.x = sx
+        entity.y = sy
+        spawn_room.add_entity(entity)
+        player_info["room_key"] = spawn_room_key
+        self.connection_manager.update_room(entity_id, spawn_room_key)
+
+        # Send respawn + new room state to player
+        ws = self.connection_manager.get_websocket(entity_id)
+        if ws:
+            await ws.send_json({
+                "type": "respawn",
+                "room_key": spawn_room_key,
+                "x": sx,
+                "y": sy,
+                "hp": entity.stats["hp"],
+                "max_hp": entity.stats["max_hp"],
+            })
+            await ws.send_json({"type": "room_state", **spawn_room.get_state()})
+
+        # Notify town_square players
+        await self.connection_manager.broadcast_to_room(
+            spawn_room_key,
+            {
+                "type": "entity_entered",
+                "entity": {"id": entity.id, "name": entity.name, "x": sx, "y": sy},
+            },
+            exclude=entity_id,
+        )
 
     async def handle_disconnect(self, websocket: WebSocket) -> None:
         """Handle a player disconnecting: save state, clean up, notify room."""
@@ -189,12 +319,20 @@ class Game:
             entity = player_info["entity"]
             room_key = player_info["room_key"]
 
-            # Save position to database
+            # Save position, stats, and inventory to database
             try:
+                inventory = player_info.get("inventory")
                 async with async_session() as session:
                     await player_repo.update_position(
                         session, entity.player_db_id, room_key, entity.x, entity.y
                     )
+                    await player_repo.update_stats(
+                        session, entity.player_db_id, entity.stats
+                    )
+                    if inventory:
+                        await player_repo.update_inventory(
+                            session, entity.player_db_id, inventory.to_dict()
+                        )
             except Exception:
                 pass  # Best-effort save on disconnect
 
@@ -222,10 +360,11 @@ game = Game()
 async def lifespan(app: FastAPI):
     await game.startup()
     yield
-    game.shutdown()
+    await game.shutdown()
 
 
 app = FastAPI(title="The Ages II", lifespan=lifespan)
+app.include_router(admin_router)
 
 
 @app.get("/health")

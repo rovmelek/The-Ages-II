@@ -22,6 +22,8 @@ class CombatManager:
         self,
         mob_name: str,
         mob_stats: dict,
+        npc_id: str | None = None,
+        room_key: str | None = None,
     ) -> CombatInstance:
         """Create a new combat instance and register it."""
         instance_id = str(uuid.uuid4())
@@ -30,6 +32,8 @@ class CombatManager:
             mob_name=mob_name,
             mob_stats=mob_stats,
             effect_registry=self._effect_registry,
+            npc_id=npc_id,
+            room_key=room_key,
         )
         self._instances[instance_id] = instance
         return instance

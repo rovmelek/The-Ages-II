@@ -323,6 +323,86 @@ async def test_dead_player_cannot_pass():
 # --- Epic 4 code review fixes ---
 
 
+# --- Energy system ---
+
+
+def test_add_participant_initializes_energy():
+    instance = CombatInstance(
+        instance_id="test", mob_name="Mob", mob_stats=_make_mob_stats()
+    )
+    instance.add_participant("p1", {"hp": 100, "max_hp": 100, "attack": 10}, _make_cards())
+    assert instance.participant_stats["p1"]["energy"] == 3
+    assert instance.participant_stats["p1"]["max_energy"] == 3
+
+
+def test_get_state_includes_energy():
+    instance = _make_instance_with_player()
+    state = instance.get_state()
+    p = state["participants"][0]
+    assert "energy" in p
+    assert "max_energy" in p
+    assert p["energy"] == 3
+    assert p["max_energy"] == 3
+
+
+@pytest.mark.asyncio
+async def test_play_card_deducts_energy():
+    instance = _make_instance_with_two_players()
+    assert instance.participant_stats["player_1"]["energy"] == 3
+    card_key = instance.hands["player_1"].hand[0].card_key
+    await instance.play_card("player_1", card_key)
+    # Cards cost 1, so energy should be 2
+    assert instance.participant_stats["player_1"]["energy"] == 2
+
+
+@pytest.mark.asyncio
+async def test_play_card_not_enough_energy():
+    instance = _make_instance_with_two_players()
+    # Drain energy to 0
+    instance.participant_stats["player_1"]["energy"] = 0
+    card_key = instance.hands["player_1"].hand[0].card_key
+    with pytest.raises(ValueError, match="Not enough energy"):
+        await instance.play_card("player_1", card_key)
+
+
+@pytest.mark.asyncio
+async def test_cycle_regenerates_energy():
+    instance = _make_instance_with_two_players()
+    # Play cards for both players — cost 1 each
+    card_key1 = instance.hands["player_1"].hand[0].card_key
+    await instance.play_card("player_1", card_key1)
+    assert instance.participant_stats["player_1"]["energy"] == 2
+
+    card_key2 = instance.hands["player_2"].hand[0].card_key
+    await instance.play_card("player_2", card_key2)
+    # Cycle complete — energy regen (+3, capped at max 3)
+    assert instance.participant_stats["player_1"]["energy"] == 3
+    assert instance.participant_stats["player_2"]["energy"] == 3
+
+
+@pytest.mark.asyncio
+async def test_pass_turn_no_energy_cost():
+    instance = _make_instance_with_two_players()
+    instance.participant_stats["player_1"]["energy"] = 1
+    await instance.pass_turn("player_1")
+    # Energy unchanged by passing
+    assert instance.participant_stats["player_1"]["energy"] == 1
+
+
+@pytest.mark.asyncio
+async def test_use_item_no_energy_cost():
+    from unittest.mock import MagicMock
+    instance = _make_instance_with_two_players()
+    instance.participant_stats["player_1"]["energy"] = 1
+    item_def = MagicMock()
+    item_def.item_key = "potion"
+    item_def.name = "Potion"
+    item_def.effects = []
+    await instance.use_item("player_1", item_def)
+    # Energy unchanged by using item
+    assert instance.participant_stats["player_1"]["energy"] == 1
+
+
 @pytest.mark.asyncio
 async def test_dead_player_skipped_in_turn_order():
     """After mob attack kills a player, their turn is automatically skipped."""

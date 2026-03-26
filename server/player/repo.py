@@ -56,3 +56,35 @@ async def update_position(
         .values(current_room_id=room_key, position_x=x, position_y=y)
     )
     await session.commit()
+
+
+async def update_inventory(
+    session: AsyncSession,
+    player_id: int,
+    inventory: dict,
+) -> None:
+    """Update a player's inventory JSON column."""
+    await session.execute(
+        update(Player)
+        .where(Player.id == player_id)
+        .values(inventory=inventory)
+    )
+    await session.commit()
+
+
+_STATS_WHITELIST = {"hp", "max_hp", "attack", "xp"}
+
+
+async def update_stats(
+    session: AsyncSession,
+    player_id: int,
+    stats: dict,
+) -> None:
+    """Update a player's stats, stripping non-whitelisted keys."""
+    filtered = {k: v for k, v in stats.items() if k in _STATS_WHITELIST}
+    await session.execute(
+        update(Player)
+        .where(Player.id == player_id)
+        .values(stats=filtered)
+    )
+    await session.commit()

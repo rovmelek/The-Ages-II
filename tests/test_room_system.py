@@ -14,12 +14,16 @@ def test_tile_type_values():
     assert TileType.EXIT == 2
     assert TileType.MOB_SPAWN == 3
     assert TileType.WATER == 4
+    assert TileType.STAIRS_UP == 5
+    assert TileType.STAIRS_DOWN == 6
 
 
 def test_walkable_tiles():
     assert TileType.FLOOR in WALKABLE_TILES
     assert TileType.EXIT in WALKABLE_TILES
     assert TileType.MOB_SPAWN in WALKABLE_TILES
+    assert TileType.STAIRS_UP in WALKABLE_TILES
+    assert TileType.STAIRS_DOWN in WALKABLE_TILES
     assert TileType.WALL not in WALKABLE_TILES
     assert TileType.WATER not in WALKABLE_TILES
 
@@ -30,6 +34,8 @@ def test_is_walkable():
     assert is_walkable(2) is True  # EXIT
     assert is_walkable(3) is True  # MOB_SPAWN
     assert is_walkable(4) is False  # WATER
+    assert is_walkable(5) is True  # STAIRS_UP
+    assert is_walkable(6) is True  # STAIRS_DOWN
 
 
 # --- PlayerEntity tests ---
@@ -213,6 +219,36 @@ def test_move_entity_mob_encounter():
     assert result["success"] is True
     assert result["mob_encounter"]["entity_id"] == "npc_goblin_1"
     assert result["mob_encounter"]["name"] == "Goblin"
+
+
+def test_move_entity_stairs_up_exit_detection():
+    tile_data = [[0] * 5 for _ in range(5)]
+    tile_data[2][3] = TileType.STAIRS_UP
+    exits = [{"target_room": "upper_room", "x": 3, "y": 2, "direction": "ascend", "entry_x": 1, "entry_y": 1}]
+    room = _make_room(tile_data=tile_data, exits=exits)
+    entity = _make_entity(x=2, y=2)
+    room.add_entity(entity)
+
+    result = room.move_entity("player_1", "right")
+    assert result["success"] is True
+    assert result["x"] == 3
+    assert result["exit"]["target_room"] == "upper_room"
+    assert result["exit"]["direction"] == "ascend"
+
+
+def test_move_entity_stairs_down_exit_detection():
+    tile_data = [[0] * 5 for _ in range(5)]
+    tile_data[2][3] = TileType.STAIRS_DOWN
+    exits = [{"target_room": "lower_room", "x": 3, "y": 2, "direction": "descend", "entry_x": 1, "entry_y": 1}]
+    room = _make_room(tile_data=tile_data, exits=exits)
+    entity = _make_entity(x=2, y=2)
+    room.add_entity(entity)
+
+    result = room.move_entity("player_1", "right")
+    assert result["success"] is True
+    assert result["x"] == 3
+    assert result["exit"]["target_room"] == "lower_room"
+    assert result["exit"]["direction"] == "descend"
 
 
 def test_move_entity_not_found():

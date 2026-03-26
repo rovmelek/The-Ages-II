@@ -79,60 +79,62 @@ server/
 │       ├── damage.py           # Direct damage (with subtype: fire, ice, etc.)
 │       ├── heal.py             # HP restoration
 │       ├── shield.py           # Damage absorption
-│       ├── dot.py              # Damage over time (bleed, poison)
+│       ├── dot.py              # Damage over time recording (bleed, poison)
 │       └── draw.py             # Draw additional cards
 ├── net/                        # WebSocket protocol and connection layer
 │   ├── __init__.py
-│   ├── connection_manager.py   # WebSocket <-> player entity ID mapping
-│   ├── message_router.py      # Routes JSON messages by 'action' field
-│   ├── protocol.py             # All message schemas (client->server, server->client)
+│   ├── connection_manager.py   # WebSocket <-> player entity ID mapping + room tracking
+│   ├── message_router.py       # Routes JSON messages by 'action' field
+│   ├── websocket.py            # WebSocket utilities
 │   └── handlers/               # Action handlers (thin, delegate to domain logic)
 │       ├── __init__.py
-│       ├── auth.py             # login, register
+│       ├── auth.py             # login, register, duplicate login protection (kick old session)
 │       ├── movement.py         # move, room transitions
 │       ├── chat.py             # room chat, whispers
-│       ├── combat.py           # play_card, use_item, pass_turn, flee
-│       └── inventory.py        # inventory queries
+│       ├── combat.py           # play_card, use_item_combat, pass_turn, flee
+│       ├── interact.py         # interact with room objects (chests, levers, NPCs)
+│       └── inventory.py        # inventory queries, use_item (outside combat)
 ├── player/                     # Player domain
 │   ├── __init__.py
-│   ├── models.py               # Player DB model (credentials, stats, position)
-│   ├── repo.py                 # Player persistence (CRUD, position updates)
+│   ├── models.py               # Player DB model (credentials, stats, position, inventory)
+│   ├── repo.py                 # Player persistence (CRUD, position, stats whitelist, inventory)
 │   ├── entity.py               # PlayerEntity runtime dataclass
-│   └── auth.py                 # Login/register logic, bcrypt hashing
+│   └── auth.py                 # bcrypt password hashing and verification
 ├── room/                       # Room/zone domain
 │   ├── __init__.py
 │   ├── models.py               # Room, RoomState DB models
 │   ├── repo.py                 # Room persistence
 │   ├── tile.py                 # Tile types, walkability rules
-│   ├── room.py                 # Room instance (grid, entities, movement validation)
+│   ├── room.py                 # Room instance (grid, entities, NPCs, movement validation)
 │   ├── provider.py             # RoomProvider interface (JSON today, DB/editor later)
 │   ├── manager.py              # Active rooms, entity placement, room transfers
+│   ├── spawn_models.py         # SpawnCheckpoint DB model (rare spawn persistence)
 │   └── objects/                # Room objects subsystem
 │       ├── __init__.py
-│       ├── base.py             # RoomObject base (position, type, state_scope, interactable)
-│       ├── static.py           # Trees, rocks, ponds (blocking/decoration)
-│       ├── interactive.py      # Chests, levers (stateful, per-player or per-room)
-│       ├── npc.py              # NPC definition (behavior_type, stats, dialogue ref)
-│       └── spawner.py          # Spawn system (persistent, timed, rare with chance roll)
+│       ├── base.py             # RoomObject + InteractiveObject base classes
+│       ├── chest.py            # Chests with one-time per-player loot
+│       ├── lever.py            # Levers with room-shared state (toggle tiles)
+│       ├── npc.py              # NpcEntity dataclass + template loading/creation
+│       ├── registry.py         # Object type registry (maps type strings to classes)
+│       └── state.py            # PlayerObjectState DB model (per-player object state)
 ├── combat/                     # Combat domain
 │   ├── __init__.py
-│   ├── instance.py             # CombatInstance (participants, turns, effect resolution)
+│   ├── instance.py             # CombatInstance (participants, turns, DoT ticking, effect resolution)
 │   ├── manager.py              # Active combat instance tracking
-│   ├── turn.py                 # Turn structure (play card OR use item OR pass)
 │   └── cards/                  # Card subsystem
 │       ├── __init__.py
 │       ├── card_def.py         # CardDef with effect chain (list of effects)
 │       ├── card_hand.py        # Deck/hand/discard cycling
 │       ├── card_repo.py        # Load card definitions from JSON/DB
-│       └── upgrade_tree.py     # Skill tree data model (nodes, edges, costs) [hook point]
+│       └── models.py           # Card DB model
 ├── items/                      # Items & inventory domain
 │   ├── __init__.py
 │   ├── item_def.py             # ItemDef (category: consumable|material, charges, stackable)
 │   ├── item_repo.py            # Load item definitions from JSON/DB
-│   └── inventory.py            # Player inventory management (quantities, charges)
+│   ├── inventory.py            # Player inventory management (quantities, charges, serialization)
+│   └── models.py               # Item DB model
 └── web/                        # REST API (deferred, minimal in prototype)
-    ├── __init__.py
-    └── routes.py               # Player profiles, trades, filters
+    └── __init__.py
 
 data/
 ├── rooms/                      # Room JSON definitions (4 rooms in circular loop)
@@ -175,6 +177,15 @@ Game (central orchestrator)
 ├── Scheduler            — periodic tasks (spawn checks, respawn timers)
 ├── EventBus             — global announcements, cross-system triggers
 └── EffectRegistry       — shared card + item effect resolution
+
+Startup order (Game.startup):
+1. init_db()
+2. Load NPC templates from data/npcs/ (must precede room loading)
+3. Load rooms from JSON → DB → memory (spawns NPCs using templates)
+4. Load cards from data/cards/
+5. Load items from data/items/
+6. Register handlers and events
+7. Start scheduler
 ```
 
 ---
@@ -303,17 +314,36 @@ The combat resolver iterates over the effects list from day one. Upgrades just m
 - Playing a card: card goes to discard pile, draw a replacement
 - Empty deck: shuffle discard pile back into deck
 
-### 5.4 Combat Resolution
+### 5.4 DoT Effect Ticking
+
+Damage-over-time effects (poison, bleed) are processed at the **start of each player's action** (before card/item resolution):
+
+1. `_process_dot_effects()` iterates `target["active_effects"]` on both mob and current player
+2. Each DoT entry: applies `value` damage (respecting shield absorption), decrements `remaining`
+3. Expired DoTs (`remaining <= 0`) are removed; non-DoT effects are preserved
+4. If DoT kills the mob or player, `is_finished` check triggers early return — card/item resolution and mob attacks are skipped
+5. Tick results returned as `dot_ticks` array in the action result for client display
+
+**Separation of concerns**: `handle_dot()` in `core/effects/dot.py` **records** DoT entries to `active_effects`. `_process_dot_effects()` in `combat/instance.py` **ticks** them each turn. These are independent — do not modify one expecting changes in the other.
+
+### 5.5 Combat Resolution
 
 - Mob attacks on pass turn (targets the passing player)
 - Mob attacks a random player at the end of each full turn cycle
 - Shield absorbs damage before HP
-- Victory: mob HP reaches 0
+- Victory: mob HP reaches 0 (including via DoT tick)
 - Defeat: all player HPs reach 0
 - Flee: player exits combat (mob stays, combat continues for other participants)
-- Rewards on victory: XP, potential loot
+- Rewards on victory: XP applied in handler (`_check_combat_end`), not in CombatInstance
+- Dead players' turns are skipped automatically by `_advance_turn()`
 
-### 5.5 Card Skill Tree (Deferred — Hook Points Only)
+**Post-combat cleanup** (in `_check_combat_end`):
+- Strip `shield` from entity stats (combat-only transient)
+- Sync final combat stats back to `PlayerEntity.stats` and persist to DB
+- On defeat: respawn dead players in `town_square` with full HP
+- On victory: kill NPC, schedule respawn if persistent, broadcast room state update
+
+### 5.6 Card Skill Tree (Deferred — Hook Points Only)
 
 **Not in prototype.** But the architecture preserves the extension point:
 
@@ -404,11 +434,12 @@ core/effects/
 | `move` | Move in direction (up/down/left/right) |
 | `chat` | Send message to room (or whisper) |
 | `play_card` | Play a card during combat turn |
-| `use_item` | Use a consumable item (combat or out of combat) |
 | `pass_turn` | Pass combat turn |
 | `flee` | Exit combat |
 | `interact` | Interact with room object (chest, lever, NPC) |
 | `inventory` | Request inventory contents |
+| `use_item` | Use a consumable item outside combat |
+| `use_item_combat` | Use a consumable item as combat turn action |
 
 ### 8.3 Server -> Client Message Types
 
@@ -420,13 +451,20 @@ core/effects/
 | `entity_entered` | New entity appeared in room |
 | `entity_left` | Entity left room |
 | `combat_start` | Combat initiated, participants and mob info |
-| `combat_turn` | Turn update (current player, hand, HP states) |
+| `combat_turn` | Turn update with result (includes `dot_ticks` if DoTs active) |
+| `combat_update` | Combat state update (participant left/joined) |
 | `combat_end` | Combat resolved (victory/defeat, rewards) |
 | `combat_fled` | Player successfully fled |
 | `chat` | Chat message from another player |
 | `error` | Error response |
 | `announcement` | Global announcement (rare spawn, etc.) |
 | `interact_result` | Result of interacting with a room object |
+| `inventory` | Player inventory contents |
+| `item_used` | Item consumed successfully (outside combat) |
+| `tile_changed` | Tile type changed (lever toggle) |
+| `server_shutdown` | Server shutting down — save and disconnect |
+| `kicked` | Duplicate login — old session terminated |
+| `respawn` | Player respawned in town_square after death |
 
 ### 8.4 Room Entry Payload
 
@@ -456,7 +494,7 @@ No fog of war — players see the entire map on entry. Entity updates (movement,
 | id | Integer PK | Auto-increment |
 | username | String(50) | Unique, indexed |
 | password_hash | String(128) | bcrypt |
-| stats | JSON | `{hp, max_hp, attack, defense, xp, level}` |
+| stats | JSON | `{hp, max_hp, attack, xp}` — persisted via `_STATS_WHITELIST`; `shield` and `active_effects` are combat-only transient |
 | inventory | JSON | `{item_key: quantity, ...}` |
 | card_collection | JSON | List of card_key strings |
 | current_room_id | String(50) | FK to room_key |
@@ -523,25 +561,68 @@ Unique constraint on `(player_id, room_key, object_id)`.
 
 ---
 
-## 10. Deferred Features & Hook Points
+## 10. Server Hardening & Persistence
+
+### 10.1 Player State Persistence
+
+Player state is saved to the database at multiple trigger points:
+- **Disconnect**: Position, stats (whitelisted), and inventory saved on WebSocket close
+- **Room transition**: Position updated when entering a new room
+- **Combat end**: Stats (HP, XP) synced and persisted after victory or defeat
+- **Server shutdown**: All connected players saved before disconnect
+- **Item use in combat**: Inventory persisted after consuming an item
+
+**Stats whitelist**: Only `{hp, max_hp, attack, xp}` are persisted. `shield` and `active_effects` are combat-only transient data, stripped by `_STATS_WHITELIST` in `player/repo.py`.
+
+### 10.2 Death & Respawn
+
+When a player dies in combat (HP reaches 0):
+1. Combat ends with defeat result
+2. `Game.respawn_player()`: restore HP to max, clear `shield`, set `in_combat = False`
+3. Transfer player to `town_square` spawn point (save to DB first for crash recovery)
+4. Send `respawn` message with new position and HP
+5. Send fresh `room_state` for town_square
+6. Notify town_square players of arrival
+
+### 10.3 Duplicate Login Protection
+
+When a player logs in while already connected from another session:
+1. `_kick_old_session()`: save old session state (position, stats, inventory)
+2. Remove from combat (if in combat), notify remaining participants
+3. Remove from room, broadcast `entity_left`
+4. Send `kicked` message to old WebSocket, close it
+5. Proceed with new login normally
+
+### 10.4 Graceful Server Shutdown
+
+`Game.shutdown()` (called via FastAPI `lifespan` context manager):
+1. Stop scheduler (cancel all respawn timers)
+2. For each connected player: remove from combat, save all state to DB
+3. Send `server_shutdown` message to each client
+4. Close all WebSockets with code 1001
+5. Clear `player_entities`
+
+---
+
+## 11. Deferred Features & Hook Points
 
 Features explicitly out of scope for the prototype, with the architectural hook points that preserve future extensibility:
 
 | Deferred Feature | Hook Point in Prototype |
 |------------------|------------------------|
-| **Card skill tree** | Cards use `effects: [...]` list. `upgrade_tree.py` has data model skeleton. Future adds `player_card_trees` table |
+| **Card skill tree** | Cards use `effects: [...]` list from day one. Future adds `upgrade_tree.py` data model + `player_card_trees` table |
 | **Web-based room editor** | `RoomProvider` interface. Prototype: `JsonRoomProvider`. Editor adds `DbRoomProvider` |
 | **NPC dialogue/shops/quests** | NPCs have `behavior_type` field. Prototype implements `"hostile"` only. Later: `"merchant"`, `"quest_giver"` |
 | **Material drops from combat** | Loot table system exists (for chests). Combat rewards reference same system later |
 | **Card respec** | Card upgrade data model includes cost tracking. Respec = reset nodes + refund |
-| **REST API (trades, filters, profiles)** | `web/routes.py` exists. Endpoints added as needed |
-| **Range-based broadcasting** | `room/broadcaster.py` placeholder. Prototype broadcasts to all players in room |
+| **REST API (trades, filters, profiles)** | `web/` package exists. Endpoints added as needed |
+| **Range-based broadcasting** | Prototype broadcasts to all players in room. Future: filter by proximity |
 
 ---
 
-## 11. Prototype Gameplay Loop
+## 12. Prototype Gameplay Loop
 
-The minimum playable loop the prototype must support:
+The minimum playable loop the prototype supports:
 
 ```
 Register account
@@ -552,16 +633,20 @@ Register account
     -> Walk to exit tile -> transition to new room
     -> Encounter hostile NPC -> enter combat
     -> Combat turn: play card from hand OR use item from inventory OR pass
-    -> Win combat -> receive XP/loot
-    -> Interact with chest -> receive one-time loot
+    -> DoT effects tick each turn (poison, bleed deal damage automatically)
+    -> Win combat -> receive XP (applied to stats, persisted to DB)
+    -> Lose combat -> respawn in town_square with full HP
+    -> Interact with chest -> receive one-time loot (synced to runtime + restored on login)
     -> See global announcement when rare NPC spawns
     -> Chat with other players in same room
-    -> Disconnect -> position saved -> reconnect later
+    -> Disconnect -> position + stats + inventory saved -> reconnect later
+    -> Duplicate login -> old session kicked, state saved, new session takes over
+    -> Server shutdown -> all player states saved, clients notified
 ```
 
 ---
 
-## 12. Tech Stack
+## 13. Tech Stack
 
 | Component | Technology | Version |
 |-----------|------------|---------|

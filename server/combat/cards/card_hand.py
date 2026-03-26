@@ -37,6 +37,16 @@ class CardHand:
         self.hand.append(card)
         return card
 
+    def get_card_cost(self, card_key: str) -> int:
+        """Return cost of a card in hand without removing it.
+
+        Raises ValueError if card not in hand.
+        """
+        for card in self.hand:
+            if card.card_key == card_key:
+                return card.cost
+        raise ValueError("Card not in hand")
+
     def play_card(self, card_key: str) -> CardDef:
         """Play a card from hand. Moves to discard and draws replacement.
 

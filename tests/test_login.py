@@ -63,14 +63,14 @@ def client(test_session_factory, room_manager, connection_manager):
     """TestClient with patched dependencies for login handler."""
     from server.app import app, game
 
-    # Patch the game object's managers and the DB session used by handlers
     original_rm = game.room_manager
     original_cm = game.connection_manager
-    game.room_manager = room_manager
-    game.connection_manager = connection_manager
 
     with patch("server.net.handlers.auth.async_session", test_session_factory):
         with TestClient(app) as c:
+            # Swap managers AFTER startup to avoid real rooms overwriting test rooms
+            game.room_manager = room_manager
+            game.connection_manager = connection_manager
             yield c
 
     game.room_manager = original_rm
@@ -108,7 +108,7 @@ def test_login_returns_room_state(client):
 
         room_resp = ws.receive_json()
         assert room_resp["type"] == "room_state"
-        assert room_resp["room_key"] == "test_room"
+        assert room_resp["room_key"] == "town_square"
         assert "tiles" in room_resp
         assert "entities" in room_resp
         assert "exits" in room_resp
@@ -127,7 +127,7 @@ def test_login_entity_at_saved_position(client, room_manager):
         assert len(player_entities) == 1
         entity = player_entities[0]
         assert entity["id"].startswith("player_")
-        # Default position is (0, 0) since registration doesn't set position
+        # Spawn point fallback is (0, 0) when room has no explicit player spawn
         assert entity["x"] == 0
         assert entity["y"] == 0
 

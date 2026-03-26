@@ -19,6 +19,7 @@ class NpcEntity:
     stats: dict = field(default_factory=dict)
     loot_table: str = ""
     is_alive: bool = True
+    in_combat: bool = False
     spawn_config: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:

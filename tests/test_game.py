@@ -72,7 +72,7 @@ async def test_game_startup_initializes_db(test_session_factory):
                 mock_init.assert_called_once()
                 instance.load_rooms.assert_called_once()
             finally:
-                game.shutdown()
+                await game.shutdown()
 
 
 @pytest.mark.asyncio
@@ -93,7 +93,7 @@ async def test_game_startup_registers_handlers(test_session_factory):
             assert "login" in game.router._handlers
             assert "register" in game.router._handlers
         finally:
-            game.shutdown()
+            await game.shutdown()
 
 
 @pytest.mark.asyncio
@@ -125,18 +125,68 @@ async def test_game_startup_loads_rooms_into_manager(test_session_factory):
         try:
             assert game.room_manager.get_room("test_room") is not None
         finally:
-            game.shutdown()
+            await game.shutdown()
 
 
 # ---------------------------------------------------------------------------
 # Game shutdown
 # ---------------------------------------------------------------------------
 
-def test_game_shutdown():
-    """Game.shutdown() completes without error."""
+@pytest.mark.asyncio
+async def test_game_shutdown_empty():
+    """Game.shutdown() completes without error on empty state."""
     from server.app import Game
     game = Game()
-    game.shutdown()
+    await game.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_game_shutdown_saves_player_state():
+    """Game.shutdown() saves all player states, notifies, and disconnects."""
+    from server.app import Game
+
+    game = Game()
+    room = RoomInstance("test_room", "Test", 5, 5, [[0] * 5 for _ in range(5)])
+    game.room_manager._rooms["test_room"] = room
+
+    entity = PlayerEntity(id="player_1", name="hero", x=2, y=3, player_db_id=10)
+    room.add_entity(entity)
+
+    mock_ws = AsyncMock()
+    game.connection_manager.connect("player_1", mock_ws, "test_room")
+    game.player_entities["player_1"] = {
+        "entity": entity,
+        "room_key": "test_room",
+        "db_id": 10,
+    }
+
+    with patch("server.app.async_session") as mock_session_factory, \
+         patch("server.app.player_repo") as mock_repo:
+        mock_session = AsyncMock()
+        mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_repo.update_position = AsyncMock()
+        mock_repo.update_stats = AsyncMock()
+        mock_repo.update_inventory = AsyncMock()
+
+        await game.shutdown()
+
+        # Position saved
+        mock_repo.update_position.assert_called_once_with(
+            mock_session, 10, "test_room", 2, 3
+        )
+        # Stats saved
+        mock_repo.update_stats.assert_called_once()
+
+    # Server shutdown notification sent
+    mock_ws.send_json.assert_called_with(
+        {"type": "server_shutdown", "reason": "Server is shutting down"}
+    )
+    # WebSocket closed with 1001 (Going Away)
+    mock_ws.close.assert_called_with(code=1001)
+    # Player tracking cleared
+    assert len(game.player_entities) == 0
+    assert game.connection_manager.get_entity_id(mock_ws) is None
 
 
 # ---------------------------------------------------------------------------

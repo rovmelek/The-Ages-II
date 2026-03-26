@@ -100,11 +100,11 @@ async def _handle_mob_encounter(
     """Initiate combat when player encounters a hostile mob."""
     npc_id = mob_encounter["entity_id"]
     npc = room.get_npc(npc_id)
-    if npc is None or not npc.is_alive:
-        return  # Already dead or in combat
+    if npc is None or not npc.is_alive or npc.in_combat:
+        return  # Dead or already in combat
 
-    # Mark NPC as not alive (in combat)
-    npc.is_alive = False
+    # Mark NPC as in combat (stays alive until victory)
+    npc.in_combat = True
 
     # Load card definitions for player deck
     from server.combat.cards.card_def import CardDef
@@ -123,9 +123,12 @@ async def _handle_mob_encounter(
             for i in range(10)
         ]
 
-    # Create combat instance
+    # Create combat instance (store NPC reference for death/release on combat end)
     mob_stats = dict(npc.stats) if npc.stats else {"hp": 50, "max_hp": 50, "attack": 10}
-    instance = game.combat_manager.create_instance(npc.name, mob_stats)
+    room_key = player_info["room_key"]
+    instance = game.combat_manager.create_instance(
+        npc.name, mob_stats, npc_id=npc_id, room_key=room_key
+    )
     # Ensure player stats have required combat keys
     player_stats = dict(entity.stats)
     player_stats.setdefault("hp", 100)

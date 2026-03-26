@@ -5,12 +5,37 @@ from typing import TYPE_CHECKING
 
 from fastapi import WebSocket
 
+from server.core.database import async_session
+from server.player import repo as player_repo
+
 if TYPE_CHECKING:
     from server.app import Game
 
 
+async def _sync_combat_stats(instance, game: Game) -> None:
+    """Sync combat participant stats back to entities and persist to DB."""
+    for eid in instance.participants:
+        player_info = game.player_entities.get(eid)
+        if player_info is None:
+            continue
+        combat_stats = instance.participant_stats.get(eid)
+        if combat_stats is None:
+            continue
+        entity = player_info["entity"]
+        # Update entity stats from combat (exclude shield — combat-only)
+        for key in ("hp", "max_hp", "attack", "xp"):
+            if key in combat_stats:
+                entity.stats[key] = combat_stats[key]
+        # Persist to DB
+        async with async_session() as session:
+            await player_repo.update_stats(session, entity.player_db_id, entity.stats)
+
+
 async def _broadcast_combat_state(instance, result: dict, game: Game) -> None:
     """Broadcast combat turn state to all participants."""
+    # Sync stats back to entities and DB after each action
+    await _sync_combat_stats(instance, game)
+
     state = instance.get_state()
     for eid in instance.participants:
         ws = game.connection_manager.get_websocket(eid)
@@ -26,14 +51,67 @@ async def _check_combat_end(instance, game: Game) -> None:
 
     # Broadcast combat_end to all participants before cleanup
     participant_ids = list(instance.participants)
+    xp_reward = end_result.get("rewards", {}).get("xp", 0)
+
     for eid in participant_ids:
+        player_info = game.player_entities.get(eid)
+        if player_info:
+            entity = player_info["entity"]
+            entity.in_combat = False
+            # Reset combat-only transient stats
+            entity.stats.pop("shield", None)
+            entity.stats.pop("energy", None)
+            entity.stats.pop("max_energy", None)
+
+            # Apply XP reward on victory (fixes ISS-006)
+            if end_result.get("victory") and xp_reward:
+                entity.stats["xp"] = entity.stats.get("xp", 0) + xp_reward
+
+            # Sync final combat stats (hp etc.) back from instance
+            combat_stats = instance.participant_stats.get(eid)
+            if combat_stats:
+                for key in ("hp", "max_hp", "attack"):
+                    if key in combat_stats:
+                        entity.stats[key] = combat_stats[key]
+
+            # Persist stats to DB
+            async with async_session() as session:
+                await player_repo.update_stats(
+                    session, entity.player_db_id, entity.stats
+                )
+
         ws = game.connection_manager.get_websocket(eid)
         if ws:
             await ws.send_json({"type": "combat_end", **end_result})
-        # Mark player as not in combat
-        player_info = game.player_entities.get(eid)
-        if player_info:
-            player_info["entity"].in_combat = False
+
+    # Update NPC state based on combat outcome
+    if instance.npc_id and instance.room_key:
+        if end_result.get("victory"):
+            # Victory: kill the NPC and schedule respawn
+            await game.kill_npc(instance.room_key, instance.npc_id)
+            # Broadcast updated room state so all players see NPC death
+            room = game.room_manager.get_room(instance.room_key)
+            if room:
+                await game.connection_manager.broadcast_to_room(
+                    instance.room_key,
+                    {"type": "room_state", **room.get_state()},
+                )
+        else:
+            # Defeat: release NPC back to available
+            room = game.room_manager.get_room(instance.room_key)
+            if room:
+                npc = room.get_npc(instance.npc_id)
+                if npc:
+                    npc.in_combat = False
+
+    # On defeat: respawn all defeated players in town_square
+    if not end_result.get("victory"):
+        for eid in participant_ids:
+            player_info = game.player_entities.get(eid)
+            if player_info:
+                entity = player_info["entity"]
+                if entity.stats.get("hp", 0) <= 0:
+                    await game.respawn_player(eid)
 
     # Clean up: remove instance and all player mappings
     game.combat_manager.remove_instance(instance.instance_id)
@@ -113,7 +191,13 @@ async def handle_flee(
             if ws:
                 await ws.send_json({"type": "combat_update", **state})
     else:
-        # Last player fled — clean up instance
+        # Last player fled — release NPC and clean up instance
+        if instance.npc_id and instance.room_key:
+            room = game.room_manager.get_room(instance.room_key)
+            if room:
+                npc = room.get_npc(instance.npc_id)
+                if npc:
+                    npc.in_combat = False
         game.combat_manager.remove_instance(instance.instance_id)
 
 
@@ -160,8 +244,11 @@ async def handle_use_item_combat(
         await websocket.send_json({"type": "error", "detail": str(e)})
         return
 
-    # Consume one charge from inventory
+    # Consume one charge from inventory and persist
     inventory.use_charge(item_key)
+    db_id = player_info["db_id"]
+    async with async_session() as session:
+        await player_repo.update_inventory(session, db_id, inventory.to_dict())
 
     # Broadcast updated combat state with action result to all participants
     await _broadcast_combat_state(instance, result, game)

@@ -1,7 +1,12 @@
 """Player inventory management — in-memory item tracking."""
 from __future__ import annotations
 
+import logging
+from typing import Callable
+
 from server.items.item_def import ItemDef
+
+logger = logging.getLogger(__name__)
 
 
 class Inventory:
@@ -10,6 +15,29 @@ class Inventory:
     def __init__(self) -> None:
         # item_key -> {"item_def": ItemDef, "quantity": int}
         self._items: dict[str, dict] = {}
+
+    def to_dict(self) -> dict[str, int]:
+        """Serialize inventory for DB storage: {item_key: quantity}."""
+        return {key: entry["quantity"] for key, entry in self._items.items()}
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict[str, int],
+        item_lookup: Callable[[str], ItemDef | None],
+    ) -> Inventory:
+        """Reconstruct Inventory from DB data using an item lookup.
+
+        Unknown item keys (removed from game data) are skipped with a warning.
+        """
+        inv = cls()
+        for item_key, quantity in data.items():
+            item_def = item_lookup(item_key)
+            if item_def is None:
+                logger.warning("Unknown item_key '%s' in saved inventory — skipping", item_key)
+                continue
+            inv._items[item_key] = {"item_def": item_def, "quantity": quantity}
+        return inv
 
     def add_item(self, item_def: ItemDef, quantity: int = 1) -> None:
         """Add items to inventory. Stacks if already present."""
