@@ -10,6 +10,8 @@ build/
 
 # Runtime data
 data/game.db
+data/server.pid
+logs/
 
 # IDE
 .idea/
