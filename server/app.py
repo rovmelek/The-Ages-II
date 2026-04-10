@@ -22,6 +22,8 @@ from server.net.handlers.admin import admin_router
 from server.room.manager import RoomManager
 from server.room.provider import JsonRoomProvider
 
+logger = logging.getLogger(__name__)
+
 
 class Game:
     """Central game orchestrator — holds all managers and state."""
@@ -81,7 +83,6 @@ class Game:
 
     async def shutdown(self) -> None:
         """Gracefully shut down: save all player states, notify, and disconnect."""
-        logger = logging.getLogger(__name__)
         self.scheduler.stop()
 
         player_count = 0
@@ -240,6 +241,11 @@ class Game:
         sx, sy = spawn_room.get_player_spawn()
         if not spawn_room.is_walkable(sx, sy):
             sx, sy = spawn_room.find_first_walkable()
+        if not spawn_room.is_walkable(sx, sy):
+            logger.warning(
+                "Room %s has no walkable tile; placing %s at (%d, %d)",
+                spawn_room_key, entity.name, sx, sy,
+            )
 
         # Save to DB FIRST (crash recovery: player placed correctly on re-login)
         try:

@@ -8,9 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.core.database import Base
-from server.player.auth import hash_password
 from server.player.models import Player
-from server.room.models import Room
 from server.room.room import RoomInstance
 
 
@@ -237,3 +235,148 @@ def test_login_room_not_found(client, room_manager, test_session_factory):
         resp = ws.receive_json()
         assert resp["type"] == "error"
         assert resp["detail"] == "Room not found"
+
+
+def test_returning_player_on_wall_relocated_to_spawn(client, room_manager, test_session_factory):
+    """Returning player saved on a non-walkable tile should be relocated to spawn."""
+    import asyncio
+
+    _register_player(client)
+
+    # Replace room with one that has walls at (0,0) and a player spawn at (2,2)
+    wall_room = RoomInstance(
+        room_key="town_square",
+        name="Town Square",
+        width=5,
+        height=5,
+        tile_data=[
+            [1, 1, 0, 0, 0],  # row 0: walls at x=0,1
+            [1, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],  # row 2: spawn at (2,2)
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+        ],
+        exits=[],
+        spawn_points=[{"type": "player", "x": 2, "y": 2}],
+    )
+    room_manager._rooms["town_square"] = wall_room
+
+    # Pre-condition: verify (0,0) is actually non-walkable in this room
+    assert not wall_room.is_walkable(0, 0)
+
+    # Simulate a returning player: set current_room_id and position to wall (0,0)
+    async def set_wall_position():
+        async with test_session_factory() as session:
+            from sqlalchemy import update
+            await session.execute(
+                update(Player)
+                .where(Player.username == "hero")
+                .values(current_room_id="town_square", position_x=0, position_y=0)
+            )
+            await session.commit()
+
+    asyncio.run(set_wall_position())
+
+    with client.websocket_connect("/ws/game") as ws:
+        ws.send_json({"action": "login", "username": "hero", "password": "secret123"})
+        ws.receive_json()  # login_success
+        room_resp = ws.receive_json()
+
+        entities = room_resp["entities"]
+        player_entities = [e for e in entities if e["name"] == "hero"]
+        assert len(player_entities) == 1
+        entity = player_entities[0]
+        # Should be relocated to spawn (2,2), NOT stuck at wall (0,0)
+        assert entity["x"] == 2
+        assert entity["y"] == 2
+
+
+def test_returning_player_spawn_also_unwalkable_uses_first_walkable(
+    client, room_manager, test_session_factory
+):
+    """When both saved position AND spawn point are unwalkable, use first walkable tile."""
+    import asyncio
+
+    _register_player(client)
+
+    # Room where spawn point (1,1) is a wall; first walkable tile is (2,0) by row scan
+    bad_spawn_room = RoomInstance(
+        room_key="town_square",
+        name="Town Square",
+        width=5,
+        height=5,
+        tile_data=[
+            [1, 1, 0, 0, 0],  # row 0: first walkable at col=2 → (2,0)
+            [1, 1, 0, 0, 0],  # row 1: spawn at (1,1) is wall
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+        ],
+        exits=[],
+        spawn_points=[{"type": "player", "x": 1, "y": 1}],
+    )
+    room_manager._rooms["town_square"] = bad_spawn_room
+
+    # Pre-conditions
+    assert not bad_spawn_room.is_walkable(0, 0)
+    assert not bad_spawn_room.is_walkable(1, 1)
+    assert bad_spawn_room.is_walkable(2, 0)
+
+    async def set_wall_position():
+        async with test_session_factory() as session:
+            from sqlalchemy import update
+            await session.execute(
+                update(Player)
+                .where(Player.username == "hero")
+                .values(current_room_id="town_square", position_x=0, position_y=0)
+            )
+            await session.commit()
+
+    asyncio.run(set_wall_position())
+
+    with client.websocket_connect("/ws/game") as ws:
+        ws.send_json({"action": "login", "username": "hero", "password": "secret123"})
+        ws.receive_json()  # login_success
+        room_resp = ws.receive_json()
+
+        entities = room_resp["entities"]
+        player_entities = [e for e in entities if e["name"] == "hero"]
+        assert len(player_entities) == 1
+        entity = player_entities[0]
+        # Should fall back to first walkable tile (2,0)
+        assert entity["x"] == 2
+        assert entity["y"] == 0
+
+
+def test_returning_player_on_walkable_tile_stays_put(client, room_manager, test_session_factory):
+    """Returning player on a valid walkable tile should NOT be relocated."""
+    import asyncio
+
+    _register_player(client)
+
+    # Set saved position to walkable tile (3,3) with current_room_id set
+    async def set_walkable_position():
+        async with test_session_factory() as session:
+            from sqlalchemy import update
+            await session.execute(
+                update(Player)
+                .where(Player.username == "hero")
+                .values(current_room_id="town_square", position_x=3, position_y=3)
+            )
+            await session.commit()
+
+    asyncio.run(set_walkable_position())
+
+    # Default room fixture has all floor tiles — (3,3) is walkable
+    with client.websocket_connect("/ws/game") as ws:
+        ws.send_json({"action": "login", "username": "hero", "password": "secret123"})
+        ws.receive_json()  # login_success
+        room_resp = ws.receive_json()
+
+        entities = room_resp["entities"]
+        player_entities = [e for e in entities if e["name"] == "hero"]
+        assert len(player_entities) == 1
+        entity = player_entities[0]
+        # Should stay at saved position, not relocated to spawn
+        assert entity["x"] == 3
+        assert entity["y"] == 3

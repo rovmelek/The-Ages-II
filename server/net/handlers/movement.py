@@ -1,6 +1,7 @@
 """Movement handler for WebSocket clients."""
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from fastapi import WebSocket
@@ -11,6 +12,8 @@ from server.room import repo as room_repo
 
 if TYPE_CHECKING:
     from server.app import Game
+
+logger = logging.getLogger(__name__)
 
 
 async def handle_move(websocket: WebSocket, data: dict, *, game: Game) -> None:
@@ -185,11 +188,18 @@ async def _handle_exit_transition(
         exclude=entity_id,
     )
 
-    # Determine entry position in target room
+    # Determine entry position in target room (validate walkability)
     entry_x = exit_info.get("entry_x")
     entry_y = exit_info.get("entry_y")
-    if entry_x is None or entry_y is None:
+    if entry_x is None or entry_y is None or not target_room.is_walkable(entry_x, entry_y):
         entry_x, entry_y = target_room.get_player_spawn()
+    if not target_room.is_walkable(entry_x, entry_y):
+        entry_x, entry_y = target_room.find_first_walkable()
+    if not target_room.is_walkable(entry_x, entry_y):
+        logger.warning(
+            "Room %s has no walkable tile; placing %s at (%d, %d)",
+            target_room_key, entity.name, entry_x, entry_y,
+        )
 
     # Place entity in new room
     entity.x = entry_x

@@ -1,14 +1,15 @@
 """Authentication handlers for WebSocket clients."""
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from fastapi import WebSocket
 
 from server.core.database import async_session
+from server.items import item_repo
 from server.items.inventory import Inventory
 from server.items.item_def import ItemDef
-from server.items import item_repo
 from server.player import repo as player_repo
 from server.player.auth import hash_password, verify_password
 from server.player.entity import PlayerEntity
@@ -16,6 +17,8 @@ from server.room import repo as room_repo
 
 if TYPE_CHECKING:
     from server.app import Game
+
+logger = logging.getLogger(__name__)
 
 
 async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> None:
@@ -180,16 +183,20 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
                 return
             room = game.room_manager.load_room(room_db)
 
-        # First login: place at spawn point (not saved position)
+        # Place player at a safe position
         is_first_login = player.current_room_id is None
-        if is_first_login:
+        needs_relocation = is_first_login or not room.is_walkable(entity.x, entity.y)
+        if needs_relocation:
             sx, sy = room.get_player_spawn()
-            # Validate spawn is walkable; fallback to first walkable tile
             if not room.is_walkable(sx, sy):
                 sx, sy = room.find_first_walkable()
+            if not room.is_walkable(sx, sy):
+                logger.warning(
+                    "Room %s has no walkable tile; placing %s at (%d, %d)",
+                    room_key, entity.name, sx, sy,
+                )
             entity.x = sx
             entity.y = sy
-            # Persist first-login placement to DB
             await player_repo.update_position(session, player.id, room_key, sx, sy)
 
         # Place entity in room and register WebSocket connection
