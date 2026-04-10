@@ -60,8 +60,11 @@ class ConnectionManager:
         self, room_key: str, message: dict, exclude: str | None = None
     ) -> None:
         """Send a JSON message to all players in a room."""
-        for eid, rk in self._player_rooms.items():
+        for eid, rk in list(self._player_rooms.items()):
             if rk == room_key and eid != exclude:
                 ws = self._connections.get(eid)
                 if ws:
-                    await ws.send_json(message)
+                    try:
+                        await ws.send_json(message)
+                    except Exception:
+                        pass  # Skip dead connections

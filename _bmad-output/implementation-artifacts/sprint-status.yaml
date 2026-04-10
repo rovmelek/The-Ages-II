@@ -151,7 +151,7 @@ development_status:
 
   # Epic 10: Gameplay Polish & Interaction
   epic-10: in-progress
-  10-1-player-logout: review
+  10-1-player-logout: done
   10-2-non-walkable-interactive-objects: backlog
   10-3-slash-command-parser: backlog
   10-4-server-query-actions: backlog

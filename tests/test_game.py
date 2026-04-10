@@ -160,14 +160,11 @@ async def test_game_shutdown_saves_player_state():
         "db_id": 10,
     }
 
-    with patch("server.app.async_session") as mock_session_factory, \
-         patch("server.app.player_repo") as mock_repo:
+    with patch("server.net.handlers.auth.async_session") as mock_session_factory, \
+         patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
-        mock_repo.update_position = AsyncMock()
-        mock_repo.update_stats = AsyncMock()
-        mock_repo.update_inventory = AsyncMock()
 
         await game.shutdown()
 
@@ -178,10 +175,12 @@ async def test_game_shutdown_saves_player_state():
         # Stats saved
         mock_repo.update_stats.assert_called_once()
 
-    # Server shutdown notification sent
-    mock_ws.send_json.assert_called_with(
-        {"type": "server_shutdown", "reason": "Server is shutting down"}
-    )
+    # Server shutdown notification sent before cleanup
+    shutdown_calls = [
+        call for call in mock_ws.send_json.call_args_list
+        if isinstance(call[0][0], dict) and call[0][0].get("type") == "server_shutdown"
+    ]
+    assert len(shutdown_calls) == 1
     # WebSocket closed with 1001 (Going Away)
     mock_ws.close.assert_called_with(code=1001)
     # Player tracking cleared
@@ -213,7 +212,7 @@ async def test_handle_disconnect_removes_entity_from_room():
         "db_id": 1,
     }
 
-    with patch("server.app.async_session") as mock_session_factory:
+    with patch("server.net.handlers.auth.async_session") as mock_session_factory:
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -248,8 +247,8 @@ async def test_handle_disconnect_saves_position():
         "db_id": 42,
     }
 
-    with patch("server.app.async_session") as mock_session_factory, \
-         patch("server.app.player_repo") as mock_repo:
+    with patch("server.net.handlers.auth.async_session") as mock_session_factory, \
+         patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -283,7 +282,7 @@ async def test_handle_disconnect_broadcasts_entity_left():
     game.player_entities["player_1"] = {"entity": entity1, "room_key": "test_room", "db_id": 1}
     game.player_entities["player_2"] = {"entity": entity2, "room_key": "test_room", "db_id": 2}
 
-    with patch("server.app.async_session") as mock_session_factory:
+    with patch("server.net.handlers.auth.async_session") as mock_session_factory:
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -292,9 +291,12 @@ async def test_handle_disconnect_broadcasts_entity_left():
         await game.handle_disconnect(ws2)
 
     # Player 1 should receive entity_left
-    ws1.send_json.assert_called_with(
-        {"type": "entity_left", "entity_id": "player_2"}
-    )
+    entity_left_calls = [
+        call for call in ws1.send_json.call_args_list
+        if call[0][0].get("type") == "entity_left"
+    ]
+    assert len(entity_left_calls) == 1
+    assert entity_left_calls[0][0][0]["entity_id"] == "player_2"
     # Player 2's send_json should NOT be called for the broadcast
     # (exclude=entity_id prevents self-notification)
 

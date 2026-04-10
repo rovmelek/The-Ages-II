@@ -376,14 +376,11 @@ function handleLoggedOut(_data) {
   if ($grid) $grid.innerHTML = '';
   const $chatLog = document.getElementById('chat-log');
   if ($chatLog) $chatLog.innerHTML = '';
-  const $log = document.getElementById('server-log');
-  if ($log) $log.innerHTML = '';
   // Switch to auth mode (also dismisses combat overlay)
   setMode('auth');
-  const $status = document.getElementById('auth-status');
-  if ($status) {
-    $status.textContent = 'You have been logged out.';
-    $status.classList.remove('hidden');
+  const $authMsg = document.getElementById('auth-message');
+  if ($authMsg) {
+    $authMsg.textContent = 'You have been logged out.';
   }
 }
 

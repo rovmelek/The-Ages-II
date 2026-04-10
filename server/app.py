@@ -83,39 +83,13 @@ class Game:
 
     async def shutdown(self) -> None:
         """Gracefully shut down: save all player states, notify, and disconnect."""
+        from server.net.handlers.auth import _cleanup_player
+
         self.scheduler.stop()
 
         player_count = 0
-        for entity_id, player_info in list(self.player_entities.items()):
-            entity = player_info["entity"]
-            room_key = player_info["room_key"]
-            inventory = player_info.get("inventory")
-
-            # Remove from combat if in combat
-            combat_instance = self.combat_manager.get_player_instance(entity_id)
-            if combat_instance:
-                combat_instance.remove_participant(entity_id)
-                self.combat_manager.remove_player(entity_id)
-                if not combat_instance.participants:
-                    self.combat_manager.remove_instance(combat_instance.instance_id)
-
-            # Save all state to DB
-            try:
-                async with async_session() as session:
-                    await player_repo.update_position(
-                        session, entity.player_db_id, room_key, entity.x, entity.y
-                    )
-                    await player_repo.update_stats(
-                        session, entity.player_db_id, entity.stats
-                    )
-                    if inventory:
-                        await player_repo.update_inventory(
-                            session, entity.player_db_id, inventory.to_dict()
-                        )
-            except Exception:
-                logger.exception("Failed to save state for %s", entity_id)
-
-            # Notify and close WebSocket
+        for entity_id in list(self.player_entities.keys()):
+            # Notify before cleanup (WebSocket still mapped)
             ws = self.connection_manager.get_websocket(entity_id)
             if ws:
                 try:
@@ -124,12 +98,16 @@ class Game:
                     )
                 except Exception:
                     pass
+
+            await _cleanup_player(entity_id, self)
+
+            # Close WebSocket after cleanup
+            if ws:
                 try:
                     await ws.close(code=1001)
                 except Exception:
                     pass
 
-            self.connection_manager.disconnect(entity_id)
             player_count += 1
 
         self.player_entities.clear()
@@ -303,59 +281,13 @@ class Game:
 
     async def handle_disconnect(self, websocket: WebSocket) -> None:
         """Handle a player disconnecting: save state, clean up, notify room."""
+        from server.net.handlers.auth import _cleanup_player
+
         entity_id = self.connection_manager.get_entity_id(websocket)
         if entity_id is None:
             return  # Unauthenticated connection, nothing to clean up
 
-        # Remove from combat if in combat
-        combat_instance = self.combat_manager.get_player_instance(entity_id)
-        if combat_instance:
-            combat_instance.remove_participant(entity_id)
-            self.combat_manager.remove_player(entity_id)
-            # If no participants left, clean up instance
-            if not combat_instance.participants:
-                self.combat_manager.remove_instance(combat_instance.instance_id)
-            else:
-                # Notify remaining participants of updated state
-                state = combat_instance.get_state()
-                for eid in combat_instance.participants:
-                    ws = self.connection_manager.get_websocket(eid)
-                    if ws:
-                        await ws.send_json({"type": "combat_update", **state})
-
-        player_info = self.player_entities.pop(entity_id, None)
-        if player_info:
-            entity = player_info["entity"]
-            room_key = player_info["room_key"]
-
-            # Save position, stats, and inventory to database
-            try:
-                inventory = player_info.get("inventory")
-                async with async_session() as session:
-                    await player_repo.update_position(
-                        session, entity.player_db_id, room_key, entity.x, entity.y
-                    )
-                    await player_repo.update_stats(
-                        session, entity.player_db_id, entity.stats
-                    )
-                    if inventory:
-                        await player_repo.update_inventory(
-                            session, entity.player_db_id, inventory.to_dict()
-                        )
-            except Exception:
-                pass  # Best-effort save on disconnect
-
-            # Remove from room and notify others
-            room = self.room_manager.get_room(room_key)
-            if room:
-                room.remove_entity(entity_id)
-                await self.connection_manager.broadcast_to_room(
-                    room_key,
-                    {"type": "entity_left", "entity_id": entity_id},
-                    exclude=entity_id,
-                )
-
-        self.connection_manager.disconnect(entity_id)
+        await _cleanup_player(entity_id, self)
 
 
 # ---------------------------------------------------------------------------

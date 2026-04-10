@@ -1,6 +1,6 @@
 # Story 10.1: Player Logout
 
-Status: review
+Status: done
 
 ## Story
 

@@ -362,3 +362,57 @@ async def test_relogin_same_socket_without_logout():
     assert game.connection_manager.get_entity_id(ws) == "player_1"
     # WebSocket was NOT closed
     ws.close.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# entity_left broadcast
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_logout_broadcasts_entity_left_to_others():
+    """Logout broadcasts entity_left to other players in the room."""
+    from server.net.handlers.auth import handle_logout
+
+    game, room = _make_game()
+    _, ws1 = _add_player(game, room, "player_1", "alice", 1, 1, 1)
+    _, ws2 = _add_player(game, room, "player_2", "bob", 2, 2, 2)
+
+    with patch("server.net.handlers.auth.async_session") as mock_sf, \
+         patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock):
+        mock_sf.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+        mock_sf.return_value.__aexit__ = AsyncMock(return_value=False)
+        await handle_logout(ws1, {}, game=game)
+
+    # Player 2 should receive entity_left for player_1
+    entity_left_calls = [
+        call for call in ws2.send_json.call_args_list
+        if call[0][0].get("type") == "entity_left"
+    ]
+    assert len(entity_left_calls) == 1
+    assert entity_left_calls[0][0][0]["entity_id"] == "player_1"
+
+
+# ---------------------------------------------------------------------------
+# Inventory save
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_logout_saves_inventory():
+    """Logout saves inventory to DB when inventory exists."""
+    from server.items.inventory import Inventory
+    from server.net.handlers.auth import handle_logout
+
+    game, room = _make_game()
+    entity, ws = _add_player(game, room)
+
+    # Add inventory to player_entities
+    inventory = Inventory()
+    game.player_entities["player_1"]["inventory"] = inventory
+
+    with patch("server.net.handlers.auth.async_session") as mock_sf, \
+         patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
+        mock_sf.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+        mock_sf.return_value.__aexit__ = AsyncMock(return_value=False)
+        await handle_logout(ws, {}, game=game)
+
+        mock_repo.update_inventory.assert_called_once()

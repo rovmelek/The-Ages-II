@@ -61,12 +61,15 @@ async def _cleanup_player(entity_id: str, game: Game) -> None:
                         npc.in_combat = False
             game.combat_manager.remove_instance(combat_instance.instance_id)
         else:
-            # Notify remaining participants
+            # Notify remaining participants (best-effort per recipient)
             state = combat_instance.get_state()
             for eid in combat_instance.participants:
                 ws = game.connection_manager.get_websocket(eid)
                 if ws:
-                    await ws.send_json({"type": "combat_update", **state})
+                    try:
+                        await ws.send_json({"type": "combat_update", **state})
+                    except Exception:
+                        pass
 
     # 2. Save state to DB (best-effort)
     try:
@@ -155,57 +158,9 @@ async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> No
 
 async def _kick_old_session(entity_id: str, old_ws: WebSocket, game: Game) -> None:
     """Kick an existing session: save state, clean up, close old WebSocket."""
-    # 1. Save old session state
-    player_info = game.player_entities.get(entity_id)
-    if player_info:
-        entity = player_info["entity"]
-        room_key = player_info["room_key"]
-        inventory = player_info.get("inventory")
+    await _cleanup_player(entity_id, game)
 
-        try:
-            async with async_session() as session:
-                await player_repo.update_position(
-                    session, entity.player_db_id, room_key, entity.x, entity.y
-                )
-                await player_repo.update_stats(
-                    session, entity.player_db_id, entity.stats
-                )
-                if inventory:
-                    await player_repo.update_inventory(
-                        session, entity.player_db_id, inventory.to_dict()
-                    )
-        except Exception:
-            pass  # Best-effort save
-
-        # 2. Remove from combat
-        combat_instance = game.combat_manager.get_player_instance(entity_id)
-        if combat_instance:
-            combat_instance.remove_participant(entity_id)
-            game.combat_manager.remove_player(entity_id)
-            if not combat_instance.participants:
-                game.combat_manager.remove_instance(combat_instance.instance_id)
-            else:
-                state = combat_instance.get_state()
-                for eid in combat_instance.participants:
-                    ws = game.connection_manager.get_websocket(eid)
-                    if ws:
-                        await ws.send_json({"type": "combat_update", **state})
-
-        # 3. Remove from room
-        room = game.room_manager.get_room(room_key)
-        if room:
-            room.remove_entity(entity_id)
-            await game.connection_manager.broadcast_to_room(
-                room_key,
-                {"type": "entity_left", "entity_id": entity_id},
-                exclude=entity_id,
-            )
-
-    # 4. Remove from connection_manager and player_entities (before close)
-    game.connection_manager.disconnect(entity_id)
-    game.player_entities.pop(entity_id, None)
-
-    # 5. Notify and close old WebSocket (best-effort)
+    # Notify and close old WebSocket (best-effort)
     try:
         await old_ws.send_json(
             {"type": "kicked", "reason": "Logged in from another location"}
