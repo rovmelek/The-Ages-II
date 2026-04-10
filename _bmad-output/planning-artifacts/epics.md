@@ -1,10 +1,12 @@
 ---
-stepsCompleted: ["step-01-validate-prerequisites", "step-02-design-epics", "step-03-create-stories", "step-04-final-validation"]
+stepsCompleted: ["step-01-validate-prerequisites", "step-02-design-epics", "step-03-create-stories", "step-04-final-validation", "step-01-epic10-prerequisites", "step-02-epic10-design", "step-03-epic10-stories", "step-04-epic10-validation"]
 inputDocuments:
   - "THE_AGES_SERVER_PLAN.md"
   - "_bmad-output/planning-artifacts/architecture.md"
   - "_bmad-output/planning-artifacts/execution-plan.md"
   - "_bmad-output/implementation-artifacts/tech-spec-web-test-client.md"
+  - "CLAUDE.md"
+  - "_bmad-output/implementation-artifacts/sprint-status.yaml"
 ---
 
 # The-Ages-II - Epic Breakdown
@@ -75,6 +77,35 @@ FR55: Duplicate login protection — server kicks existing session when same acc
 FR56: NPC death state broadcast — after combat victory, server rebroadcasts room_state to all players in the room so all clients see the NPC as dead (using existing room_state format ensures consistent state); also fix pre-existing bug: NPC is_alive is currently set False at encounter time (movement.py:101), not at victory — must change to set is_alive=False only on combat victory and use an in_combat flag at encounter instead; add in_combat: bool field to NpcEntity dataclass; to_dict() must NOT expose in_combat (server-internal); encounter check must verify both is_alive and not in_combat; NPC in_combat flag is purely in-memory, not persisted to DB — server restart resets all NPCs to available state; note: targeted npc_update message is the production optimization path but room_state rebroadcast is sufficient for prototype
 FR57: Card cost enforcement — implement mana/energy resource system so card cost field has mechanical meaning, or remove cost field
 FR58: Vertical room exits — support stairs/ladders with new tile types (STAIRS_UP, STAIRS_DOWN); requires direction disambiguation since movement "up"/"down" means north/south on grid while vertical exit "up"/"down" means ascend/descend — consider "ascend"/"descend" exit directions or interact-based triggering
+FR59: Admin authentication (shared secret) — REST endpoints protected by ADMIN_SECRET env var
+FR60: Admin-triggered graceful shutdown — POST /admin/shutdown saves all state, notifies clients, exits
+FR61: Admin-triggered server restart — POST /admin/restart with process re-execution
+FR62: Player logout — server action `logout` that saves state, removes from room, notifies others, closes WebSocket
+FR63: Player logout — web client `/logout` command and logout button returning to login screen
+FR64: Interactive objects (chests, levers) are non-walkable — players interact from adjacent tiles
+FR65: Directional interaction — `/interact <direction>` command resolves to adjacent interactive object and sends `interact` action
+FR66: Slash command parser — client-side parser translating `/command args` into server actions via chat input
+FR67: Slash commands: `/logout`, `/whisper @name message`, `/interact <direction>`, `/inventory`, `/use <item>`, `/look`, `/who`, `/stats`, `/help`, `/flee`, `/pass`
+FR68: Server action `look` — returns objects, NPCs, and players on current tile and adjacent tiles
+FR69: Server action `who` — returns list of players in current room
+FR70: Server action `stats` — returns current player stats (HP, max_hp, attack, XP)
+FR71: Server action `help` — returns list of available actions/commands
+FR72: Proximity notification — server notifies player when they move adjacent to an interactive object
+FR73: Player stats HUD — always-visible HP bar, XP display, attack stat in web client
+FR74: Mob loot drops — combat victory generates loot from NPC's `loot_table`, adds to player inventory, included in `combat_end` message
+FR75: Mob loot tables — add loot table entries for all NPC types (goblin_loot, slime_loot, bat_loot, troll_loot, dragon_loot)
+FR76: Increased NPC spawn density — add more slime/mob spawn points in larger rooms (town_square, dark_cave)
+FR77: XP level thresholds — define XP required per level with scaling curve
+FR78: Level-up mechanic — when XP exceeds threshold, player levels up with stat increases (HP, attack)
+FR79: Level-up notification — server sends `level_up` message to player with new level and stat changes
+FR80: Level display — player level shown in stats HUD and included in entity data visible to other players
+FR81: `/stats` updated to include level and XP-to-next-level
+FR82: Trade system — `/trade @player` initiates trade request; accept/reject flow; item transfer between inventories
+FR83: Trade validation — both players must be in same room, online, not in combat; items validated before transfer
+FR84: Party system — `/party invite @player`, `/party accept`, `/party leave`, `/party disband`
+FR85: Party chat — `/party message` sends to party members only, regardless of room
+FR86: Party combat — party members in same room enter combat together when any member encounters a mob
+FR87: World map — `/map` shows discovered rooms and their connections; rooms discovered on first visit; persisted to DB
 
 ### NonFunctional Requirements
 
@@ -168,6 +199,32 @@ Web demo client (`web-demo/`) implemented as a proof-of-concept test tool. Vanil
 | FR59 | Epic 9 | Admin authentication (shared secret) |
 | FR60 | Epic 9 | Admin-triggered graceful shutdown |
 | FR61 | Epic 9 | Admin-triggered server restart |
+| FR62 | Epic 10 | Player logout server action |
+| FR63 | Epic 10 | Player logout client UI + command |
+| FR64 | Epic 10 | Non-walkable interactive objects |
+| FR65 | Epic 10 | Directional `/interact <direction>` command |
+| FR66 | Epic 10 | Slash command parser (client-side) |
+| FR67 | Epic 10 | Slash commands full list |
+| FR68 | Epic 10 | Server action `look` |
+| FR69 | Epic 10 | Server action `who` |
+| FR70 | Epic 10 | Server action `stats` |
+| FR71 | Epic 10 | Server action `help` |
+| FR72 | Epic 10 | Proximity notification for interactive objects |
+| FR73 | Epic 10 | Player stats HUD |
+| FR74 | Epic 10 | Mob loot drops on combat victory |
+| FR75 | Epic 10 | Loot table entries for all NPC types |
+| FR76 | Epic 10 | Increased NPC spawn density |
+| FR77 | Epic 11 | XP level thresholds |
+| FR78 | Epic 11 | Level-up mechanic with stat increases |
+| FR79 | Epic 11 | Level-up notification |
+| FR80 | Epic 11 | Level display in HUD and entity data |
+| FR81 | Epic 11 | `/stats` includes level and XP-to-next |
+| FR82 | Epic 12 | Trade system |
+| FR83 | Epic 12 | Trade validation |
+| FR84 | Epic 12 | Party system |
+| FR85 | Epic 12 | Party chat |
+| FR86 | Epic 12 | Party combat |
+| FR87 | Epic 12 | World map with room discovery |
 
 ## Epic List
 
@@ -203,6 +260,25 @@ Players experience a reliable, persistent game world — spawning at valid posit
 ### Epic 8: World Expansion
 The game world grows with new mechanics — vertical room exits (stairs/ladders), and a mana/energy resource system that gives card costs mechanical meaning. Note: FR57 and FR58 are independent features grouped by implementation phase (both require design decisions before implementation), not by user journey.
 **FRs covered:** FR57, FR58
+
+### Epic 9: Server Administration
+Server operators can manage the game server without SSH process management — triggering graceful shutdown or restart via authenticated admin commands, with proper player state preservation and client notification.
+**FRs covered:** FR59, FR60, FR61
+
+### Epic 10: Gameplay Polish & Interaction
+Players experience a polished, discoverable game world — interacting with objects via commands or proximity, managing inventory and using items through multiple access methods, receiving loot from defeated mobs, and seeing their stats at a glance. A unified slash command system provides engine-agnostic access to all game mechanics.
+**FRs covered:** FR62, FR63, FR64, FR65, FR66, FR67, FR68, FR69, FR70, FR71, FR72, FR73, FR74, FR75, FR76
+**Dependencies:** Builds on Epics 1-9 (all complete). Standalone.
+
+### Epic 11: Leveling System
+Players gain levels as they accumulate XP, receiving stat increases and visual feedback on their progression. Level is visible to other players, creating a sense of achievement and relative power.
+**FRs covered:** FR77, FR78, FR79, FR80, FR81
+**Dependencies:** Builds on Epic 10 (stats HUD, mob loot drops). Standalone.
+
+### Epic 12: Social Systems
+Players can trade items with each other, form parties for cooperative combat, and navigate the world using a discovered map — transforming the game from a solo experience into a social one.
+**FRs covered:** FR82, FR83, FR84, FR85, FR86, FR87
+**Dependencies:** Builds on Epics 10-11. Standalone.
 
 ---
 
@@ -1499,3 +1575,319 @@ So that I can apply updates or recover from issues without manual process manage
 **Then** it is rejected with `{"status": "already_shutting_down"}`
 
 **And** all existing tests pass after implementation
+
+---
+
+## Epic 10: Gameplay Polish & Interaction
+
+Players experience a polished, discoverable game world — interacting with objects via commands or proximity, managing inventory and using items through multiple access methods, receiving loot from defeated mobs, and seeing their stats at a glance. A unified slash command system provides engine-agnostic access to all game mechanics.
+
+### Story 10.1: Player Logout
+
+As a player,
+I want to logout cleanly from the game,
+So that my state is saved and I can return to the login screen without closing the browser.
+
+**Acceptance Criteria:**
+
+**Given** a logged-in player
+**When** the server receives `{"action": "logout"}`
+**Then** the player's state is saved to DB (position, stats, inventory)
+**And** the player's entity is removed from the room
+**And** other players in the room receive an `entity_left` message
+**And** the player is removed from `player_entities` and `connection_manager`
+**And** the player receives `{"type": "logged_out"}`
+**And** the WebSocket remains open (player returns to auth state, can login again)
+
+**Given** a player is in combat
+**When** they send a logout action
+**Then** the player is removed from combat (treated as flee)
+**And** combat continues for other participants
+**And** logout proceeds normally after combat removal
+
+**Given** a player is not logged in
+**When** they send a logout action
+**Then** the client receives an error: "Not logged in"
+
+**Given** the web client receives a `logged_out` message
+**When** the UI updates
+**Then** the game viewport is hidden and the login form is shown
+**And** a "Logout" button is visible in the game UI during gameplay
+**And** `/logout` command is available via chat input
+
+### Story 10.2: Non-Walkable Interactive Objects
+
+As a player,
+I want interactive objects (chests, levers) to block movement like obstacles,
+So that I must stand next to them and interact deliberately, matching real game engine conventions.
+
+**Acceptance Criteria:**
+
+**Given** a room JSON defines a chest at position (25, 30) with `category: "interactive"`
+**When** the room is loaded
+**Then** the tile at (25, 30) is marked as non-walkable (blocked by the object)
+**And** the chest is visible in the room_state objects list
+
+**Given** a player attempts to move onto a tile occupied by an interactive object
+**When** the server processes the move
+**Then** the move is rejected with error: "Tile not walkable"
+**And** the player's position does not change
+
+**Given** a player is adjacent to a chest (one tile away in any cardinal direction)
+**When** the player sends `{"action": "interact", "target_id": "chest_01"}`
+**Then** the interaction succeeds as before (existing interact handler works)
+
+**Given** a player is NOT adjacent to an interactive object
+**When** the player sends an interact action for that object
+**Then** the client receives an error: "Too far to interact"
+
+**Given** static objects (trees, rocks) are already non-walkable
+**When** the story is complete
+**Then** interactive objects follow the same blocking pattern
+**And** existing tests are updated for the new blocking behavior
+**And** `pytest tests/` passes with no failures
+
+### Story 10.3: Slash Command Parser
+
+As a player,
+I want to type `/commands` in the chat input to perform game actions,
+So that I have an engine-agnostic way to access all game mechanics beyond clicking UI buttons.
+
+**Acceptance Criteria:**
+
+**Given** the web client chat input exists
+**When** the player types a message starting with `/`
+**Then** the message is intercepted by a client-side command parser before being sent as chat
+**And** the parser extracts the command name and arguments
+
+**Given** the player types `/help`
+**When** the parser processes it
+**Then** a help message is displayed locally listing all available commands with brief descriptions
+**And** no message is sent to the server (client-side only)
+
+**Given** the player types an unknown command like `/foobar`
+**When** the parser processes it
+**Then** the player sees a local error: "Unknown command: /foobar. Type /help for available commands."
+**And** no message is sent to the server
+
+**Given** the player types a regular chat message (no `/` prefix)
+**When** the input is processed
+**Then** it is sent as a normal chat message (existing behavior unchanged)
+
+**Given** the parser exists
+**When** the story is complete
+**Then** the parser is extensible — adding a new command requires adding one entry to a command registry object
+**And** the parser handles: command name extraction, argument splitting, command dispatch
+
+### Story 10.4: Server Query Actions
+
+As a player,
+I want to query the server for information about my surroundings, who's online, and my stats,
+So that I can make informed decisions without relying on UI-only displays.
+
+**Acceptance Criteria:**
+
+**Given** a logged-in player sends `{"action": "look"}`
+**When** the server processes the action
+**Then** the player receives `{"type": "look_result"}` containing:
+- Interactive objects on the player's tile and all 4 adjacent tiles (with object id, type, direction)
+- NPCs on/adjacent to the player (with name, alive status, direction)
+- Other players on/adjacent to the player (with name, direction)
+
+**Given** a logged-in player sends `{"action": "who"}`
+**When** the server processes the action
+**Then** the player receives `{"type": "who_result", "room": "town_square", "players": [{"name": "hero", "x": 50, "y": 50}, ...]}`
+
+**Given** a logged-in player sends `{"action": "stats"}`
+**When** the server processes the action
+**Then** the player receives `{"type": "stats_result", "stats": {"hp": 85, "max_hp": 100, "attack": 10, "xp": 150}}`
+
+**Given** a logged-in player sends `{"action": "help_actions"}`
+**When** the server processes the action
+**Then** the player receives `{"type": "help_result", "actions": ["move", "chat", "interact", "inventory", "use_item", "look", "who", "stats", "logout", ...]}`
+
+**Given** a player is not logged in
+**When** they send any query action
+**Then** the client receives an error: "Not logged in"
+
+**And** all new handlers are registered in `Game._register_handlers()`
+**And** tests are added for each new action
+**And** `pytest tests/` passes
+
+### Story 10.5: Directional Object Interaction
+
+As a player,
+I want to interact with adjacent objects by specifying a direction and receive proximity notifications,
+So that I can discover and interact with objects naturally without needing to know object IDs.
+
+**Acceptance Criteria:**
+
+**Given** a logged-in player sends `{"action": "interact", "direction": "east"}`
+**When** the server processes the action
+**Then** the server checks the tile one step east of the player's position
+**And** if an interactive object exists on that tile, the interaction proceeds (delegates to existing interact handler)
+**And** the `interact` handler accepts either `target_id` (existing) OR `direction` (new) — not both required
+
+**Given** a player sends an interact with direction but no interactive object is in that direction
+**When** the server processes the action
+**Then** the client receives an error: "Nothing to interact with in that direction"
+
+**Given** a player moves to a tile adjacent to an interactive object
+**When** the movement completes
+**Then** the server includes a `nearby_objects` field in the move result: `[{"id": "chest_01", "type": "chest", "direction": "east"}]`
+**And** the web client displays a notification: "You see a chest to the east"
+
+**Given** a player moves away from all interactive objects
+**When** the movement completes
+**Then** no `nearby_objects` field is included (or it's an empty list)
+
+**Given** multiple interactive objects are adjacent to the player
+**When** the movement completes
+**Then** all nearby objects are listed with their directions
+
+**And** existing `interact` by `target_id` continues to work (backward compatible)
+**And** tests cover both `target_id` and `direction` interaction modes
+**And** `pytest tests/` passes
+
+### Story 10.6: Slash Command Integration
+
+As a player,
+I want all game actions available as slash commands in the chat input,
+So that every mechanic is accessible via text commands for engine-agnostic testing.
+
+**Acceptance Criteria:**
+
+**Given** the slash command parser from Story 10.3 exists
+**When** the story is complete
+**Then** the following commands are registered and functional:
+
+| Command | Server Action | Behavior |
+|---------|--------------|----------|
+| `/logout` | `logout` | Logs out the player |
+| `/whisper @name message` | `chat` with `whisper_to` | Sends private message |
+| `/interact <direction>` | `interact` with `direction` | Interacts with adjacent object |
+| `/inventory` | `inventory` | Opens inventory panel + requests server data |
+| `/use <item_key>` | `use_item` with `item_key` | Uses a consumable item |
+| `/look` | `look` | Shows nearby objects, NPCs, players |
+| `/who` | `who` | Lists players in room |
+| `/stats` | `stats` | Shows player stats |
+| `/flee` | `flee` | Flees combat |
+| `/pass` | `pass_turn` | Passes combat turn |
+
+**Given** the player types `/whisper @alice Hello there`
+**When** the parser processes it
+**Then** it sends `{"action": "chat", "message": "Hello there", "whisper_to": "alice"}`
+
+**Given** the player types `/interact east`
+**When** the parser processes it
+**Then** it sends `{"action": "interact", "direction": "east"}`
+
+**Given** the player types `/use healing_potion`
+**When** the parser processes it
+**Then** it sends `{"action": "use_item", "item_key": "healing_potion"}`
+
+**Given** a command requires arguments but none are provided (e.g., `/whisper`)
+**When** the parser processes it
+**Then** the player sees a usage hint: "Usage: /whisper @name message"
+
+**And** server responses from commands are displayed in the chat/log area
+**And** `/help` is updated to list all registered commands
+
+### Story 10.7: Mob Loot Drops
+
+As a player,
+I want defeated mobs to drop items based on their loot table,
+So that combat has tangible rewards beyond XP.
+
+**Acceptance Criteria:**
+
+**Given** an NPC template defines `"loot_table": "slime_loot"`
+**When** combat ends with victory (mob HP <= 0)
+**Then** loot is generated from the NPC's loot table using `generate_loot()`
+**And** items are added to each victorious player's inventory
+**And** inventory is persisted to DB
+**And** the `combat_end` message includes `"loot": [{"item_key": "...", "quantity": N}, ...]`
+
+**Given** `LOOT_TABLES` in `chest.py` currently only has `common_chest` and `rare_chest`
+**When** the story is complete
+**Then** the following mob loot tables are added: `goblin_loot`, `slime_loot`, `bat_loot`, `troll_loot`, `dragon_loot`
+**And** each table has thematically appropriate drops (e.g., slime → healing_potion, goblin → iron_shard)
+
+**Given** the `generate_loot()` function exists in `chest.py`
+**When** the story is complete
+**Then** `generate_loot()` is moved to a shared location (e.g., `server/items/loot.py`) accessible by both chest and combat systems
+**And** chest.py imports from the shared location
+
+**Given** multiple players are in combat when the mob is defeated
+**When** loot is generated
+**Then** each player receives the same loot (prototype — no loot splitting for now)
+
+**Given** the web client receives a `combat_end` with loot
+**When** the UI updates
+**Then** the loot items are displayed in the combat result message
+
+**And** tests verify loot generation, inventory integration, and combat_end payload
+**And** `pytest tests/` passes
+
+### Story 10.8: Player Stats HUD
+
+As a player,
+I want to always see my HP, XP, and attack stats during gameplay,
+So that I know my current state without needing to type commands.
+
+**Acceptance Criteria:**
+
+**Given** a player logs in and enters the game
+**When** the game viewport is displayed
+**Then** a stats HUD panel is always visible showing:
+- HP bar with current/max (e.g., "HP: 85/100") with color coding (green > 50%, yellow 25-50%, red < 25%)
+- XP display (e.g., "XP: 150")
+- Attack stat (e.g., "ATK: 10")
+
+**Given** the player takes damage or heals (combat or item use)
+**When** the stats update is received
+**Then** the HUD updates in real-time
+
+**Given** the player gains XP from combat victory
+**When** the `combat_end` message is received
+**Then** the XP display updates immediately
+
+**Given** the player logs in
+**When** `login_success` is received
+**Then** stats from the login response populate the HUD immediately (no `/stats` command needed)
+
+**Given** the existing `hp-section` element in index.html
+**When** the story is complete
+**Then** it is expanded into a full stats HUD that is always visible (not hidden by default)
+**And** the HUD is positioned to not overlap the tile viewport or chat area
+
+### Story 10.9: NPC Spawn Density
+
+As a player,
+I want more mobs spawned in larger rooms,
+So that combat encounters happen at a reasonable rate while exploring.
+
+**Acceptance Criteria:**
+
+**Given** `data/rooms/town_square.json` is a 100x100 room
+**When** the story is complete
+**Then** the room has at least 12 NPC spawn points (up from current count)
+**And** spawn points include a mix of slimes and goblins
+**And** spawn points are spread across the map (not clustered in one area)
+
+**Given** `data/rooms/dark_cave.json` is a 100x100 room
+**When** the story is complete
+**Then** the room has at least 10 NPC spawn points
+**And** spawn points include slimes, bats, and the existing rare cave_troll
+
+**Given** the increased spawn density
+**When** a player explores town_square
+**Then** they encounter a mob within approximately 20-30 tiles of walking from spawn
+**And** mobs are distributed to make exploration consistently engaging
+
+**Given** test_room and other_room are 5x5
+**When** the story is complete
+**Then** their spawn points are not changed (small rooms don't need more density)
+
+**And** the server starts successfully with the updated room data
+**And** `pytest tests/` passes
