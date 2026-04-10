@@ -26,23 +26,23 @@ so that my state is saved and I can return to the login screen without closing t
 
 - [ ] Task 1: Server-side logout handler (AC: #1, #2, #3, #4)
   - [ ] 1.1: Create `handle_logout` in `server/net/handlers/auth.py` — resolve entity_id via `connection_manager.get_entity_id(websocket)`, return error if None
-  - [ ] 1.2: Combat cleanup for in-combat players:
+  - [ ] 1.2: Combat cleanup for in-combat players (ORDER MATTERS):
+    - Sync combat stats from `combat_instance.participant_stats` back to `entity.stats` — only sync `hp`, `max_hp`, `attack` (matching `_check_combat_end` pattern; transient keys like `shield`, `energy`, `active_effects` do not need syncing). MUST happen first — `remove_participant` destroys this data.
+    - If `entity.stats["hp"]` <= 0 (dead in combat), restore to `entity.stats["max_hp"]` (MUST happen after sync, otherwise sync overwrites the restore)
     - Set `entity.in_combat = False`
-    - If player HP = 0 (dead in combat), restore to `max_hp`
-    - Sync combat stats from `combat_instance.participant_stats` back to `entity.stats`
     - Call `combat_instance.remove_participant(entity_id)` and `combat_manager.remove_player(entity_id)`
     - If no participants remain: clear NPC `in_combat` flag (do NOT reset `is_alive`), call `combat_manager.remove_instance()`
     - If participants remain: broadcast `combat_update` to remaining players
   - [ ] 1.3: Save player state to DB (position, stats, inventory) — best-effort with try/except (log error, continue logout even if save fails)
   - [ ] 1.4: Remove entity from room + broadcast `entity_left` to other players in room
-  - [ ] 1.5: Send `{"type": "logged_out"}` via `websocket.send_json()` (NOT via `connection_manager` — it will be cleared next)
+  - [ ] 1.5: Send `{"type": "logged_out"}` via `websocket.send_json()` (NOT via `connection_manager` — it will be cleared next). Wrap in try/except — if the send fails (network dropped), continue with cleanup (the `handle_disconnect` path will handle remaining cleanup safely; a double `entity_left` broadcast is cosmetically harmless)
   - [ ] 1.6: Call `connection_manager.disconnect(entity_id)` and `player_entities.pop(entity_id, None)` — AFTER sending the message and AFTER save/room removal (intentionally different ordering from `handle_disconnect` which pops first)
   - [ ] 1.7: Register `logout` action in `Game._register_handlers()`
 - [ ] Task 2: Fix re-login on same WebSocket (AC: #5)
   - [ ] 2.1: In `handle_login`, before calling `_kick_old_session`, check if `old_ws is websocket` (same object). If so, perform inline cleanup (same as logout Tasks 1.2-1.6 minus sending `logged_out`) instead of calling `_kick_old_session` (which would close the active socket)
 - [ ] Task 3: Web client logout UI (AC: #6)
   - [ ] 3.1: Add "Logout" button to `web-demo/index.html` inside the player info section (near room name display)
-  - [ ] 3.2: Add `logged_out` message handler in `web-demo/js/game.js` — clear `gameState.credentials` (prevent auto-login), dismiss combat overlay if active, call `resetToLogin('You have been logged out.')`
+  - [ ] 3.2: Add `logged_out` message handler in `web-demo/js/game.js` — do NOT call `resetToLogin()` directly (it closes the WebSocket). Instead: clear `gameState.credentials`, clear `gameState.player`, clear `gameState.room`, dismiss combat overlay if active, clear tile grid/chat/log, switch to auth mode via `setMode('auth')`, show status message "You have been logged out." The WebSocket must remain open so the player can re-login without reconnecting.
   - [ ] 3.3: Add click handler for logout button — `sendAction('logout', {})`
   - [ ] 3.4: Add `/logout` command to chat input — intercept messages starting with `/logout` in the chat send handler, call `sendAction('logout', {})` instead of sending as chat
 - [ ] Task 4: Tests (AC: #1, #2, #3, #4, #5)
@@ -74,7 +74,7 @@ The logout combat removal combines elements from both existing patterns:
 | Step | Disconnect does | Flee does | Logout must do |
 |------|----------------|-----------|----------------|
 | Set `entity.in_combat = False` | No (entity destroyed) | Yes | **Yes** (entity stats saved first) |
-| Sync combat stats to entity | No | No (done in `_check_combat_end`) | **Yes** (stats must be current for DB save) |
+| Sync combat stats to entity | No | No (stats lost on flee — acceptable since player keeps pre-combat stats) | **Yes** (stats must be current for DB save) |
 | Handle dead player (HP=0) | No | Rejects flee if dead | **Restore HP to max_hp** |
 | Release NPC `in_combat` (last player) | No | Yes | **Yes** (match flee) |
 | Reset NPC `is_alive` (last player) | No | No | **No** (match flee — NPC keeps damage state) |
@@ -92,6 +92,10 @@ The `handle_disconnect` method pops `player_entities` BEFORE saving state (app.p
 6. Pop from `player_entities`
 
 **Critical:** Step 4 MUST use `websocket.send_json()` directly, NOT `connection_manager.send_to_player()`. After step 5, the connection manager no longer knows about this entity. After step 6, `player_entities` no longer has the data.
+
+### Note: `_kick_old_session` Does NOT Sync Combat Stats
+
+`_kick_old_session` saves `entity.stats` before removing from combat, so it saves pre-combat values. This was deemed acceptable for the kick scenario (player is being forcibly disconnected). Do NOT use `_kick_old_session` as a template for combat stats sync — use the ordering specified in Task 1.2 instead.
 
 ### Re-login on Same WebSocket (Pre-existing Bug Fix)
 
@@ -116,10 +120,9 @@ If the network drops during the logout handler, `WebSocketDisconnect` fires afte
 
 ### Web Client Notes
 
-**`resetToLogin(statusMessage)`** is the function for returning to auth screen. For logout specifically:
-- Clear `gameState.credentials` to prevent auto-login (unlike `handleKicked` which preserves credentials)
-- Dismiss combat overlay if active (the `logged_out` handler replaces `combat_fled` for combat+logout scenarios)
-- The `resetToLogin` function already clears `gameState.player` which prevents auto-reconnect
+**Do NOT call `resetToLogin()` for logout.** `resetToLogin()` closes the WebSocket (`gameState.ws.close()` at line 213-215), which contradicts the "keep socket open" design. Instead, the `logged_out` handler must manually: clear credentials, clear player/room state, dismiss combat overlay, clear UI elements, and switch to auth mode via `setMode('auth')`. This is similar to `resetToLogin` but without the socket close and reconnect-state clearing.
+
+**`handleKicked`** (existing) calls `resetToLogin` — this is correct for kick (socket is being closed by the server anyway). Logout is different because the socket stays open.
 
 **`/logout` chat command:** Intercept in the chat send handler — if the message is `/logout`, call `sendAction('logout', {})` instead of sending as chat. This is a minimal implementation ahead of the full slash command parser (Story 10.3).
 
