@@ -44,6 +44,13 @@ async def handle_interact(websocket: WebSocket, data: dict, *, game: Game) -> No
         await websocket.send_json({"type": "error", "detail": "Object not found"})
         return
 
+    # Adjacency check — player must be within Manhattan distance 1
+    entity = player_info["entity"]
+    obj_x, obj_y = obj_dict["x"], obj_dict["y"]
+    if abs(entity.x - obj_x) + abs(entity.y - obj_y) > 1:
+        await websocket.send_json({"type": "error", "detail": "Too far to interact"})
+        return
+
     # Build the typed object and check if it's interactive
     obj = create_object(obj_dict)
     if not isinstance(obj, InteractiveObject):

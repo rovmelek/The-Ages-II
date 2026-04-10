@@ -68,7 +68,7 @@ def _register_echo():
 async def test_interact_returns_result():
     game = _make_game()
     objects = [{"id": "obj_1", "type": "echo", "category": "interactive",
-                "x": 1, "y": 1, "state_scope": "player", "config": {}}]
+                "x": 1, "y": 0, "state_scope": "player", "config": {}}]
     room = _make_room_with_objects(objects=objects)
     ws, _ = _setup_player(game, room)
 

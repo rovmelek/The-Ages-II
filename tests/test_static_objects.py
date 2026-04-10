@@ -121,16 +121,16 @@ def test_room_manager_loads_objects():
 # Edge cases
 # ---------------------------------------------------------------------------
 
-def test_non_static_objects_ignored():
-    """Objects without category 'static' should not affect tiles."""
+def test_blocking_interactive_objects_affect_grid():
+    """Interactive objects with blocking=true should stamp WALL on the grid."""
     tile_data = [[0] * 5 for _ in range(5)]
     objects = [
         {"id": "chest_01", "type": "chest", "x": 3, "y": 2, "category": "interactive", "blocking": True},
     ]
     room = RoomInstance("test", "Test", 5, 5, tile_data, objects=objects)
 
-    # Interactive objects are not processed in this story
-    assert room._grid[2][3] == TileType.FLOOR
+    # Blocking interactive objects make their tile non-walkable
+    assert room._grid[2][3] == TileType.WALL
 
 
 def test_blocking_object_out_of_bounds_ignored():

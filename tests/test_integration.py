@@ -60,7 +60,7 @@ def room_manager():
         exits=[{"x": 9, "y": 5, "target_room": "cave", "entry_x": 1, "entry_y": 5}],
         objects=[{
             "id": "chest_1", "type": "chest", "category": "interactive",
-            "x": 3, "y": 3, "state_scope": "player",
+            "x": 5, "y": 5, "state_scope": "player", "blocking": True,
             "config": {"loot_table": "common_chest"},
         }],
         spawn_points=[{"type": "player", "x": 0, "y": 0}],
@@ -225,10 +225,20 @@ class TestMovement:
 
 
 class TestChestInteraction:
+    def _move_to_chest(self, ws):
+        """Move player from spawn (0,0) to (4,5), adjacent to chest at (5,5)."""
+        for _ in range(4):
+            ws.send_json({"action": "move", "direction": "right"})
+            ws.receive_json()
+        for _ in range(5):
+            ws.send_json({"action": "move", "direction": "down"})
+            ws.receive_json()
+
     def test_loot_chest(self, client):
         _register(client)
         with client.websocket_connect("/ws/game") as ws:
             _login(ws)
+            self._move_to_chest(ws)
             ws.send_json({"action": "interact", "target_id": "chest_1"})
             resp = ws.receive_json()
             assert resp["type"] == "interact_result"
@@ -239,6 +249,7 @@ class TestChestInteraction:
         _register(client)
         with client.websocket_connect("/ws/game") as ws:
             _login(ws)
+            self._move_to_chest(ws)
             ws.send_json({"action": "interact", "target_id": "chest_1"})
             ws.receive_json()  # first loot
             ws.send_json({"action": "interact", "target_id": "chest_1"})

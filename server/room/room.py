@@ -48,9 +48,9 @@ class RoomInstance:
             if obj.get("id") and obj.get("category") == "interactive":
                 self._interactive_objects[obj["id"]] = obj
 
-        # Apply blocking static objects to the grid
+        # Apply blocking objects to the grid (static and interactive)
         for obj in self.objects:
-            if obj.get("category") == "static" and obj.get("blocking", False):
+            if obj.get("blocking", False):
                 ox, oy = obj["x"], obj["y"]
                 if 0 <= oy < self.height and 0 <= ox < self.width:
                     self._grid[oy][ox] = TileType.WALL

@@ -26,7 +26,7 @@ def _chest_object_dict(obj_id="chest_01", loot_table="common_chest"):
         "id": obj_id,
         "type": "chest",
         "category": "interactive",
-        "x": 2, "y": 1,
+        "x": 1, "y": 0,
         "state_scope": "player",
         "config": {"loot_table": loot_table, "locked": False},
     }
