@@ -120,6 +120,10 @@ development_status:
   ISS-007-chest-loot-not-in-runtime: done    # Critical — Fixed in Story 7.3 (chest loot synced to runtime + DB restore on login)
   ISS-008-npc-dead-at-encounter: done         # High — Fixed in Story 7.6
 
+  # Bug found during live testing
+  # See: _bmad-output/implementation-artifacts/issues/ISS-009-*.md
+  ISS-009-returning-player-stuck-on-wall: done  # High — Returning players on wall tiles relocated to spawn; fixed in all 3 placement paths
+
   # Epic 7: Server Hardening
   epic-7: done
   7-1-spawn-point-resolution: done
