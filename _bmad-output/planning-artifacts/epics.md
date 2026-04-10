@@ -1602,8 +1602,10 @@ So that my state is saved and I can return to the login screen without closing t
 **Given** a player is in combat
 **When** they send a logout action
 **Then** the player is removed from combat (treated as flee)
-**And** combat continues for other participants
-**And** logout proceeds normally after combat removal
+**And** the player receives `{"type": "combat_fled"}` before `{"type": "logged_out"}`
+**And** combat continues for other participants (remaining participants receive combat_update)
+**And** if the player was the last participant, the combat instance is cleaned up and the mob resets (is_alive=true, in_combat=false)
+**And** logout proceeds normally after combat removal (state save, room removal, entity_left broadcast)
 
 **Given** a player is not logged in
 **When** they send a logout action
@@ -1644,6 +1646,7 @@ So that I must stand next to them and interact deliberately, matching real game 
 **Given** static objects (trees, rocks) are already non-walkable
 **When** the story is complete
 **Then** interactive objects follow the same blocking pattern
+**And** existing interact tests (test_objects.py, test_integration.py) that assume no distance check are updated to place the player adjacent to the object before interacting
 **And** existing tests are updated for the new blocking behavior
 **And** `pytest tests/` passes with no failures
 
@@ -1817,6 +1820,7 @@ So that combat has tangible rewards beyond XP.
 **When** the story is complete
 **Then** `generate_loot()` is moved to a shared location (e.g., `server/items/loot.py`) accessible by both chest and combat systems
 **And** chest.py imports from the shared location
+**And** existing tests that import `generate_loot` or `LOOT_TABLES` from `chest.py` are updated to use the new import path
 
 **Given** multiple players are in combat when the mob is defeated
 **When** loot is generated
