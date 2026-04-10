@@ -1,5 +1,5 @@
 # generated: 2026-03-21
-# last_updated: 2026-03-25
+# last_updated: 2026-04-10
 # project: The-Ages-II
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-21
-last_updated: 2026-03-25
+last_updated: 2026-04-10
 project: The-Ages-II
 project_key: NOKEY
 tracking_system: file-system
@@ -148,3 +148,34 @@ development_status:
   9-2-admin-shutdown-command: done
   9-3-server-restart-mechanism: done
   epic-9-retrospective: optional
+
+  # Epic 10: Gameplay Polish & Interaction
+  epic-10: backlog
+  10-1-player-logout: backlog
+  10-2-non-walkable-interactive-objects: backlog
+  10-3-slash-command-parser: backlog
+  10-4-server-query-actions: backlog
+  10-5-directional-object-interaction: backlog
+  10-6-slash-command-integration: backlog
+  10-7-mob-loot-drops: backlog
+  10-8-player-stats-hud: backlog
+  10-9-npc-spawn-density: backlog
+  epic-10-retrospective: optional
+
+  # Epic 11: Leveling System (deferred)
+  epic-11: backlog
+  11-1-xp-level-thresholds: backlog
+  11-2-level-up-mechanic: backlog
+  11-3-level-up-notification: backlog
+  11-4-level-display: backlog
+  epic-11-retrospective: optional
+
+  # Epic 12: Social Systems (deferred)
+  epic-12: backlog
+  12-1-trade-system: backlog
+  12-2-trade-validation: backlog
+  12-3-party-system: backlog
+  12-4-party-chat: backlog
+  12-5-party-combat: backlog
+  12-6-world-map: backlog
+  epic-12-retrospective: optional
