@@ -289,6 +289,7 @@ function dispatchMessage(data) {
     interact_result: handleInteractResult,
     tile_changed: handleTileChanged,
     announcement: handleAnnouncement,
+    logged_out: handleLoggedOut,
     server_shutdown: handleServerShutdown,
     kicked: handleKicked,
     respawn: handleRespawn,
@@ -360,6 +361,30 @@ function handleServerShutdown(data) {
   serverShuttingDown = true;
   const reason = data.reason || 'Server is shutting down.';
   resetToLogin(`Server is shutting down. ${reason}`);
+}
+
+/** @param {Object} _data */
+function handleLoggedOut(_data) {
+  // Clear credentials to prevent auto-login (unlike kicked which preserves them)
+  gameState.credentials = null;
+  gameState.player = null;
+  gameState.room = null;
+  gameState.combat = null;
+  gameState.inventory = [];
+  // Clear UI
+  const $grid = document.getElementById('tile-grid');
+  if ($grid) $grid.innerHTML = '';
+  const $chatLog = document.getElementById('chat-log');
+  if ($chatLog) $chatLog.innerHTML = '';
+  const $log = document.getElementById('server-log');
+  if ($log) $log.innerHTML = '';
+  // Switch to auth mode (also dismisses combat overlay)
+  setMode('auth');
+  const $status = document.getElementById('auth-status');
+  if ($status) {
+    $status.textContent = 'You have been logged out.';
+    $status.classList.remove('hidden');
+  }
 }
 
 /** @param {Object} data */
@@ -670,6 +695,12 @@ function appendChat(text, type = 'chat') {
 function sendChat() {
   const msg = $chatInput.value.trim();
   if (!msg) return;
+  // Intercept /logout command
+  if (msg.toLowerCase() === '/logout') {
+    sendAction('logout', {});
+    $chatInput.value = '';
+    return;
+  }
   const target = $whisperTarget.value;
   if (target) {
     sendAction('chat', { message: msg, whisper_to: target });
@@ -990,6 +1021,10 @@ document.getElementById('btn-pass-turn')?.addEventListener('click', () => {
   if (gameState.combat?.current_turn === gameState.player?.id) {
     sendAction('pass_turn', {});
   }
+});
+
+document.getElementById('btn-logout')?.addEventListener('click', () => {
+  sendAction('logout', {});
 });
 
 document.getElementById('btn-flee')?.addEventListener('click', () => {

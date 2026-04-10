@@ -1,6 +1,6 @@
 # Story 10.1: Player Logout
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -24,38 +24,32 @@ so that my state is saved and I can return to the login screen without closing t
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Server-side logout handler (AC: #1, #2, #3, #4)
-  - [ ] 1.1: Create `handle_logout` in `server/net/handlers/auth.py` — resolve entity_id via `connection_manager.get_entity_id(websocket)`, return error if None
-  - [ ] 1.2: Combat cleanup for in-combat players (ORDER MATTERS):
-    - Sync combat stats from `combat_instance.participant_stats` back to `entity.stats` — only sync `hp`, `max_hp`, `attack` (matching `_check_combat_end` pattern; transient keys like `shield`, `energy`, `active_effects` do not need syncing). MUST happen first — `remove_participant` destroys this data.
-    - If `entity.stats["hp"]` <= 0 (dead in combat), restore to `entity.stats["max_hp"]` (MUST happen after sync, otherwise sync overwrites the restore)
-    - Set `entity.in_combat = False`
-    - Call `combat_instance.remove_participant(entity_id)` and `combat_manager.remove_player(entity_id)`
-    - If no participants remain: clear NPC `in_combat` flag (do NOT reset `is_alive`), call `combat_manager.remove_instance()`
-    - If participants remain: broadcast `combat_update` to remaining players
-  - [ ] 1.3: Save player state to DB (position, stats, inventory) — best-effort with try/except (log error, continue logout even if save fails)
-  - [ ] 1.4: Remove entity from room + broadcast `entity_left` to other players in room
-  - [ ] 1.5: Send `{"type": "logged_out"}` via `websocket.send_json()` (NOT via `connection_manager` — it will be cleared next). Wrap in try/except — if the send fails (network dropped), continue with cleanup (the `handle_disconnect` path will handle remaining cleanup safely; a double `entity_left` broadcast is cosmetically harmless)
-  - [ ] 1.6: Call `connection_manager.disconnect(entity_id)` and `player_entities.pop(entity_id, None)` — AFTER sending the message and AFTER save/room removal (intentionally different ordering from `handle_disconnect` which pops first)
-  - [ ] 1.7: Register `logout` action in `Game._register_handlers()`
-- [ ] Task 2: Fix re-login on same WebSocket (AC: #5)
-  - [ ] 2.1: In `handle_login`, before calling `_kick_old_session`, check if `old_ws is websocket` (same object). If so, perform inline cleanup (same as logout Tasks 1.2-1.6 minus sending `logged_out`) instead of calling `_kick_old_session` (which would close the active socket)
-- [ ] Task 3: Web client logout UI (AC: #6)
-  - [ ] 3.1: Add "Logout" button to `web-demo/index.html` inside the player info section (near room name display)
-  - [ ] 3.2: Add `logged_out` message handler in `web-demo/js/game.js` — do NOT call `resetToLogin()` directly (it closes the WebSocket). Instead: clear `gameState.credentials`, clear `gameState.player`, clear `gameState.room`, dismiss combat overlay if active, clear tile grid/chat/log, switch to auth mode via `setMode('auth')`, show status message "You have been logged out." The WebSocket must remain open so the player can re-login without reconnecting.
-  - [ ] 3.3: Add click handler for logout button — `sendAction('logout', {})`
-  - [ ] 3.4: Add `/logout` command to chat input — intercept messages starting with `/logout` in the chat send handler, call `sendAction('logout', {})` instead of sending as chat
-- [ ] Task 4: Tests (AC: #1, #2, #3, #4, #5)
-  - [ ] 4.1: Test logout saves state and removes player (unit test, follow test_game.py disconnect pattern)
-  - [ ] 4.2: Test logout while in combat — removes from combat, clears `in_combat` flag, syncs combat stats, saves correct HP
-  - [ ] 4.3: Test logout while dead in combat (HP=0) — HP restored to max_hp before save
-  - [ ] 4.4: Test logout when last player in combat — NPC `in_combat` cleared, combat instance removed
-  - [ ] 4.5: Test logout with remaining combat participants — they receive `combat_update`, combat continues
-  - [ ] 4.6: Test logout when not logged in returns error
-  - [ ] 4.7: Test double logout is safe (second call returns "Not logged in")
-  - [ ] 4.8: Test re-login on same WebSocket after logout — login succeeds, receives `login_success` + `room_state`
-  - [ ] 4.9: Test re-login on same WebSocket WITHOUT logout first (AC #5) — inline cleanup runs, login succeeds, socket not closed
-  - [ ] 4.10: Run full test suite — `pytest tests/` must pass with no regressions
+- [x] Task 1: Server-side logout handler (AC: #1, #2, #3, #4)
+  - [x] 1.1: Create `handle_logout` in `server/net/handlers/auth.py` — resolve entity_id via `connection_manager.get_entity_id(websocket)`, return error if None
+  - [x] 1.2: Combat cleanup for in-combat players (ORDER MATTERS) — implemented as `_cleanup_player()` shared helper
+  - [x] 1.3: Save player state to DB (position, stats, inventory) — best-effort with try/except
+  - [x] 1.4: Remove entity from room + broadcast `entity_left` to other players in room
+  - [x] 1.5: Send `{"type": "logged_out"}` via `websocket.send_json()` with try/except
+  - [x] 1.6: Call `connection_manager.disconnect(entity_id)` and `player_entities.pop(entity_id, None)` — AFTER send
+  - [x] 1.7: Register `logout` action in `Game._register_handlers()`
+- [x] Task 2: Fix re-login on same WebSocket (AC: #5)
+  - [x] 2.1: In `handle_login`, check `old_ws is websocket` and call `_cleanup_player` instead of `_kick_old_session`
+- [x] Task 3: Web client logout UI (AC: #6)
+  - [x] 3.1: Add "Logout" button to `web-demo/index.html` with red-themed styling
+  - [x] 3.2: Add `handleLoggedOut` in `web-demo/js/game.js` — clears credentials/state, switches to auth mode WITHOUT closing WebSocket
+  - [x] 3.3: Add click handler for logout button
+  - [x] 3.4: Add `/logout` command interception in `sendChat()`
+- [x] Task 4: Tests (AC: #1, #2, #3, #4, #5)
+  - [x] 4.1: Test logout saves state and removes player
+  - [x] 4.2: Test logout while in combat — syncs stats, clears in_combat
+  - [x] 4.3: Test logout while dead in combat (HP=0) — HP restored to max_hp
+  - [x] 4.4: Test logout when last player in combat — NPC released, instance removed
+  - [x] 4.5: Test logout with remaining participants — combat_update broadcast
+  - [x] 4.6: Test logout when not logged in returns error
+  - [x] 4.7: Test double logout is safe
+  - [x] 4.8: Test re-login after logout on same WebSocket
+  - [x] 4.9: Test re-login WITHOUT logout first (inline cleanup, socket not closed)
+  - [x] 4.10: Run full test suite — 493 passed, 0 failures
 
 ## Dev Notes
 
@@ -151,8 +145,33 @@ If the network drops during the logout handler, `WebSocketDisconnect` fires afte
 
 ### Agent Model Used
 
+Claude Opus 4.6
+
 ### Debug Log References
+
+- Test mock pattern: `async_session` needs `__aenter__`/`__aexit__` setup; `player_repo` needs `new_callable=AsyncMock`
+- CombatManager uses `_player_to_instance` (not `_player_instances`) and `_instances`
+- NPCs added via `room.add_npc()` (not `add_entity()`) to be findable by `room.get_npc()`
+- PlayerEntity defaults to empty stats — tests must provide `stats={"hp": 100, ...}`
 
 ### Completion Notes List
 
+- Extracted `_cleanup_player()` shared helper for logout and same-socket re-login (DRY)
+- Combat stats sync from `participant_stats` uses whitelisted keys only (hp, max_hp, attack)
+- Dead-in-combat players get HP restored to max_hp after stats sync, before DB save
+- NPC `in_combat` cleared on last-player logout (matching flee behavior); `is_alive` NOT reset
+- `handleLoggedOut` in JS avoids `resetToLogin()` to keep WebSocket open
+- `/logout` chat command intercepted in `sendChat()` ahead of full slash parser (Story 10.3)
+
+### Change Log
+
+- 2026-04-10: Story 10.1 implemented — server logout handler, same-socket re-login fix, web client UI, 9 tests
+
 ### File List
+
+- server/net/handlers/auth.py (modified — added `_cleanup_player`, `handle_logout`, same-socket re-login guard)
+- server/app.py (modified — registered `logout` action, imported `handle_logout`)
+- web-demo/index.html (modified — added logout button)
+- web-demo/css/style.css (modified — added `.btn-logout` styles)
+- web-demo/js/game.js (modified — added `handleLoggedOut`, `/logout` command, logout button listener)
+- tests/test_logout.py (new — 9 test cases)

@@ -137,7 +137,7 @@ class Game:
 
     def _register_handlers(self) -> None:
         """Register all WebSocket action handlers."""
-        from server.net.handlers.auth import handle_login, handle_register
+        from server.net.handlers.auth import handle_login, handle_logout, handle_register
         from server.net.handlers.chat import handle_chat
         from server.net.handlers.combat import (
             handle_flee,
@@ -154,6 +154,9 @@ class Game:
         )
         self.router.register(
             "register", lambda ws, d: handle_register(ws, d, game=self)
+        )
+        self.router.register(
+            "logout", lambda ws, d: handle_logout(ws, d, game=self)
         )
         self.router.register(
             "move", lambda ws, d: handle_move(ws, d, game=self)

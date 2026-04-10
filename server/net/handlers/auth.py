@@ -21,6 +21,102 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+async def _cleanup_player(entity_id: str, game: Game) -> None:
+    """Clean up a player session: combat removal, state save, room removal.
+
+    Used by both logout and same-socket re-login. Does NOT close the WebSocket
+    or send any messages to the player.
+    """
+    player_info = game.player_entities.get(entity_id)
+    if not player_info:
+        game.connection_manager.disconnect(entity_id)
+        return
+
+    entity = player_info["entity"]
+    room_key = player_info["room_key"]
+    inventory = player_info.get("inventory")
+
+    # 1. Combat cleanup (order matters — sync before remove)
+    combat_instance = game.combat_manager.get_player_instance(entity_id)
+    if combat_instance:
+        # Sync combat stats back to entity (only whitelisted keys)
+        combat_stats = combat_instance.participant_stats.get(entity_id, {})
+        for key in ("hp", "max_hp", "attack"):
+            if key in combat_stats:
+                entity.stats[key] = combat_stats[key]
+        # Restore HP if dead in combat
+        if entity.stats.get("hp", 0) <= 0:
+            entity.stats["hp"] = entity.stats.get("max_hp", 100)
+        entity.in_combat = False
+        # Remove from combat instance (destroys participant_stats entry)
+        combat_instance.remove_participant(entity_id)
+        game.combat_manager.remove_player(entity_id)
+        if not combat_instance.participants:
+            # Last player — release NPC and clean up instance
+            if combat_instance.npc_id and combat_instance.room_key:
+                room = game.room_manager.get_room(combat_instance.room_key)
+                if room:
+                    npc = room.get_npc(combat_instance.npc_id)
+                    if npc:
+                        npc.in_combat = False
+            game.combat_manager.remove_instance(combat_instance.instance_id)
+        else:
+            # Notify remaining participants
+            state = combat_instance.get_state()
+            for eid in combat_instance.participants:
+                ws = game.connection_manager.get_websocket(eid)
+                if ws:
+                    await ws.send_json({"type": "combat_update", **state})
+
+    # 2. Save state to DB (best-effort)
+    try:
+        async with async_session() as session:
+            await player_repo.update_position(
+                session, entity.player_db_id, room_key, entity.x, entity.y
+            )
+            await player_repo.update_stats(
+                session, entity.player_db_id, entity.stats
+            )
+            if inventory:
+                await player_repo.update_inventory(
+                    session, entity.player_db_id, inventory.to_dict()
+                )
+    except Exception:
+        logger.exception("Failed to save state during cleanup for %s", entity_id)
+
+    # 3. Remove from room + broadcast entity_left
+    room = game.room_manager.get_room(room_key)
+    if room:
+        room.remove_entity(entity_id)
+        await game.connection_manager.broadcast_to_room(
+            room_key,
+            {"type": "entity_left", "entity_id": entity_id},
+            exclude=entity_id,
+        )
+
+    # 4. Clean up connection_manager and player_entities
+    game.connection_manager.disconnect(entity_id)
+    game.player_entities.pop(entity_id, None)
+
+
+async def handle_logout(websocket: WebSocket, data: dict, *, game: Game) -> None:
+    """Handle the 'logout' action: save state, clean up, keep WebSocket open."""
+    entity_id = game.connection_manager.get_entity_id(websocket)
+    if entity_id is None:
+        await websocket.send_json(
+            {"type": "error", "detail": "Not logged in"}
+        )
+        return
+
+    await _cleanup_player(entity_id, game)
+
+    # Send confirmation via raw websocket (connection_manager already cleared)
+    try:
+        await websocket.send_json({"type": "logged_out"})
+    except Exception:
+        pass  # Network dropped — cleanup already done
+
+
 async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> None:
     """Handle the 'register' action: create a new player account."""
     username = data.get("username", "").strip()
@@ -144,10 +240,15 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
         # Create runtime entity from DB state
         entity_id = f"player_{player.id}"
 
-        # Kick existing session if logged in from another connection
+        # Handle existing session for this account
         old_ws = game.connection_manager.get_websocket(entity_id)
         if old_ws is not None:
-            await _kick_old_session(entity_id, old_ws, game)
+            if old_ws is websocket:
+                # Same socket re-login — inline cleanup without closing socket
+                await _cleanup_player(entity_id, game)
+            else:
+                # Different socket — kick the old session
+                await _kick_old_session(entity_id, old_ws, game)
 
         # Resolve stats: apply defaults for first-time players, restore for returning
         _DEFAULT_STATS = {"hp": 100, "max_hp": 100, "attack": 10, "xp": 0}
