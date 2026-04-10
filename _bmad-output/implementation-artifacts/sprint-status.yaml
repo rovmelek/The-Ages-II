@@ -150,8 +150,8 @@ development_status:
   epic-9-retrospective: optional
 
   # Epic 10: Gameplay Polish & Interaction
-  epic-10: backlog
-  10-1-player-logout: backlog
+  epic-10: in-progress
+  10-1-player-logout: ready-for-dev
   10-2-non-walkable-interactive-objects: backlog
   10-3-slash-command-parser: backlog
   10-4-server-query-actions: backlog
