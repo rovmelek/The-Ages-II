@@ -317,6 +317,7 @@ body {
 .chat-sender { font-weight: bold; color: #4488ff; }
 .chat-whisper { font-style: italic; color: #aa66ff; }
 .chat-announcement { color: #ffaa00; font-weight: bold; }
+.chat-system { color: #999; font-style: italic; }
 
 #chat-input-area {
   display: flex;

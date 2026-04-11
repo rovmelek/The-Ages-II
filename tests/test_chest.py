@@ -7,7 +7,8 @@ import pytest
 
 from server.net.handlers.interact import handle_interact
 from server.player.entity import PlayerEntity
-from server.room.objects.chest import ChestObject, generate_loot
+from server.items.loot import generate_loot
+from server.room.objects.chest import ChestObject
 from server.room.objects.registry import OBJECT_HANDLERS
 from server.room.room import RoomInstance
 

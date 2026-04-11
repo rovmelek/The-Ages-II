@@ -6,6 +6,9 @@ from typing import TYPE_CHECKING
 from fastapi import WebSocket
 
 from server.core.database import async_session
+from server.items.item_def import ItemDef
+from server.items import item_repo as items_repo
+from server.items.loot import generate_loot
 from server.player import repo as player_repo
 
 if TYPE_CHECKING:
@@ -52,6 +55,44 @@ async def _check_combat_end(instance, game: Game) -> None:
     # Broadcast combat_end to all participants before cleanup
     participant_ids = list(instance.participants)
     xp_reward = end_result.get("rewards", {}).get("xp", 0)
+
+    # Generate loot on victory (before kill_npc so NPC data is accessible)
+    loot_items: list[dict] = []
+    if end_result.get("victory") and instance.npc_id and instance.room_key:
+        room = game.room_manager.get_room(instance.room_key)
+        npc = room.get_npc(instance.npc_id) if room else None
+        loot_table_key = npc.loot_table if npc else ""
+        if loot_table_key:
+            loot_items = generate_loot(loot_table_key)
+        if loot_items:
+            end_result["loot"] = loot_items
+            # Batch-load item defs for runtime inventory sync
+            async with async_session() as session:
+                all_items = await items_repo.get_all(session)
+            item_defs = {i.item_key: ItemDef.from_db(i) for i in all_items}
+
+            for eid in participant_ids:
+                player_info = game.player_entities.get(eid)
+                if player_info is None:
+                    continue
+                # Update DB inventory
+                db_id = player_info["db_id"]
+                async with async_session() as session:
+                    player = await player_repo.get_by_id(session, db_id)
+                    if player is not None:
+                        db_inv = dict(player.inventory or {})
+                        for item in loot_items:
+                            key = item["item_key"]
+                            db_inv[key] = db_inv.get(key, 0) + item["quantity"]
+                        player.inventory = db_inv
+                        await session.commit()
+                # Sync runtime inventory
+                runtime_inv = player_info.get("inventory")
+                if runtime_inv:
+                    for item in loot_items:
+                        idef = item_defs.get(item["item_key"])
+                        if idef:
+                            runtime_inv.add_item(idef, item["quantity"])
 
     for eid in participant_ids:
         player_info = game.player_entities.get(eid)

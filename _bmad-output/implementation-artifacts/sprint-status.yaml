@@ -1,5 +1,5 @@
 # generated: 2026-03-21
-# last_updated: 2026-04-10
+# last_updated: 2026-04-10 (story 10-9 created)
 # project: The-Ages-II
 # project_key: NOKEY
 # tracking_system: file-system
@@ -150,17 +150,17 @@ development_status:
   epic-9-retrospective: optional
 
   # Epic 10: Gameplay Polish & Interaction
-  epic-10: in-progress
+  epic-10: done
   10-1-player-logout: done
   10-2-non-walkable-interactive-objects: done
-  10-3-slash-command-parser: backlog
-  10-4-server-query-actions: backlog
-  10-5-directional-object-interaction: backlog
-  10-6-slash-command-integration: backlog
-  10-7-mob-loot-drops: backlog
-  10-8-player-stats-hud: backlog
-  10-9-npc-spawn-density: backlog
-  epic-10-retrospective: optional
+  10-3-slash-command-parser: done
+  10-4-server-query-actions: done
+  10-5-directional-object-interaction: done
+  10-6-slash-command-integration: done
+  10-7-mob-loot-drops: done
+  10-8-player-stats-hud: done
+  10-9-npc-spawn-density: done
+  epic-10-retrospective: done
 
   # Epic 11: Leveling System (deferred)
   epic-11: backlog

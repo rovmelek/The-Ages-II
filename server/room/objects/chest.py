@@ -6,33 +6,13 @@ from typing import TYPE_CHECKING, Any
 from server.core.database import async_session
 from server.items.item_def import ItemDef
 from server.items import item_repo as items_repo
+from server.items.loot import generate_loot
 from server.player import repo as player_repo
 from server.room.objects.base import InteractiveObject
 from server.room.objects.state import get_player_object_state, set_player_object_state
 
 if TYPE_CHECKING:
     from server.app import Game
-
-
-# ---------------------------------------------------------------------------
-# Prototype loot tables — simple static lookup
-# ---------------------------------------------------------------------------
-
-LOOT_TABLES: dict[str, list[dict[str, Any]]] = {
-    "common_chest": [
-        {"item_key": "healing_potion", "quantity": 1},
-        {"item_key": "iron_shard", "quantity": 2},
-    ],
-    "rare_chest": [
-        {"item_key": "healing_potion", "quantity": 3},
-        {"item_key": "fire_essence", "quantity": 1},
-    ],
-}
-
-
-def generate_loot(loot_table: str) -> list[dict[str, Any]]:
-    """Return loot items for a given loot table key."""
-    return list(LOOT_TABLES.get(loot_table, []))
 
 
 # ---------------------------------------------------------------------------

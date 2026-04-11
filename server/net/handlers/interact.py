@@ -8,6 +8,7 @@ from fastapi import WebSocket
 import server.room.objects  # noqa: F401 — triggers type registration
 from server.room.objects.base import InteractiveObject
 from server.room.objects.registry import create_object
+from server.room.room import DIRECTION_DELTAS
 
 if TYPE_CHECKING:
     from server.app import Game
@@ -27,28 +28,68 @@ async def handle_interact(websocket: WebSocket, data: dict, *, game: Game) -> No
 
     room_key = player_info["room_key"]
     player_db_id = player_info["db_id"]
+    entity = player_info["entity"]
 
-    target_id = data.get("target_id", "")
-    if not target_id:
-        await websocket.send_json({"type": "error", "detail": "Missing target_id"})
-        return
-
-    # Find the object in the room
+    # Get room
     room = game.room_manager.get_room(room_key)
     if room is None:
         await websocket.send_json({"type": "error", "detail": "Room not found"})
         return
 
-    obj_dict = room.get_object(target_id)
-    if obj_dict is None:
-        await websocket.send_json({"type": "error", "detail": "Object not found"})
-        return
+    # Resolve target object from either target_id or direction
+    target_id = data.get("target_id", "")
+    direction = data.get("direction", "")
 
-    # Adjacency check — player must be within Manhattan distance 1
-    entity = player_info["entity"]
-    obj_x, obj_y = obj_dict["x"], obj_dict["y"]
-    if abs(entity.x - obj_x) + abs(entity.y - obj_y) > 1:
-        await websocket.send_json({"type": "error", "detail": "Too far to interact"})
+    if target_id:
+        # Existing path: lookup by ID
+        obj_dict = room.get_object(target_id)
+        if obj_dict is None:
+            await websocket.send_json({"type": "error", "detail": "Object not found"})
+            return
+
+        # Adjacency check — player must be within Manhattan distance 1
+        obj_x, obj_y = obj_dict["x"], obj_dict["y"]
+        if abs(entity.x - obj_x) + abs(entity.y - obj_y) > 1:
+            await websocket.send_json({"type": "error", "detail": "Too far to interact"})
+            return
+
+    elif direction:
+        # New path: resolve from direction
+        if direction not in DIRECTION_DELTAS:
+            await websocket.send_json(
+                {"type": "error", "detail": f"Invalid direction: {direction}"}
+            )
+            return
+
+        dx, dy = DIRECTION_DELTAS[direction]
+        tx, ty = entity.x + dx, entity.y + dy
+
+        if tx < 0 or ty < 0 or tx >= room.width or ty >= room.height:
+            await websocket.send_json(
+                {"type": "error", "detail": "Nothing to interact with in that direction"}
+            )
+            return
+
+        # Search interactive objects at (tx, ty)
+        obj_dict = None
+        for obj in room._interactive_objects.values():
+            if obj["x"] == tx and obj["y"] == ty:
+                obj_dict = obj
+                break
+
+        if obj_dict is None:
+            await websocket.send_json(
+                {"type": "error", "detail": "Nothing to interact with in that direction"}
+            )
+            return
+
+        target_id = obj_dict["id"]
+        # No adjacency check needed — direction guarantees distance 1
+
+    else:
+        await websocket.send_json(
+            {"type": "error", "detail": "Missing target_id or direction"}
+        )
         return
 
     # Build the typed object and check if it's interactive

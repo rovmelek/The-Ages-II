@@ -206,3 +206,61 @@ async def test_move_missing_direction():
     ws.send_json.assert_called_with(
         {"type": "error", "detail": "Invalid direction: "}
     )
+
+
+# ---------------------------------------------------------------------------
+# Proximity notification tests (Story 10.5)
+# ---------------------------------------------------------------------------
+
+def _setup_player_with_objects(game, objects, x=2, y=2, room_key="test"):
+    """Register a player and room with interactive objects for proximity tests."""
+    tile_data = [[0] * 10 for _ in range(10)]
+    room = RoomInstance(room_key, "Test Room", 10, 10, tile_data, objects=objects)
+    entity = PlayerEntity(
+        id="player_1", name="hero", x=x, y=y, player_db_id=1,
+    )
+    room.add_entity(entity)
+    game.room_manager._rooms[room_key] = room
+
+    mock_ws = AsyncMock()
+    game.connection_manager.connect("player_1", mock_ws, room_key)
+    game.player_entities["player_1"] = {
+        "entity": entity, "room_key": room_key, "db_id": 1,
+    }
+    return mock_ws, entity, room
+
+
+@pytest.mark.asyncio
+async def test_move_nearby_objects():
+    """Moving near an interactive object sends a nearby_objects message."""
+    game = _make_game()
+    # Chest at (4, 2) — player will move from (2, 2) to (3, 2), making chest adjacent
+    objects = [{"id": "chest_01", "type": "chest", "category": "interactive",
+                "x": 4, "y": 2, "state_scope": "player", "config": {}}]
+    ws, entity, _ = _setup_player_with_objects(game, objects, x=2, y=2)
+
+    await handle_move(ws, {"action": "move", "direction": "right"}, game=game)
+
+    # Check all send_json calls for the nearby_objects message
+    calls = [call.args[0] for call in ws.send_json.call_args_list]
+    nearby_msgs = [c for c in calls if c.get("type") == "nearby_objects"]
+    assert len(nearby_msgs) == 1
+    assert nearby_msgs[0]["objects"] == [
+        {"id": "chest_01", "type": "chest", "direction": "right"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_move_no_nearby_objects():
+    """Moving away from all objects does not send nearby_objects."""
+    game = _make_game()
+    # Chest at (8, 8) — far from player at (2, 2) moving to (3, 2)
+    objects = [{"id": "chest_01", "type": "chest", "category": "interactive",
+                "x": 8, "y": 8, "state_scope": "player", "config": {}}]
+    ws, entity, _ = _setup_player_with_objects(game, objects, x=2, y=2)
+
+    await handle_move(ws, {"action": "move", "direction": "right"}, game=game)
+
+    calls = [call.args[0] for call in ws.send_json.call_args_list]
+    nearby_msgs = [c for c in calls if c.get("type") == "nearby_objects"]
+    assert len(nearby_msgs) == 0

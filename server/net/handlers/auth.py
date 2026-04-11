@@ -152,6 +152,12 @@ async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> No
                 "type": "login_success",
                 "player_id": player.id,
                 "username": player.username,
+                "stats": {
+                    "hp": 100,
+                    "max_hp": 100,
+                    "attack": 10,
+                    "xp": 0,
+                },
             }
         )
 
@@ -282,6 +288,12 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
                 "type": "login_success",
                 "player_id": player.id,
                 "username": player.username,
+                "stats": {
+                    "hp": stats.get("hp", 100),
+                    "max_hp": stats.get("max_hp", 100),
+                    "attack": stats.get("attack", 10),
+                    "xp": stats.get("xp", 0),
+                },
             }
         )
         await websocket.send_json({"type": "room_state", **room.get_state()})

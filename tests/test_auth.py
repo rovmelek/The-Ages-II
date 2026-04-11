@@ -158,3 +158,41 @@ def test_register_duplicate_username(client):
         resp = ws.receive_json()
         assert resp["type"] == "error"
         assert resp["detail"] == "Username already taken"
+
+
+# ---------------------------------------------------------------------------
+# Stats in login_success (Story 10.8)
+# ---------------------------------------------------------------------------
+
+def test_register_login_success_includes_stats(client):
+    """Register login_success should include default stats."""
+    with client.websocket_connect("/ws/game") as ws:
+        ws.send_json({"action": "register", "username": "statplayer", "password": "secret123"})
+        resp = ws.receive_json()
+        assert resp["type"] == "login_success"
+        assert "stats" in resp
+        stats = resp["stats"]
+        assert stats["hp"] == 100
+        assert stats["max_hp"] == 100
+        assert stats["attack"] == 10
+        assert stats["xp"] == 0
+
+
+def test_login_success_includes_stats(client):
+    """Login login_success should include persisted player stats."""
+    # Register first
+    with client.websocket_connect("/ws/game") as ws:
+        ws.send_json({"action": "register", "username": "loginstats", "password": "secret123"})
+        ws.receive_json()
+
+    # Login
+    with client.websocket_connect("/ws/game") as ws:
+        ws.send_json({"action": "login", "username": "loginstats", "password": "secret123"})
+        resp = ws.receive_json()
+        assert resp["type"] == "login_success"
+        assert "stats" in resp
+        stats = resp["stats"]
+        assert stats["hp"] == 100
+        assert stats["max_hp"] == 100
+        assert stats["attack"] == 10
+        assert stats["xp"] == 0

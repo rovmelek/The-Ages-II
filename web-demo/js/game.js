@@ -133,6 +133,125 @@ const $messageLog = /** @type {HTMLElement} */ (document.getElementById('message
 const $moveError = /** @type {HTMLElement} */ (document.getElementById('move-error'));
 
 // =========================================================================
+// Slash Command Registry & Parser
+// =========================================================================
+
+/** @type {Object<string, {handler: function(string[]): void, description: string, usage: string}>} */
+const COMMANDS = {
+  help: {
+    handler: () => {
+      appendChat('Available commands:', 'system');
+      for (const [, cmd] of Object.entries(COMMANDS)) {
+        appendChat(`  ${cmd.usage} \u2014 ${cmd.description}`, 'system');
+      }
+    },
+    description: 'Show available commands',
+    usage: '/help',
+  },
+  logout: {
+    handler: () => sendAction('logout', {}),
+    description: 'Log out and return to login screen',
+    usage: '/logout',
+  },
+  whisper: {
+    handler: (args) => {
+      if (args.length < 2) {
+        appendChat('Usage: /whisper <name> <message>', 'system');
+        return;
+      }
+      const targetName = args[0].replace(/^@/, '');
+      const message = args.slice(1).join(' ');
+      const target = gameState.room?.entities?.find(
+        (e) => e.name.toLowerCase() === targetName.toLowerCase()
+      );
+      if (!target) {
+        appendChat(`Player "${targetName}" not found in this room.`, 'system');
+        return;
+      }
+      sendAction('chat', { message, whisper_to: target.id });
+    },
+    description: 'Send a private message',
+    usage: '/whisper <name> <message>',
+  },
+  inventory: {
+    handler: () => sendAction('inventory'),
+    description: 'Show your inventory',
+    usage: '/inventory',
+  },
+  use: {
+    handler: (args) => {
+      if (!args.length) {
+        appendChat('Usage: /use <item_key>', 'system');
+        return;
+      }
+      sendAction('use_item', { item_key: args.join(' ') });
+    },
+    description: 'Use an item',
+    usage: '/use <item_key>',
+  },
+  flee: {
+    handler: () => sendAction('flee'),
+    description: 'Flee from combat',
+    usage: '/flee',
+  },
+  pass: {
+    handler: () => sendAction('pass_turn'),
+    description: 'Pass your turn in combat',
+    usage: '/pass',
+  },
+  interact: {
+    handler: (args) => {
+      if (!args.length) {
+        appendChat('Usage: /interact <direction>', 'system');
+        return;
+      }
+      sendAction('interact', { direction: args[0] });
+    },
+    description: 'Interact with adjacent object',
+    usage: '/interact <direction>',
+  },
+  look: {
+    handler: () => sendAction('look'),
+    description: 'Look at nearby surroundings',
+    usage: '/look',
+  },
+  who: {
+    handler: () => sendAction('who'),
+    description: 'List players in room',
+    usage: '/who',
+  },
+  stats: {
+    handler: () => sendAction('stats'),
+    description: 'Show your stats',
+    usage: '/stats',
+  },
+};
+
+/**
+ * Parse and dispatch slash commands. Returns true if input was a command.
+ * @param {string} input
+ * @returns {boolean}
+ */
+function parseCommand(input) {
+  if (!input.startsWith('/')) return false;
+  const trimmed = input.slice(1).trim();
+  if (!trimmed) {
+    appendChat('Type /help for available commands.', 'system');
+    return true;
+  }
+  const parts = trimmed.split(/\s+/);
+  const cmdName = parts[0].toLowerCase();
+  const args = parts.slice(1);
+  const cmd = COMMANDS[cmdName];
+  if (!cmd) {
+    appendChat(`Unknown command: /${cmdName}. Type /help for available commands.`, 'system');
+    return true;
+  }
+  cmd.handler(args);
+  return true;
+}
+
+// =========================================================================
 // WebSocket Connection
 // =========================================================================
 
@@ -289,6 +408,11 @@ function dispatchMessage(data) {
     interact_result: handleInteractResult,
     tile_changed: handleTileChanged,
     announcement: handleAnnouncement,
+    nearby_objects: handleNearbyObjects,
+    look_result: handleLookResult,
+    who_result: handleWhoResult,
+    stats_result: handleStatsResult,
+    help_result: handleHelpResult,
     logged_out: handleLoggedOut,
     server_shutdown: handleServerShutdown,
     kicked: handleKicked,
@@ -338,6 +462,7 @@ function handleLoginSuccess(data) {
     name: data.username,
     x: 0,
     y: 0,
+    stats: data.stats || { hp: 100, max_hp: 100, attack: 10, xp: 0 },
   };
 }
 
@@ -394,6 +519,9 @@ function handleRespawn(data) {
   if (gameState.player) {
     gameState.player.x = data.x;
     gameState.player.y = data.y;
+    if (gameState.player.stats) {
+      gameState.player.stats.hp = gameState.player.stats.max_hp;
+    }
   }
   gameState.combat = null;
   setMode('explore');
@@ -677,6 +805,61 @@ function handleAnnouncement(data) {
   appendChat(`\u2605 ${data.message}`, 'announcement');
 }
 
+/** @param {{type: string, objects: Array<{id: string, type: string, direction: string}>}} data */
+function handleNearbyObjects(data) {
+  if (data.objects && data.objects.length > 0) {
+    for (const obj of data.objects) {
+      appendChat(`You see a ${obj.type} to the ${obj.direction}`, 'system');
+    }
+  }
+}
+
+/** @param {{type: string, objects: Array, npcs: Array, players: Array}} data */
+function handleLookResult(data) {
+  const dirLabel = (d) => d === 'here' ? '(here)' : `to the ${d}`;
+  if (data.objects?.length) {
+    appendChat('Objects: ' + data.objects.map(o => `${o.type} ${dirLabel(o.direction)}`).join(', '), 'system');
+  }
+  if (data.npcs?.length) {
+    appendChat('NPCs: ' + data.npcs.map(n => `${n.name} (${n.alive ? 'alive' : 'dead'}) ${dirLabel(n.direction)}`).join(', '), 'system');
+  }
+  if (data.players?.length) {
+    appendChat('Players: ' + data.players.map(p => `${p.name} ${dirLabel(p.direction)}`).join(', '), 'system');
+  }
+  if (!data.objects?.length && !data.npcs?.length && !data.players?.length) {
+    appendChat('Nothing nearby.', 'system');
+  }
+}
+
+/** @param {{type: string, room: string, players: Array}} data */
+function handleWhoResult(data) {
+  appendChat(`Players in ${data.room}:`, 'system');
+  if (data.players?.length) {
+    for (const p of data.players) {
+      appendChat(`  ${p.name} at (${p.x}, ${p.y})`, 'system');
+    }
+  }
+}
+
+/** @param {{type: string, stats: Object}} data */
+function handleStatsResult(data) {
+  const s = data.stats;
+  if (!s) return;
+  if (gameState.player) {
+    gameState.player.stats = { ...s };
+    updateStatsPanel();
+  }
+  appendChat(`HP: ${s.hp}/${s.max_hp} | ATK: ${s.attack} | XP: ${s.xp}`, 'system');
+}
+
+/** @param {{type: string, actions: Array}} data */
+function handleHelpResult(data) {
+  appendChat('Server actions:', 'system');
+  if (data.actions?.length) {
+    appendChat('  ' + data.actions.join(', '), 'system');
+  }
+}
+
 /**
  * @param {string} text
  * @param {string} [type]
@@ -692,12 +875,12 @@ function appendChat(text, type = 'chat') {
 function sendChat() {
   const msg = $chatInput.value.trim();
   if (!msg) return;
-  // Intercept /logout command
-  if (msg.toLowerCase() === '/logout') {
-    sendAction('logout', {});
+
+  if (parseCommand(msg)) {
     $chatInput.value = '';
     return;
   }
+
   const target = $whisperTarget.value;
   if (target) {
     sendAction('chat', { message: msg, whisper_to: target });
@@ -751,6 +934,9 @@ function handleCombatTurn(data) {
     mob: data.mob,
     hands: data.hands,
   };
+
+  // Sync combat HP back to player stats
+  syncCombatStatsToPlayer();
 
   // Show action result
   const result = data.result;
@@ -820,6 +1006,10 @@ function handleCombatEnd(data) {
 
   if (isVictory) {
     msg = `Victory! Gained ${data.rewards?.xp || 0} XP`;
+    if (data.loot?.length) {
+      const lootStr = data.loot.map((l) => `${l.item_key} x${l.quantity}`).join(', ');
+      msg += ` | Loot: ${lootStr}`;
+    }
     // Mark mob NPC as dead in room state
     if (gameState.room && gameState.combat && gameState.player) {
       const mobName = gameState.combat.mob?.name;
@@ -836,6 +1026,12 @@ function handleCombatEnd(data) {
     msg = 'Defeated!';
   }
 
+  // Sync final combat stats to player stats
+  syncCombatStatsToPlayer();
+  if (isVictory && gameState.player?.stats) {
+    gameState.player.stats.xp = (gameState.player.stats.xp || 0) + (data.rewards?.xp || 0);
+  }
+
   const $result = document.getElementById('combat-result');
   if ($result) $result.textContent = msg;
   appendChat(msg, 'system');
@@ -850,10 +1046,12 @@ function handleCombatEnd(data) {
 
 /** @param {Object} _data */
 function handleCombatFled(_data) {
+  syncCombatStatsToPlayer();
   gameState.combat = null;
   setMode('explore');
   appendChat('You fled from combat.', 'system');
   renderRoom();
+  updateStatsPanel();
 }
 
 /** @param {Object} data */
@@ -865,6 +1063,7 @@ function handleCombatUpdate(data) {
     mob: data.mob,
     hands: data.hands,
   };
+  syncCombatStatsToPlayer();
   renderCombatOverlay();
 }
 
@@ -1092,6 +1291,17 @@ function handleItemUsed(data) {
   }
   text += parts.join(', ');
   appendChat(text, 'system');
+
+  // Sync HP from heal effect results to player stats HUD
+  if (gameState.player?.stats) {
+    for (const r of (data.effect_results || [])) {
+      if (r.type === 'heal' && r.target_hp != null) {
+        gameState.player.stats.hp = r.target_hp;
+      }
+    }
+    updateStatsPanel();
+  }
+
   sendAction('inventory', {});
 }
 
@@ -1146,6 +1356,18 @@ function handleTileChanged(data) {
 // Stats Panel
 // =========================================================================
 
+/** Sync HP/max_hp from combat participant data back to player stats. */
+function syncCombatStatsToPlayer() {
+  if (!gameState.player?.stats || !gameState.combat) return;
+  const me = gameState.combat.participants.find(
+    (/** @type {Object} */ p) => p.entity_id === gameState.player?.id
+  );
+  if (me) {
+    gameState.player.stats.hp = me.hp;
+    gameState.player.stats.max_hp = me.max_hp;
+  }
+}
+
 function updateStatsPanel() {
   if (!gameState.player) return;
 
@@ -1157,41 +1379,45 @@ function updateStatsPanel() {
   if ($pos) $pos.textContent = `Position: (${gameState.player.x}, ${gameState.player.y})`;
   if ($roomName && gameState.room) $roomName.textContent = gameState.room.name;
 
-  // HP/Shield from combat
-  const $hpSection = document.getElementById('hp-section');
+  const stats = gameState.player.stats;
+  if (!stats) return;
+
+  // Find combat participant once (used for HP and shield)
+  const me = gameState.combat
+    ? gameState.combat.participants.find(
+        (/** @type {Object} */ p) => p.entity_id === gameState.player?.id
+      )
+    : null;
+
+  // HP: prefer combat participant data during combat, else use player stats
+  const hp = me ? me.hp : stats.hp;
+  const maxHp = me ? me.max_hp : stats.max_hp;
+
+  // Update HP bar (always visible)
+  const $hpBar = /** @type {HTMLElement} */ (document.getElementById('hp-bar'));
+  const $hpText = document.getElementById('hp-text');
+  const pct = maxHp > 0 ? (hp / maxHp) * 100 : 0;
+  if ($hpBar) {
+    $hpBar.style.width = `${pct}%`;
+    setHpBarColor($hpBar, pct);
+  }
+  if ($hpText) $hpText.textContent = `${hp} / ${maxHp}`;
+
+  // Shield (combat only)
   const $shieldSection = document.getElementById('shield-section');
-  const $noStats = document.getElementById('no-stats-text');
-
-  if (gameState.combat && gameState.player) {
-    const me = gameState.combat.participants.find(
-      (/** @type {Object} */ p) => p.entity_id === gameState.player?.id
-    );
-    if (me) {
-      $hpSection?.classList.remove('hidden');
-      const $hpBar = /** @type {HTMLElement} */ (document.getElementById('hp-bar'));
-      const $hpText = document.getElementById('hp-text');
-      const pct = me.max_hp > 0 ? (me.hp / me.max_hp) * 100 : 0;
-      if ($hpBar) {
-        $hpBar.style.width = `${pct}%`;
-        setHpBarColor($hpBar, pct);
-      }
-      if ($hpText) $hpText.textContent = `${me.hp} / ${me.max_hp}`;
-
-      if (me.shield > 0) {
-        $shieldSection?.classList.remove('hidden');
-        const $shieldText = document.getElementById('shield-text');
-        if ($shieldText) $shieldText.textContent = `${me.shield}`;
-      } else {
-        $shieldSection?.classList.add('hidden');
-      }
-      $noStats?.classList.add('hidden');
-      return;
-    }
+  if (me && me.shield > 0) {
+    $shieldSection?.classList.remove('hidden');
+    const $shieldText = document.getElementById('shield-text');
+    if ($shieldText) $shieldText.textContent = `${me.shield}`;
+  } else {
+    $shieldSection?.classList.add('hidden');
   }
 
-  $hpSection?.classList.add('hidden');
-  $shieldSection?.classList.add('hidden');
-  $noStats?.classList.remove('hidden');
+  // XP and ATK (always visible)
+  const $xpText = document.getElementById('xp-text');
+  const $atkText = document.getElementById('atk-text');
+  if ($xpText) $xpText.textContent = `${stats.xp ?? 0}`;
+  if ($atkText) $atkText.textContent = `${stats.attack ?? 10}`;
 }
 
 // =========================================================================

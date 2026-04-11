@@ -9,11 +9,25 @@ from fastapi import WebSocket
 from server.core.database import async_session
 from server.player import repo as player_repo
 from server.room import repo as room_repo
+from server.room.room import DIRECTION_DELTAS
 
 if TYPE_CHECKING:
     from server.app import Game
 
 logger = logging.getLogger(__name__)
+
+
+def _find_nearby_objects(room, x: int, y: int) -> list[dict]:
+    """Scan 4 adjacent tiles for interactive objects."""
+    nearby = []
+    for direction, (dx, dy) in DIRECTION_DELTAS.items():
+        tx, ty = x + dx, y + dy
+        if tx < 0 or ty < 0 or tx >= room.width or ty >= room.height:
+            continue
+        for obj in room._interactive_objects.values():
+            if obj["x"] == tx and obj["y"] == ty:
+                nearby.append({"id": obj["id"], "type": obj["type"], "direction": direction})
+    return nearby
 
 
 async def handle_move(websocket: WebSocket, data: dict, *, game: Game) -> None:
@@ -82,6 +96,11 @@ async def handle_move(websocket: WebSocket, data: dict, *, game: Game) -> None:
             "y": result["y"],
         },
     )
+
+    # Proximity notification — notify mover of nearby interactive objects
+    nearby = _find_nearby_objects(room, result["x"], result["y"])
+    if nearby:
+        await websocket.send_json({"type": "nearby_objects", "objects": nearby})
 
     # Check for mob encounter — initiate combat
     mob_encounter = result.get("mob_encounter")

@@ -126,6 +126,12 @@ class Game:
         from server.net.handlers.interact import handle_interact
         from server.net.handlers.inventory import handle_inventory, handle_use_item
         from server.net.handlers.movement import handle_move
+        from server.net.handlers.query import (
+            handle_help_actions,
+            handle_look,
+            handle_stats,
+            handle_who,
+        )
 
         self.router.register(
             "login", lambda ws, d: handle_login(ws, d, game=self)
@@ -163,6 +169,19 @@ class Game:
         self.router.register(
             "use_item_combat",
             lambda ws, d: handle_use_item_combat(ws, d, game=self),
+        )
+        self.router.register(
+            "look", lambda ws, d: handle_look(ws, d, game=self)
+        )
+        self.router.register(
+            "who", lambda ws, d: handle_who(ws, d, game=self)
+        )
+        self.router.register(
+            "stats", lambda ws, d: handle_stats(ws, d, game=self)
+        )
+        self.router.register(
+            "help_actions",
+            lambda ws, d: handle_help_actions(ws, d, game=self),
         )
 
     def _register_events(self) -> None:

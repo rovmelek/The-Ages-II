@@ -125,7 +125,7 @@ async def test_interact_missing_target_id():
 
     await handle_interact(ws, {"action": "interact"}, game=game)
 
-    ws.send_json.assert_called_with({"type": "error", "detail": "Missing target_id"})
+    ws.send_json.assert_called_with({"type": "error", "detail": "Missing target_id or direction"})
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +247,130 @@ async def test_room_object_state_round_trip():
         state = await get_room_object_state(session, room_key, obj_id)
         assert state == {"active": True}
 
+
+# ---------------------------------------------------------------------------
+# Directional interaction tests (Story 10.5)
+# ---------------------------------------------------------------------------
+
+def _make_room_10x10(objects=None):
+    """10x10 room for directional tests."""
+    return RoomInstance(
+        "test", "Test Room", 10, 10, [[0] * 10 for _ in range(10)],
+        objects=objects or [],
+    )
+
+
+@pytest.mark.asyncio
+async def test_interact_direction_right():
+    game = _make_game()
+    objects = [{"id": "chest_01", "type": "echo", "category": "interactive",
+                "x": 3, "y": 2, "state_scope": "player", "config": {}}]
+    room = _make_room_10x10(objects=objects)
+    ws, entity = _setup_player(game, room)
+    entity.x, entity.y = 2, 2
+
+    await handle_interact(ws, {"action": "interact", "direction": "right"}, game=game)
+
+    msg = ws.send_json.call_args.args[0]
+    assert msg["type"] == "interact_result"
+    assert msg["object_id"] == "chest_01"
+    assert msg["result"]["echo"] is True
+
+
+@pytest.mark.asyncio
+async def test_interact_direction_nothing():
+    game = _make_game()
+    room = _make_room_10x10()
+    ws, entity = _setup_player(game, room)
+    entity.x, entity.y = 2, 2
+
+    await handle_interact(ws, {"action": "interact", "direction": "right"}, game=game)
+
+    ws.send_json.assert_called_with(
+        {"type": "error", "detail": "Nothing to interact with in that direction"}
+    )
+
+
+@pytest.mark.asyncio
+async def test_interact_direction_out_of_bounds():
+    game = _make_game()
+    room = _make_room_10x10()
+    ws, entity = _setup_player(game, room)
+    entity.x, entity.y = 0, 0
+
+    await handle_interact(ws, {"action": "interact", "direction": "left"}, game=game)
+
+    ws.send_json.assert_called_with(
+        {"type": "error", "detail": "Nothing to interact with in that direction"}
+    )
+
+
+@pytest.mark.asyncio
+async def test_interact_direction_invalid():
+    game = _make_game()
+    room = _make_room_10x10()
+    ws, entity = _setup_player(game, room)
+    entity.x, entity.y = 2, 2
+
+    await handle_interact(ws, {"action": "interact", "direction": "northeast"}, game=game)
+
+    ws.send_json.assert_called_with(
+        {"type": "error", "detail": "Invalid direction: northeast"}
+    )
+
+
+@pytest.mark.asyncio
+async def test_interact_target_id_still_works():
+    """Existing target_id mode works unchanged."""
+    game = _make_game()
+    objects = [{"id": "obj_1", "type": "echo", "category": "interactive",
+                "x": 1, "y": 0, "state_scope": "player", "config": {}}]
+    room = _make_room_with_objects(objects=objects)
+    ws, _ = _setup_player(game, room)
+
+    await handle_interact(ws, {"action": "interact", "target_id": "obj_1"}, game=game)
+
+    msg = ws.send_json.call_args.args[0]
+    assert msg["type"] == "interact_result"
+    assert msg["object_id"] == "obj_1"
+
+
+@pytest.mark.asyncio
+async def test_interact_missing_both():
+    game = _make_game()
+    room = _make_room_10x10()
+    ws, _ = _setup_player(game, room)
+
+    await handle_interact(ws, {"action": "interact"}, game=game)
+
+    ws.send_json.assert_called_with(
+        {"type": "error", "detail": "Missing target_id or direction"}
+    )
+
+
+@pytest.mark.asyncio
+async def test_interact_target_id_takes_precedence():
+    """When both target_id and direction provided, target_id is used."""
+    game = _make_game()
+    # Object at (1, 0) — adjacent to player at (0, 0)
+    objects = [{"id": "obj_1", "type": "echo", "category": "interactive",
+                "x": 1, "y": 0, "state_scope": "player", "config": {}}]
+    room = _make_room_10x10(objects=objects)
+    ws, _ = _setup_player(game, room)
+
+    # direction "up" points to (0, -1) = out of bounds, but target_id should take precedence
+    await handle_interact(
+        ws, {"action": "interact", "target_id": "obj_1", "direction": "up"}, game=game
+    )
+
+    msg = ws.send_json.call_args.args[0]
+    assert msg["type"] == "interact_result"
+    assert msg["object_id"] == "obj_1"
+
+
+# ---------------------------------------------------------------------------
+# Room-scoped state tests
+# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_room_object_state_shared_across_objects():
