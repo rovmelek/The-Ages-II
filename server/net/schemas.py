@@ -165,6 +165,7 @@ class PongMessage(InboundMessage):
 class ReconnectMessage(InboundMessage):
     action: str = "reconnect"
     session_token: str = Field(min_length=1)
+    last_seq: int | None = None
 
 
 # --- Utility ---

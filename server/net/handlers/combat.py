@@ -45,9 +45,9 @@ async def _broadcast_combat_state(instance, result: dict, game: Game) -> None:
 
     state = instance.get_state()
     for eid in instance.participants:
-        ws = game.connection_manager.get_websocket(eid)
-        if ws:
-            await ws.send_json({"type": "combat_turn", "result": result, **state})
+        await game.connection_manager.send_to_player_seq(
+            eid, {"type": "combat_turn", "result": result, **state}
+        )
 
 
 async def _send_combat_end_message(
@@ -55,9 +55,6 @@ async def _send_combat_end_message(
     player_loot: dict[str, list[dict]], instance, game: Game
 ) -> None:
     """Build and send per-player combat_end message."""
-    ws = game.connection_manager.get_websocket(eid)
-    if not ws:
-        return
     player_end_result = dict(end_result)
     player_end_result["rewards"] = rewards_per_player.get(eid, {})
     player_end_result.pop("rewards_per_player", None)
@@ -67,7 +64,9 @@ async def _send_combat_end_message(
         player_end_result.pop("loot", None)
     if end_result.get("victory") and instance.npc_id:
         player_end_result["defeated_npc_id"] = instance.npc_id
-    await ws.send_json({"type": "combat_end", **player_end_result})
+    await game.connection_manager.send_to_player_seq(
+        eid, {"type": "combat_end", **player_end_result}
+    )
 
 
 async def _check_combat_end(instance, game: Game) -> None:

@@ -96,18 +96,13 @@ async def notify_xp(
     game: Any,
 ) -> None:
     """Send xp_gained and optional level_up_available messages."""
-    ws = game.connection_manager.get_websocket(entity_id)
-    if ws:
-        try:
-            await ws.send_json({
-                "type": "xp_gained",
-                "amount": result.final_xp,
-                "source": result.source,
-                "detail": result.detail,
-                "new_total_xp": result.new_total_xp,
-            })
-        except Exception:
-            pass
+    await game.connection_manager.send_to_player_seq(entity_id, {
+        "type": "xp_gained",
+        "amount": result.final_xp,
+        "source": result.source,
+        "detail": result.detail,
+        "new_total_xp": result.new_total_xp,
+    })
     if result.level_up_available:
         await send_level_up_available(entity_id, player_entity, game)
 
@@ -154,32 +149,27 @@ async def send_level_up_available(entity_id: str, player_entity: Any, game: Any)
     current_level = stats.get("level", 1)
     new_level = current_level + 1
     ssf = settings.STAT_SCALING_FACTOR
-    ws = game.connection_manager.get_websocket(entity_id)
-    if ws:
-        try:
-            await ws.send_json({
-                "type": "level_up_available",
-                "new_level": new_level,
-                "choose_stats": settings.LEVEL_UP_STAT_CHOICES,
-                "current_stats": {
-                    "strength": stats.get("strength", settings.DEFAULT_STAT_VALUE),
-                    "dexterity": stats.get("dexterity", settings.DEFAULT_STAT_VALUE),
-                    "constitution": stats.get("constitution", settings.DEFAULT_STAT_VALUE),
-                    "intelligence": stats.get("intelligence", settings.DEFAULT_STAT_VALUE),
-                    "wisdom": stats.get("wisdom", settings.DEFAULT_STAT_VALUE),
-                    "charisma": stats.get("charisma", settings.DEFAULT_STAT_VALUE),
-                },
-                "stat_cap": settings.STAT_CAP,
-                "xp_for_next_level": current_level * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
-                "xp_for_current_level": (current_level - 1) * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
-                "stat_effects": {
-                    "strength": f"+{ssf:g} physical damage per point",
-                    "dexterity": f"-{ssf:g} incoming damage per point",
-                    "constitution": f"+{settings.CON_HP_PER_POINT} max HP per point",
-                    "intelligence": f"+{ssf:g} magic damage per point",
-                    "wisdom": f"+{ssf:g} healing per point",
-                    "charisma": f"+{round(settings.XP_CHA_BONUS_PER_POINT * 100)}% XP per point",
-                },
-            })
-        except Exception:
-            pass
+    await game.connection_manager.send_to_player_seq(entity_id, {
+        "type": "level_up_available",
+        "new_level": new_level,
+        "choose_stats": settings.LEVEL_UP_STAT_CHOICES,
+        "current_stats": {
+            "strength": stats.get("strength", settings.DEFAULT_STAT_VALUE),
+            "dexterity": stats.get("dexterity", settings.DEFAULT_STAT_VALUE),
+            "constitution": stats.get("constitution", settings.DEFAULT_STAT_VALUE),
+            "intelligence": stats.get("intelligence", settings.DEFAULT_STAT_VALUE),
+            "wisdom": stats.get("wisdom", settings.DEFAULT_STAT_VALUE),
+            "charisma": stats.get("charisma", settings.DEFAULT_STAT_VALUE),
+        },
+        "stat_cap": settings.STAT_CAP,
+        "xp_for_next_level": current_level * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
+        "xp_for_current_level": (current_level - 1) * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
+        "stat_effects": {
+            "strength": f"+{ssf:g} physical damage per point",
+            "dexterity": f"-{ssf:g} incoming damage per point",
+            "constitution": f"+{settings.CON_HP_PER_POINT} max HP per point",
+            "intelligence": f"+{ssf:g} magic damage per point",
+            "wisdom": f"+{ssf:g} healing per point",
+            "charisma": f"+{round(settings.XP_CHA_BONUS_PER_POINT * 100)}% XP per point",
+        },
+    })

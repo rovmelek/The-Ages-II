@@ -49,8 +49,8 @@ async def _send_trade_update(trade, game: Game) -> None:
         "ready_b": trade.ready_b,
         "state": trade.state,
     }
-    await game.connection_manager.send_to_player(trade.player_a, msg)
-    await game.connection_manager.send_to_player(trade.player_b, msg)
+    await game.connection_manager.send_to_player_seq(trade.player_a, msg)
+    await game.connection_manager.send_to_player_seq(trade.player_b, msg)
 
 
 @requires_auth

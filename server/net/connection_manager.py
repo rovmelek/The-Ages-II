@@ -13,6 +13,7 @@ class ConnectionManager:
         self._ws_to_entity: dict[int, str] = {}
         self._name_to_entity: dict[str, str] = {}
         self._entity_to_name: dict[str, str] = {}
+        self._msg_seq: dict[str, int] = {}  # entity_id -> outbound seq counter
 
     def connect(
         self, entity_id: str, websocket: WebSocket, room_key: str, name: str = ""
@@ -24,6 +25,7 @@ class ConnectionManager:
         if name:
             self._name_to_entity[name.lower()] = entity_id
             self._entity_to_name[entity_id] = name.lower()
+        self._msg_seq.setdefault(entity_id, 0)
 
     def disconnect(self, entity_id: str) -> None:
         """Remove a player's connection."""
@@ -56,11 +58,36 @@ class ConnectionManager:
         if entity_id in self._player_rooms:
             self._player_rooms[entity_id] = room_key
 
+    def get_msg_seq(self, entity_id: str) -> int:
+        """Return the current outbound sequence number for a player."""
+        return self._msg_seq.get(entity_id, 0)
+
+    def clear_msg_seq(self, entity_id: str) -> None:
+        """Remove sequence tracking for a player (on full cleanup after grace period)."""
+        self._msg_seq.pop(entity_id, None)
+
     async def send_to_player(self, entity_id: str, message: dict) -> None:
         """Send a JSON message to a specific player."""
         ws = self._connections.get(entity_id)
         if ws:
             await ws.send_json(message)
+
+    async def send_to_player_seq(self, entity_id: str, message: dict) -> None:
+        """Send a JSON message with a sequence number attached.
+
+        Creates a copy of the message dict to avoid aliasing issues
+        when the same dict is sent to multiple players (e.g., trade updates).
+        Counter increments even if WebSocket is absent (grace period consistency).
+        """
+        seq = self._msg_seq.get(entity_id, 0) + 1
+        self._msg_seq[entity_id] = seq
+        msg = {**message, "seq": seq}
+        ws = self._connections.get(entity_id)
+        if ws:
+            try:
+                await ws.send_json(msg)
+            except Exception:
+                pass  # Dead connection — seq still incremented
 
     async def broadcast_to_all(self, message: dict) -> None:
         """Send a JSON message to ALL connected players."""

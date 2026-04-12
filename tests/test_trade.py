@@ -42,6 +42,7 @@ def _make_game(
     game.trade_manager = TradeManager()
     game.connection_manager = MagicMock()
     game.connection_manager.send_to_player = AsyncMock()
+    game.connection_manager.send_to_player_seq = AsyncMock()
     game.player_manager = PlayerManager()
     if players:
         for eid, session in players.items():
@@ -994,6 +995,7 @@ class TestCombatEntryCancelsTrade:
 
         # get_websocket must return AsyncMock for send_json
         game.connection_manager.get_websocket.return_value = AsyncMock()
+        game.connection_manager.send_to_player_seq = AsyncMock()
 
         ws = AsyncMock()
         ws.send_json = AsyncMock()

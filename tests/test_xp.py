@@ -204,6 +204,7 @@ class TestGrantXP:
         game.transaction = factory
         ws = AsyncMock()
         game.connection_manager.get_websocket.return_value = ws
+        game.connection_manager.send_to_player_seq = AsyncMock()
         game.player_manager = PlayerManager()
         return game
 
@@ -237,9 +238,9 @@ class TestGrantXP:
             mock_repo.update_stats = AsyncMock()
             await grant_xp("player_1", _mock_entity, 50, "exploration", "Discovered Cave", _mock_game)
 
-        ws = _mock_game.connection_manager.get_websocket.return_value
-        ws.send_json.assert_called_once()
-        msg = ws.send_json.call_args[0][0]
+        seq_mock = _mock_game.connection_manager.send_to_player_seq
+        seq_mock.assert_called_once()
+        _, msg = seq_mock.call_args[0]
         assert msg["type"] == "xp_gained"
         assert msg["source"] == "exploration"
         assert msg["detail"] == "Discovered Cave"
@@ -278,6 +279,7 @@ class TestApplyXp:
         game.transaction = factory
         ws = AsyncMock()
         game.connection_manager.get_websocket.return_value = ws
+        game.connection_manager.send_to_player_seq = AsyncMock()
         game.player_manager = PlayerManager()
         return game
 
@@ -369,6 +371,7 @@ class TestNotifyXp:
         game = MagicMock()
         ws = AsyncMock()
         game.connection_manager.get_websocket.return_value = ws
+        game.connection_manager.send_to_player_seq = AsyncMock()
         return game
 
     async def test_notify_xp_sends_xp_gained(self, _mock_entity, _mock_game):
@@ -378,9 +381,9 @@ class TestNotifyXp:
 
         await notify_xp("player_1", result, _mock_entity, _mock_game)
 
-        ws = _mock_game.connection_manager.get_websocket.return_value
-        ws.send_json.assert_called_once()
-        msg = ws.send_json.call_args[0][0]
+        seq_mock = _mock_game.connection_manager.send_to_player_seq
+        seq_mock.assert_called_once()
+        _, msg = seq_mock.call_args[0]
         assert msg["type"] == "xp_gained"
         assert msg["amount"] == 59
         assert msg["source"] == "exploration"

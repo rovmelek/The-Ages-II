@@ -74,6 +74,7 @@ class PlayerManager:
         await self._save_player_state(entity_id, player_info, game)
         await self._remove_from_room(entity_id, room_key, game)
 
+        game.connection_manager.clear_msg_seq(entity_id)
         game.connection_manager.disconnect(entity_id)
         self.remove_session(entity_id)
 
@@ -92,6 +93,7 @@ class PlayerManager:
         await self._cleanup_party(entity_id, game)
         await self._save_player_state(entity_id, session, game)
         await self._remove_from_room(entity_id, room_key, game)
+        game.connection_manager.clear_msg_seq(entity_id)
         self.remove_session(entity_id)
 
     async def cancel_trade(self, entity_id: str, game: Game) -> None:

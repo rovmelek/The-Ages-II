@@ -80,11 +80,13 @@ async def test_send_level_up_available():
     ws = AsyncMock()
     game = MagicMock()
     game.connection_manager.get_websocket.return_value = ws
+    game.connection_manager.send_to_player_seq = AsyncMock()
 
     await send_level_up_available("player_1", entity, game)
 
-    ws.send_json.assert_called_once()
-    msg = ws.send_json.call_args[0][0]
+    seq_mock = game.connection_manager.send_to_player_seq
+    seq_mock.assert_called_once()
+    _, msg = seq_mock.call_args[0]
     assert msg["type"] == "level_up_available"
     assert msg["new_level"] == 2
     assert msg["choose_stats"] == 3
@@ -119,6 +121,7 @@ def _make_game_with_entity(stats: dict, pending: int = 1) -> tuple:
     game.transaction = factory
     game.connection_manager.get_entity_id.return_value = "player_1"
     game.connection_manager.get_websocket.return_value = ws
+    game.connection_manager.send_to_player_seq = AsyncMock()
     game.player_manager = PlayerManager()
     game.player_manager.set_session("player_1", _ps({
         "entity": entity,
@@ -279,12 +282,14 @@ async def test_handle_level_up_queued():
     # Level incremented to 2
     assert entity.stats["level"] == 2
 
-    # Two messages: level_up_complete + level_up_available (for next pending)
-    calls = ws.send_json.call_args_list
-    assert len(calls) == 2
-    assert calls[0][0][0]["type"] == "level_up_complete"
-    assert calls[1][0][0]["type"] == "level_up_available"
-    assert calls[1][0][0]["new_level"] == 3
+    # level_up_complete via ws.send_json, level_up_available via send_to_player_seq
+    ws_calls = ws.send_json.call_args_list
+    assert len(ws_calls) == 1
+    assert ws_calls[0][0][0]["type"] == "level_up_complete"
+    seq_calls = game.connection_manager.send_to_player_seq.call_args_list
+    assert len(seq_calls) == 1
+    assert seq_calls[0][0][1]["type"] == "level_up_available"
+    assert seq_calls[0][0][1]["new_level"] == 3
 
     # Remaining pending should be 2 (thresholds at 2000, 3000)
     assert game.player_manager.get_session("player_1").pending_level_ups == 2
@@ -308,6 +313,7 @@ async def test_grant_xp_triggers_level_up():
     factory, _ = _mock_transaction()
     game.transaction = factory
     game.connection_manager.get_websocket.return_value = ws
+    game.connection_manager.send_to_player_seq = AsyncMock()
     game.player_manager = PlayerManager()
     game.player_manager.set_session("player_1", _ps({
         "entity": entity,
@@ -321,9 +327,9 @@ async def test_grant_xp_triggers_level_up():
     # XP should be 1100 (900 + 200) → crosses 1000 threshold
     assert entity.stats["xp"] == 1100
 
-    # Should have sent xp_gained AND level_up_available
-    calls = ws.send_json.call_args_list
-    msg_types = [c[0][0]["type"] for c in calls]
+    # Should have sent xp_gained AND level_up_available via send_to_player_seq
+    seq_calls = game.connection_manager.send_to_player_seq.call_args_list
+    msg_types = [c[0][1]["type"] for c in seq_calls]
     assert "xp_gained" in msg_types
     assert "level_up_available" in msg_types
     assert game.player_manager.get_session("player_1").pending_level_ups == 1

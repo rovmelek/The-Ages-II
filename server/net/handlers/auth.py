@@ -388,6 +388,14 @@ async def handle_reconnect(websocket: WebSocket, data: dict, *, game: Game) -> N
             if pending > 0:
                 existing_session.pending_level_ups = pending
                 await send_level_up_available(entity_id, existing_session.entity, game)
+            # Check if client is up to date on sequenced messages
+            last_seq = data.get("last_seq")
+            if last_seq is not None:
+                current_seq = game.connection_manager.get_msg_seq(entity_id)
+                if last_seq == current_seq:
+                    await websocket.send_json(
+                        with_request_id({"type": "seq_status", "status": "up_to_date"}, data)
+                    )
             game._start_heartbeat(entity_id)
             return
 
@@ -462,4 +470,6 @@ async def handle_reconnect(websocket: WebSocket, data: dict, *, game: Game) -> N
             if player_session:
                 player_session.pending_level_ups = pending
             await send_level_up_available(entity_id, entity, game)
+        # Note: No last_seq check in Case 2 — seq counter was reset during cleanup,
+        # so there's no continuity. Full resync (room_state) already sent above.
         game._start_heartbeat(entity_id)

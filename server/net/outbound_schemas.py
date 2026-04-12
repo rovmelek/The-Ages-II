@@ -190,6 +190,11 @@ class PingMessage(BaseModel):
     type: str = "ping"
 
 
+class SeqStatusMessage(BaseModel):
+    type: str = "seq_status"
+    status: str
+
+
 class ServerShutdownMessage(BaseModel):
     type: str = "server_shutdown"
     reason: str
@@ -271,6 +276,7 @@ class CombatStartMessage(CombatStatePayload):
 class CombatTurnMessage(CombatStatePayload):
     type: str = "combat_turn"
     result: dict[str, Any]
+    seq: int | None = None
 
 
 class CombatEndMessage(BaseModel):
@@ -279,6 +285,7 @@ class CombatEndMessage(BaseModel):
     rewards: dict[str, Any]
     loot: list[dict[str, Any]] | None = None
     defeated_npc_id: str | None = None
+    seq: int | None = None
 
 
 class CombatFledMessage(BaseModel):
@@ -364,6 +371,7 @@ class TradeUpdateMessage(BaseModel):
     ready_a: bool
     ready_b: bool
     state: str
+    seq: int | None = None
 
 
 class TradeResultMessage(BaseModel):
@@ -423,6 +431,7 @@ class XpGainedMessage(BaseModel):
     source: str
     detail: str
     new_total_xp: int
+    seq: int | None = None
 
 
 class LevelUpAvailableMessage(BaseModel):
@@ -434,6 +443,7 @@ class LevelUpAvailableMessage(BaseModel):
     xp_for_next_level: int
     xp_for_current_level: int
     stat_effects: dict[str, str]
+    seq: int | None = None
 
 
 class LevelUpCompleteMessage(BaseModel):
