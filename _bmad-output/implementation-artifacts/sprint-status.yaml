@@ -256,7 +256,7 @@ development_status:
   # Sprint 1 — Protocol formalized (Godot dev unblocked)
   16-1-websocket-inbound-schemas: done
   16-2-websocket-outbound-schemas: done
-  16-3-protocol-specification-document: backlog
+  16-3-protocol-specification-document: done
   16-12-chat-markdown-support: backlog
 
   # Sprint 2 — Refactoring + turn timeout bug fix
