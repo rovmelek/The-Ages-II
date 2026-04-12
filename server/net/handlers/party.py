@@ -1,9 +1,7 @@
 """Party action handler for WebSocket clients."""
 from __future__ import annotations
 
-import asyncio
 import logging
-import time
 from typing import TYPE_CHECKING
 
 from fastapi import WebSocket
@@ -16,50 +14,6 @@ if TYPE_CHECKING:
     from server.app import Game
 
 logger = logging.getLogger(__name__)
-
-# Module-level invite tracking (invites exist before parties do)
-_pending_invites: dict[str, str] = {}  # target_entity_id -> inviter_entity_id
-_outgoing_invites: dict[str, str] = {}  # inviter_entity_id -> target_entity_id
-_invite_timeouts: dict[str, asyncio.TimerHandle] = {}  # target_entity_id -> handle
-_invite_cooldowns: dict[str, dict[str, float]] = {}  # inviter_id -> {target_id -> end_ts}
-
-# Reference to game for timeout callbacks
-_game_ref: Game | None = None
-
-
-def set_game_ref(game: Game) -> None:
-    """Set the game reference for timeout callbacks."""
-    global _game_ref
-    _game_ref = game
-
-
-def _cancel_invite(target_id: str) -> str | None:
-    """Cancel a pending invite for a target. Returns the inviter_id or None."""
-    inviter_id = _pending_invites.pop(target_id, None)
-    if inviter_id is not None:
-        _outgoing_invites.pop(inviter_id, None)
-    handle = _invite_timeouts.pop(target_id, None)
-    if handle is not None:
-        handle.cancel()
-    return inviter_id
-
-
-def _set_cooldown(inviter_id: str, target_id: str) -> None:
-    """Set a per-target invite cooldown for an inviter."""
-    if inviter_id not in _invite_cooldowns:
-        _invite_cooldowns[inviter_id] = {}
-    _invite_cooldowns[inviter_id][target_id] = time.time() + settings.PARTY_INVITE_COOLDOWN_SECONDS
-
-
-def _check_cooldown(inviter_id: str, target_id: str) -> bool:
-    """Return True if inviter is in cooldown for this target."""
-    cds = _invite_cooldowns.get(inviter_id)
-    if cds is None:
-        return False
-    end = cds.get(target_id)
-    if end is None:
-        return False
-    return time.time() < end
 
 
 def _members_share_combat(game: Game, members: list[str]) -> bool:
@@ -81,22 +35,6 @@ def _in_shared_combat(game: Game, entity_a: str, entity_b: str) -> bool:
     if inst_a is None or inst_b is None:
         return False
     return inst_a.instance_id == inst_b.instance_id
-
-
-def cleanup_pending_invites(entity_id: str) -> None:
-    """Clean up all pending invites involving this entity (as inviter or target).
-
-    Called from PlayerManager.cleanup_session() on disconnect.
-    """
-    # As target
-    _cancel_invite(entity_id)
-    # As inviter
-    target_id = _outgoing_invites.pop(entity_id, None)
-    if target_id is not None:
-        _pending_invites.pop(target_id, None)
-        handle = _invite_timeouts.pop(target_id, None)
-        if handle is not None:
-            handle.cancel()
 
 
 async def _send_party_update(
@@ -208,14 +146,14 @@ async def _handle_invite(
         return
 
     # Target already has a pending invite
-    if target_id in _pending_invites:
+    if game.party_manager.has_pending_invite(target_id):
         await websocket.send_json(
             {"type": "error", "detail": "Player already has a pending invite"}
         )
         return
 
     # Per-target cooldown
-    if _check_cooldown(entity_id, target_id):
+    if game.party_manager.check_cooldown(entity_id, target_id):
         await websocket.send_json(
             {"type": "error", "detail": "Please wait before re-inviting this player"}
         )
@@ -230,22 +168,15 @@ async def _handle_invite(
         return
 
     # Cancel existing outgoing invite if any
-    old_target = _outgoing_invites.get(entity_id)
+    old_target = game.party_manager.get_outgoing_invite(entity_id)
     if old_target is not None:
-        _cancel_invite(old_target)
+        game.party_manager.cancel_invite(old_target)
 
-    # Store invite
-    _pending_invites[target_id] = entity_id
-    _outgoing_invites[entity_id] = target_id
+    # Resolve display names before storing
+    target_display = _get_entity_name(game, target_id)
 
-    # Schedule timeout
-    def _on_timeout() -> None:
-        _handle_invite_timeout(target_id)
-
-    loop = asyncio.get_running_loop()
-    _invite_timeouts[target_id] = loop.call_later(
-        settings.PARTY_INVITE_TIMEOUT_SECONDS, _on_timeout
-    )
+    # Store invite and schedule timeout
+    game.party_manager.create_invite(entity_id, target_id, target_display)
 
     # Notify target
     inviter_name = _get_entity_name(game, entity_id)
@@ -259,7 +190,6 @@ async def _handle_invite(
     )
 
     # Confirm to inviter
-    target_display = _get_entity_name(game, target_id)
     await websocket.send_json(
         {
             "type": "party_invite_response",
@@ -269,40 +199,11 @@ async def _handle_invite(
     )
 
 
-def _handle_invite_timeout(target_id: str) -> None:
-    """Handle invite timeout (sync callback from event loop timer)."""
-    inviter_id = _pending_invites.pop(target_id, None)
-    if inviter_id is None:
-        return
-    _outgoing_invites.pop(inviter_id, None)
-    _invite_timeouts.pop(target_id, None)
-
-    # Set cooldown
-    _set_cooldown(inviter_id, target_id)
-
-    # Schedule async notifications
-    game = _game_ref
-    if game is not None:
-        loop = asyncio.get_running_loop()
-        target_name = _get_entity_name(game, target_id)
-        msg_inviter = {
-            "type": "party_invite_response",
-            "status": "expired",
-            "target": target_name,
-        }
-        msg_target = {
-            "type": "party_invite_response",
-            "status": "expired",
-        }
-        loop.create_task(game.connection_manager.send_to_player(inviter_id, msg_inviter))
-        loop.create_task(game.connection_manager.send_to_player(target_id, msg_target))
-
-
 async def _handle_accept(
     websocket: WebSocket, entity_id: str, game: Game
 ) -> None:
     """Handle /party accept."""
-    inviter_id = _pending_invites.get(entity_id)
+    inviter_id = game.party_manager.get_pending_invite(entity_id)
     if inviter_id is None:
         await websocket.send_json(
             {"type": "error", "detail": "No pending party invite"}
@@ -310,7 +211,7 @@ async def _handle_accept(
         return
 
     # Cancel timeout and remove invite
-    _cancel_invite(entity_id)
+    game.party_manager.cancel_invite(entity_id)
 
     # Reject if accepter is already in a party
     if game.party_manager.is_in_party(entity_id):
@@ -353,7 +254,7 @@ async def _handle_reject(
     websocket: WebSocket, entity_id: str, game: Game
 ) -> None:
     """Handle /party reject."""
-    inviter_id = _pending_invites.get(entity_id)
+    inviter_id = game.party_manager.get_pending_invite(entity_id)
     if inviter_id is None:
         await websocket.send_json(
             {"type": "error", "detail": "No pending party invite"}
@@ -361,10 +262,10 @@ async def _handle_reject(
         return
 
     # Cancel and clean up
-    _cancel_invite(entity_id)
+    game.party_manager.cancel_invite(entity_id)
 
     # Set cooldown for re-inviting
-    _set_cooldown(inviter_id, entity_id)
+    game.party_manager.set_cooldown(inviter_id, entity_id)
 
     # Notify inviter
     rejecter_name = _get_entity_name(game, entity_id)
@@ -470,7 +371,7 @@ async def _handle_kick(
     party, new_leader_id = game.party_manager.remove_member(target_id)
 
     # Set cooldown for re-inviting
-    _set_cooldown(entity_id, target_id)
+    game.party_manager.set_cooldown(entity_id, target_id)
 
     # Notify remaining members
     if party is not None and party.members:
@@ -551,7 +452,7 @@ async def _handle_status(
         return
 
     # Check for pending invite
-    inviter_id = _pending_invites.get(entity_id)
+    inviter_id = game.party_manager.get_pending_invite(entity_id)
     if inviter_id is not None:
         inviter_name = _get_entity_name(game, inviter_id)
         await websocket.send_json({

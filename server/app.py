@@ -42,7 +42,7 @@ class Game:
         self.combat_manager = CombatManager(effect_registry=self.effect_registry)
         self.trade_manager = TradeManager()
         self.trade_manager.set_connection_manager(self.connection_manager)
-        self.party_manager = PartyManager()
+        self.party_manager = PartyManager(connection_manager=self.connection_manager)
         self.player_manager = PlayerManager()
         self.session_factory = _database.async_session
         self._shutting_down: bool = False
@@ -152,7 +152,7 @@ class Game:
         from server.net.handlers.interact import handle_interact
         from server.net.handlers.inventory import handle_inventory, handle_use_item
         from server.net.handlers.trade import handle_trade
-        from server.net.handlers.party import handle_party, handle_party_chat, set_game_ref as set_party_game_ref
+        from server.net.handlers.party import handle_party, handle_party_chat
         from server.net.handlers.levelup import handle_level_up
         from server.net.handlers.movement import handle_move
         from server.net.handlers.query import (
@@ -230,8 +230,6 @@ class Game:
             "party_chat",
             lambda ws, d: handle_party_chat(ws, d, game=self),
         )
-        set_party_game_ref(self)
-
     def _register_events(self) -> None:
         """Register event bus subscribers."""
 

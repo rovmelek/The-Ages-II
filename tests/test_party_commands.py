@@ -9,16 +9,7 @@ import pytest
 
 from server.core.config import settings
 from server.net.handlers.party import (
-    _cancel_invite,
-    _check_cooldown,
-    _invite_cooldowns,
-    _invite_timeouts,
-    _outgoing_invites,
-    _pending_invites,
-    _set_cooldown,
-    cleanup_pending_invites,
     handle_party,
-    set_game_ref,
 )
 from server.party.manager import PartyManager
 
@@ -47,15 +38,15 @@ def _ps(d: dict) -> PlayerSession:
 def _make_game():
     """Create a mock Game with required managers."""
     game = MagicMock()
-    game.party_manager = PartyManager()
-    game.combat_manager = MagicMock()
-    game.combat_manager.get_player_instance = MagicMock(return_value=None)
     game.connection_manager = MagicMock()
     game.connection_manager.get_entity_id = MagicMock()
     game.connection_manager.get_entity_id_by_name = MagicMock()
     game.connection_manager.get_websocket = MagicMock(return_value=MagicMock())
     game.connection_manager.get_room = MagicMock(return_value="town_square")
     game.connection_manager.send_to_player = AsyncMock()
+    game.party_manager = PartyManager(connection_manager=game.connection_manager)
+    game.combat_manager = MagicMock()
+    game.combat_manager.get_player_instance = MagicMock(return_value=None)
     game.player_manager = PlayerManager()
     return game
 
@@ -96,22 +87,6 @@ def _setup_name_resolver(game):
     game.connection_manager.get_entity_id_by_name = MagicMock(side_effect=resolver)
 
 
-def _clear_invite_state():
-    """Clear module-level invite tracking state."""
-    _pending_invites.clear()
-    _outgoing_invites.clear()
-    _invite_timeouts.clear()
-    _invite_cooldowns.clear()
-
-
-@pytest.fixture(autouse=True)
-def _clean_state():
-    """Clean up module-level state before each test."""
-    _clear_invite_state()
-    yield
-    _clear_invite_state()
-
-
 # ---------------------------------------------------------------------------
 # Invite tests
 # ---------------------------------------------------------------------------
@@ -144,8 +119,8 @@ class TestInvite:
         assert last_msg["status"] == "sent"
 
         # State tracking
-        assert _pending_invites["player_2"] == "player_1"
-        assert _outgoing_invites["player_1"] == "player_2"
+        assert game.party_manager._pending_invites["player_2"] == "player_1"
+        assert game.party_manager._outgoing_invites["player_1"] == "player_2"
 
     async def test_invite_target_offline(self):
         game = _make_game()
@@ -200,7 +175,7 @@ class TestInvite:
         _setup_name_resolver(game)
 
         # Set cooldown
-        _set_cooldown("player_1", "player_2")
+        game.party_manager.set_cooldown("player_1", "player_2")
 
         await handle_party(ws, {"args": "invite @Bob"}, game=game)
 
@@ -219,13 +194,13 @@ class TestInvite:
 
         # First invite Bob
         await handle_party(ws, {"args": "invite @Bob"}, game=game)
-        assert _pending_invites.get("player_2") == "player_1"
+        assert game.party_manager._pending_invites.get("player_2") == "player_1"
 
         # Now invite Carol — should cancel Bob's invite
         await handle_party(ws, {"args": "invite @Carol"}, game=game)
-        assert "player_2" not in _pending_invites
-        assert _pending_invites.get("player_3") == "player_1"
-        assert _outgoing_invites.get("player_1") == "player_3"
+        assert "player_2" not in game.party_manager._pending_invites
+        assert game.party_manager._pending_invites.get("player_3") == "player_1"
+        assert game.party_manager._outgoing_invites.get("player_1") == "player_3"
 
     async def test_invite_party_full(self):
         game = _make_game()
@@ -259,7 +234,7 @@ class TestInvite:
         _setup_name_resolver(game)
 
         # Carol already invited Bob
-        _pending_invites["player_2"] = "player_3"
+        game.party_manager._pending_invites["player_2"] = "player_3"
 
         await handle_party(ws, {"args": "invite @Bob"}, game=game)
 
@@ -278,7 +253,7 @@ class TestInvite:
 
         await handle_party(ws, {"args": "invite Bob"}, game=game)
 
-        assert _pending_invites.get("player_2") == "player_1"
+        assert game.party_manager._pending_invites.get("player_2") == "player_1"
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +271,7 @@ class TestAccept:
         _register_player(game, "player_2", "Bob")
 
         # Set up pending invite
-        _pending_invites["player_2"] = "player_1"
+        game.party_manager._pending_invites["player_2"] = "player_1"
 
         await handle_party(ws, {"args": "accept"}, game=game)
 
@@ -322,7 +297,7 @@ class TestAccept:
         party = game.party_manager.get_party("player_1")
 
         # Set up invite from player_1 (who is in a party) to player_3
-        _pending_invites["player_3"] = "player_1"
+        game.party_manager._pending_invites["player_3"] = "player_1"
 
         await handle_party(ws, {"args": "accept"}, game=game)
 
@@ -355,7 +330,7 @@ class TestAccept:
         game.party_manager.create_party("player_2", "player_3")
 
         # Alice invited Bob (somehow)
-        _pending_invites["player_2"] = "player_1"
+        game.party_manager._pending_invites["player_2"] = "player_1"
 
         await handle_party(ws, {"args": "accept"}, game=game)
 
@@ -369,7 +344,7 @@ class TestAccept:
         game.connection_manager.get_entity_id.return_value = "player_2"
         _register_player(game, "player_2", "Bob")
 
-        _pending_invites["player_2"] = "player_1"
+        game.party_manager._pending_invites["player_2"] = "player_1"
         game.connection_manager.get_websocket.return_value = None
 
         await handle_party(ws, {"args": "accept"}, game=game)
@@ -393,12 +368,12 @@ class TestReject:
         _register_player(game, "player_1", "Alice")
         _register_player(game, "player_2", "Bob")
 
-        _pending_invites["player_2"] = "player_1"
+        game.party_manager._pending_invites["player_2"] = "player_1"
 
         await handle_party(ws, {"args": "reject"}, game=game)
 
         # Invite removed
-        assert "player_2" not in _pending_invites
+        assert "player_2" not in game.party_manager._pending_invites
 
         # Inviter notified
         game.connection_manager.send_to_player.assert_called()
@@ -411,7 +386,7 @@ class TestReject:
         assert invite_response_calls[0][0][1]["status"] == "rejected"
 
         # Cooldown set
-        assert _check_cooldown("player_1", "player_2")
+        assert game.party_manager.check_cooldown("player_1", "player_2")
 
     async def test_reject_no_pending(self):
         game = _make_game()
@@ -521,7 +496,7 @@ class TestKick:
         assert game.party_manager.is_in_party("player_3")
 
         # Cooldown set
-        assert _check_cooldown("player_1", "player_2")
+        assert game.party_manager.check_cooldown("player_1", "player_2")
 
     async def test_kick_not_leader(self):
         game = _make_game()
@@ -715,7 +690,7 @@ class TestStatus:
         _register_player(game, "player_1", "Alice")
         _register_player(game, "player_2", "Bob")
 
-        _pending_invites["player_2"] = "player_1"
+        game.party_manager._pending_invites["player_2"] = "player_1"
 
         await handle_party(ws, {"args": ""}, game=game)
 
@@ -755,21 +730,18 @@ class TestInviteTimeout:
     async def test_invite_timeout_cleans_up(self):
         """Verify the timeout callback cleans up invite state."""
         game = _make_game()
-        set_game_ref(game)
         _register_player(game, "player_1", "Alice")
         _register_player(game, "player_2", "Bob")
 
-        _pending_invites["player_2"] = "player_1"
-        _outgoing_invites["player_1"] = "player_2"
+        game.party_manager._pending_invites["player_2"] = "player_1"
+        game.party_manager._outgoing_invites["player_1"] = "player_2"
 
         # Simulate timeout callback directly
-        from server.net.handlers.party import _handle_invite_timeout
+        game.party_manager.handle_invite_timeout("player_2")
 
-        _handle_invite_timeout("player_2")
-
-        assert "player_2" not in _pending_invites
-        assert "player_1" not in _outgoing_invites
-        assert _check_cooldown("player_1", "player_2")
+        assert "player_2" not in game.party_manager._pending_invites
+        assert "player_1" not in game.party_manager._outgoing_invites
+        assert game.party_manager.check_cooldown("player_1", "player_2")
 
 
 # ---------------------------------------------------------------------------
@@ -778,26 +750,29 @@ class TestInviteTimeout:
 
 class TestDisconnectCleanup:
     def test_cleanup_as_target(self):
-        _pending_invites["player_2"] = "player_1"
-        _outgoing_invites["player_1"] = "player_2"
+        game = _make_game()
+        game.party_manager._pending_invites["player_2"] = "player_1"
+        game.party_manager._outgoing_invites["player_1"] = "player_2"
 
-        cleanup_pending_invites("player_2")
+        game.party_manager.cleanup_invites("player_2")
 
-        assert "player_2" not in _pending_invites
-        assert "player_1" not in _outgoing_invites
+        assert "player_2" not in game.party_manager._pending_invites
+        assert "player_1" not in game.party_manager._outgoing_invites
 
     def test_cleanup_as_inviter(self):
-        _pending_invites["player_2"] = "player_1"
-        _outgoing_invites["player_1"] = "player_2"
+        game = _make_game()
+        game.party_manager._pending_invites["player_2"] = "player_1"
+        game.party_manager._outgoing_invites["player_1"] = "player_2"
 
-        cleanup_pending_invites("player_1")
+        game.party_manager.cleanup_invites("player_1")
 
-        assert "player_2" not in _pending_invites
-        assert "player_1" not in _outgoing_invites
+        assert "player_2" not in game.party_manager._pending_invites
+        assert "player_1" not in game.party_manager._outgoing_invites
 
     def test_cleanup_no_invites(self):
         """Should not raise if player has no invites."""
-        cleanup_pending_invites("player_99")
+        game = _make_game()
+        game.party_manager.cleanup_invites("player_99")
 
 
 # ---------------------------------------------------------------------------

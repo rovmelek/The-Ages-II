@@ -151,9 +151,7 @@ class PlayerManager:
             for mid in party_result.members:
                 await game.connection_manager.send_to_player(mid, update_msg)
 
-        from server.net.handlers.party import cleanup_pending_invites
-
-        cleanup_pending_invites(entity_id)
+        game.party_manager.cleanup_invites(entity_id)
 
     async def _save_player_state(
         self, entity_id: str, player_info: PlayerSession, game: Game
