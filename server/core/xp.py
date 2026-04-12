@@ -2,10 +2,23 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import Any
 
 from server.core.config import settings
 from server.player import repo as player_repo
+
+
+@dataclass
+class XpResult:
+    """Result of XP application — used to decouple business logic from messaging."""
+
+    final_xp: int
+    source: str
+    detail: str
+    new_total_xp: int
+    level_up_available: bool
+    new_level: int | None = None
 
 
 def calculate_combat_xp(hit_dice: int, charisma: int) -> int:
@@ -26,7 +39,7 @@ def calculate_combat_xp(hit_dice: int, charisma: int) -> int:
     return math.floor(base_xp * cha_multiplier)
 
 
-async def grant_xp(
+async def apply_xp(
     entity_id: str,
     player_entity: Any,
     amount: int,
@@ -35,14 +48,12 @@ async def grant_xp(
     game: Any,
     apply_cha_bonus: bool = True,
     session: Any = None,
-) -> int:
-    """Apply CHA bonus (optional), update stats, persist, send xp_gained message.
+) -> XpResult:
+    """Calculate XP, update entity stats, persist to DB. Returns result for caller to notify.
 
     Args:
         session: Optional DB session. When provided, uses it instead of
             opening a new transaction (for transaction consolidation).
-
-    Returns final XP amount.
     """
     if apply_cha_bonus:
         cha = player_entity.stats.get("charisma", 0)
@@ -57,29 +68,70 @@ async def grant_xp(
     else:
         async with game.transaction() as s:
             await player_repo.update_stats(s, player_entity.player_db_id, player_entity.stats)
-    # Send message (best-effort — broken WebSocket should not crash caller)
-    ws = game.connection_manager.get_websocket(entity_id)
-    if ws:
-        try:
-            await ws.send_json({
-                "type": "xp_gained",
-                "amount": final_xp,
-                "source": source,
-                "detail": detail,
-                "new_total_xp": player_entity.stats["xp"],
-            })
-        except Exception:
-            pass
-    # Level-up threshold detection
+    # Level-up threshold detection (state mutation only — no messaging)
+    level_up = False
+    new_level = None
     player_info = game.player_manager.get_session(entity_id)
     if player_info is not None:
         new_pending = get_pending_level_ups(player_entity.stats)
         old_pending = player_info.pending_level_ups
         if new_pending > old_pending:
             player_info.pending_level_ups = new_pending
-            if old_pending == 0:
-                await send_level_up_available(entity_id, player_entity, game)
-    return final_xp
+            level_up = old_pending == 0
+            new_level = player_entity.stats.get("level", 1) + 1
+    return XpResult(
+        final_xp=final_xp,
+        source=source,
+        detail=detail,
+        new_total_xp=player_entity.stats["xp"],
+        level_up_available=level_up,
+        new_level=new_level,
+    )
+
+
+async def notify_xp(
+    entity_id: str,
+    result: XpResult,
+    player_entity: Any,
+    game: Any,
+) -> None:
+    """Send xp_gained and optional level_up_available messages."""
+    ws = game.connection_manager.get_websocket(entity_id)
+    if ws:
+        try:
+            await ws.send_json({
+                "type": "xp_gained",
+                "amount": result.final_xp,
+                "source": result.source,
+                "detail": result.detail,
+                "new_total_xp": result.new_total_xp,
+            })
+        except Exception:
+            pass
+    if result.level_up_available:
+        await send_level_up_available(entity_id, player_entity, game)
+
+
+async def grant_xp(
+    entity_id: str,
+    player_entity: Any,
+    amount: int,
+    source: str,
+    detail: str,
+    game: Any,
+    apply_cha_bonus: bool = True,
+    session: Any = None,
+) -> int:
+    """Apply XP and notify. Backward-compatible wrapper.
+
+    Returns final XP amount.
+    """
+    result = await apply_xp(
+        entity_id, player_entity, amount, source, detail, game,
+        apply_cha_bonus, session,
+    )
+    await notify_xp(entity_id, result, player_entity, game)
+    return result.final_xp
 
 
 def get_pending_level_ups(stats: dict) -> int:

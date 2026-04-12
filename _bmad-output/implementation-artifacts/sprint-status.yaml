@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-21
-last_updated: 2026-04-12 (Epic 15 done, retrospective complete)
+last_updated: 2026-04-12 (Story 16.1 ready-for-dev)
 project: The-Ages-II
 project_key: NOKEY
 tracking_system: file-system
@@ -243,3 +243,36 @@ development_status:
   15-6-eventbus-resilience-config-gaps: done         # Clean — error isolation, _RARE_CHECK_INTERVAL to config
   15-7-data-layer-consistency: done                       # Clean — SpawnCheckpoint repo, shared upsert utility
   epic-15-retrospective: done
+
+  # Epic 16: Server Architecture Maturation & Protocol Specification
+  # Sprint 1: Protocol (unblocks Godot client)
+  # Sprint 2: Refactoring + turn timeout bug fix
+  # Sprint 3a: Client polish (request correlation + heartbeat)
+  # Sprint 3b: Resilience (session tokens → grace period → message ack)
+  # Tech spec: _bmad-output/planning-artifacts/epic-16-tech-spec.md
+  # No Alembic migrations required
+  epic-16: in-progress
+
+  # Sprint 1 — Protocol formalized (Godot dev unblocked)
+  16-1-websocket-inbound-schemas: ready-for-dev
+  16-2-websocket-outbound-schemas: backlog
+  16-3-protocol-specification-document: backlog
+  16-12-chat-markdown-support: backlog
+
+  # Sprint 2 — Refactoring + turn timeout bug fix
+  16-4a-refactor-grant-xp: done
+  16-4-extract-combat-service-layer: backlog
+  16-5-decompose-handle-login: backlog
+  16-6-trademanager-constructor-injection: backlog
+  16-10a-combat-turn-timeout-enforcement: backlog
+
+  # Sprint 3a — Client polish (lightweight, independent)
+  16-7-request-response-correlation: backlog
+  16-8-heartbeat-connection-health: backlog
+
+  # Sprint 3b — Resilience (sequential chain)
+  16-9-session-tokens-for-reconnection: backlog
+  16-10-disconnected-player-grace-period: backlog
+  16-11-message-acknowledgment-ids: backlog
+
+  epic-16-retrospective: optional

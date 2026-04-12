@@ -7,7 +7,7 @@ import pytest
 
 from server.player.manager import PlayerManager
 
-from server.core.xp import calculate_combat_xp, grant_xp
+from server.core.xp import calculate_combat_xp, grant_xp, apply_xp, notify_xp, XpResult
 from server.combat.instance import CombatInstance
 
 
@@ -255,3 +255,160 @@ class TestGrantXP:
             await grant_xp("player_1", _mock_entity, 50, "interaction", "test", _mock_game)
 
         assert _mock_entity.stats["xp"] == 150
+
+
+# ---------------------------------------------------------------------------
+# apply_xp tests
+# ---------------------------------------------------------------------------
+
+class TestApplyXp:
+    """Tests for apply_xp — business logic only, no WebSocket messaging."""
+
+    @pytest.fixture
+    def _mock_entity(self):
+        entity = MagicMock()
+        entity.stats = {"xp": 0, "charisma": 6, "level": 1}
+        entity.player_db_id = 1
+        return entity
+
+    @pytest.fixture
+    def _mock_game(self):
+        game = MagicMock()
+        factory, _ = _mock_transaction()
+        game.transaction = factory
+        ws = AsyncMock()
+        game.connection_manager.get_websocket.return_value = ws
+        game.player_manager = PlayerManager()
+        return game
+
+    async def test_apply_xp_returns_xp_result(self, monkeypatch, _mock_entity, _mock_game):
+        """apply_xp returns an XpResult dataclass with correct fields."""
+        from server.core import config
+        monkeypatch.setattr(config.settings, "XP_CHA_BONUS_PER_POINT", 0.03)
+
+        with patch("server.core.xp.player_repo") as mock_repo:
+            mock_repo.update_stats = AsyncMock()
+            result = await apply_xp("player_1", _mock_entity, 50, "exploration", "test cave", _mock_game)
+
+        assert isinstance(result, XpResult)
+        assert result.final_xp == 59  # floor(50 * 1.18)
+        assert result.source == "exploration"
+        assert result.detail == "test cave"
+        assert result.new_total_xp == 59
+        assert result.level_up_available is False
+
+    async def test_apply_xp_persists_to_db(self, _mock_entity, _mock_game):
+        """apply_xp calls player_repo.update_stats."""
+        _mock_entity.stats["charisma"] = 0
+
+        with patch("server.core.xp.player_repo") as mock_repo:
+            mock_repo.update_stats = AsyncMock()
+            await apply_xp("player_1", _mock_entity, 100, "combat", "goblin", _mock_game, apply_cha_bonus=False)
+            mock_repo.update_stats.assert_called_once()
+
+    async def test_apply_xp_no_websocket_messages(self, _mock_entity, _mock_game):
+        """apply_xp does NOT send any WebSocket messages."""
+        _mock_entity.stats["charisma"] = 0
+
+        with patch("server.core.xp.player_repo") as mock_repo:
+            mock_repo.update_stats = AsyncMock()
+            await apply_xp("player_1", _mock_entity, 100, "combat", "test", _mock_game, apply_cha_bonus=False)
+
+        ws = _mock_game.connection_manager.get_websocket.return_value
+        ws.send_json.assert_not_called()
+
+    async def test_apply_xp_with_session(self, _mock_entity, _mock_game):
+        """apply_xp uses provided session instead of opening a new transaction."""
+        _mock_entity.stats["charisma"] = 0
+        mock_session = AsyncMock()
+
+        with patch("server.core.xp.player_repo") as mock_repo:
+            mock_repo.update_stats = AsyncMock()
+            await apply_xp("player_1", _mock_entity, 50, "combat", "test", _mock_game,
+                           apply_cha_bonus=False, session=mock_session)
+            mock_repo.update_stats.assert_called_once_with(mock_session, 1, _mock_entity.stats)
+
+    async def test_apply_xp_level_up_detection(self, monkeypatch, _mock_entity, _mock_game):
+        """apply_xp detects level-up threshold and returns level_up_available=True."""
+        from server.core import config
+        monkeypatch.setattr(config.settings, "XP_LEVEL_THRESHOLD_MULTIPLIER", 100)
+        monkeypatch.setattr(config.settings, "XP_CHA_BONUS_PER_POINT", 0.0)
+
+        # Register player session so level-up detection can find it
+        from server.player.session import PlayerSession
+        ps = PlayerSession(
+            entity=_mock_entity,
+            room_key="town_square",
+            db_id=1,
+        )
+        _mock_game.player_manager.set_session("player_1", ps)
+
+        with patch("server.core.xp.player_repo") as mock_repo:
+            mock_repo.update_stats = AsyncMock()
+            result = await apply_xp("player_1", _mock_entity, 200, "combat", "boss", _mock_game, apply_cha_bonus=False)
+
+        assert result.level_up_available is True
+        assert result.new_level == 2
+
+
+# ---------------------------------------------------------------------------
+# notify_xp tests
+# ---------------------------------------------------------------------------
+
+class TestNotifyXp:
+    """Tests for notify_xp — WebSocket messaging only."""
+
+    @pytest.fixture
+    def _mock_entity(self):
+        entity = MagicMock()
+        entity.stats = {"xp": 200, "level": 1}
+        return entity
+
+    @pytest.fixture
+    def _mock_game(self):
+        game = MagicMock()
+        ws = AsyncMock()
+        game.connection_manager.get_websocket.return_value = ws
+        return game
+
+    async def test_notify_xp_sends_xp_gained(self, _mock_entity, _mock_game):
+        """notify_xp sends xp_gained message with XpResult fields."""
+        result = XpResult(final_xp=59, source="exploration", detail="cave",
+                          new_total_xp=59, level_up_available=False)
+
+        await notify_xp("player_1", result, _mock_entity, _mock_game)
+
+        ws = _mock_game.connection_manager.get_websocket.return_value
+        ws.send_json.assert_called_once()
+        msg = ws.send_json.call_args[0][0]
+        assert msg["type"] == "xp_gained"
+        assert msg["amount"] == 59
+        assert msg["source"] == "exploration"
+        assert msg["detail"] == "cave"
+        assert msg["new_total_xp"] == 59
+
+    async def test_notify_xp_calls_level_up_when_available(self, _mock_entity, _mock_game):
+        """notify_xp calls send_level_up_available when level_up_available is True."""
+        result = XpResult(final_xp=200, source="combat", detail="boss",
+                          new_total_xp=200, level_up_available=True, new_level=2)
+
+        with patch("server.core.xp.send_level_up_available", new_callable=AsyncMock) as mock_lu:
+            await notify_xp("player_1", result, _mock_entity, _mock_game)
+            mock_lu.assert_called_once_with("player_1", _mock_entity, _mock_game)
+
+    async def test_notify_xp_no_level_up_when_not_available(self, _mock_entity, _mock_game):
+        """notify_xp does NOT call send_level_up_available when level_up_available is False."""
+        result = XpResult(final_xp=50, source="exploration", detail="room",
+                          new_total_xp=50, level_up_available=False)
+
+        with patch("server.core.xp.send_level_up_available", new_callable=AsyncMock) as mock_lu:
+            await notify_xp("player_1", result, _mock_entity, _mock_game)
+            mock_lu.assert_not_called()
+
+    async def test_notify_xp_no_websocket_no_crash(self, _mock_entity, _mock_game):
+        """notify_xp handles missing WebSocket gracefully."""
+        _mock_game.connection_manager.get_websocket.return_value = None
+        result = XpResult(final_xp=50, source="exploration", detail="room",
+                          new_total_xp=50, level_up_available=False)
+
+        await notify_xp("player_1", result, _mock_entity, _mock_game)  # should not raise
