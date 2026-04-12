@@ -80,6 +80,19 @@ class CombatInstance:
             return None
         return self.participants[self._turn_index % len(self.participants)]
 
+    def _resolve_effect_targets(
+        self, entity_id: str, effect_type: str
+    ) -> tuple[dict, dict]:
+        """Return (source, target) stat dicts for an effect type.
+
+        Self-targeting effects (heal, shield, draw) return (player, player).
+        All others (damage, dot) return (player, mob).
+        """
+        player_stats = self.participant_stats[entity_id]
+        if effect_type in ("heal", "shield", "draw"):
+            return player_stats, player_stats
+        return player_stats, self.mob_stats
+
     async def resolve_card_effects(
         self, entity_id: str, card: CardDef
     ) -> list[dict]:
@@ -91,20 +104,10 @@ class CombatInstance:
             return []
 
         results: list[dict] = []
-        player_stats = self.participant_stats[entity_id]
 
         for effect in card.effects:
             effect_type = effect.get("type", "")
-
-            # Determine source and target based on effect type
-            if effect_type in ("heal", "shield", "draw"):
-                # Self-targeting effects
-                source = player_stats
-                target = player_stats
-            else:
-                # Damage, dot, draw — target the mob
-                source = player_stats
-                target = self.mob_stats
+            source, target = self._resolve_effect_targets(entity_id, effect_type)
 
             result = await self._effect_registry.resolve(
                 effect, source, target
@@ -198,15 +201,9 @@ class CombatInstance:
             effect_results: list[dict] = []
         else:
             effect_results = []
-            player_stats = self.participant_stats[entity_id]
             for effect in item_def.effects:
                 effect_type = effect.get("type", "")
-                if effect_type in ("heal", "shield", "draw"):
-                    source = player_stats
-                    target = player_stats
-                else:
-                    source = player_stats
-                    target = self.mob_stats
+                source, target = self._resolve_effect_targets(entity_id, effect_type)
                 result = await self._effect_registry.resolve(effect, source, target)
                 effect_results.append(result)
 
