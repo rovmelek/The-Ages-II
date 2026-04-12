@@ -101,6 +101,7 @@ open http://localhost:8000     # web demo client (requires server running)
 - **NPC Templates**: `game.npc_templates` is the single source of truth — no module-level global. Pass `templates` dict to `create_npc_from_template()`.
 - **Tile Modification**: Use `RoomInstance.set_tile(x, y, tile_type)` — never access `_grid` directly from outside `room.py`.
 - **Handler Auth Middleware**: All WebSocket handlers (except `handle_login`/`handle_register`) use `@requires_auth` decorator from `server/net/auth_middleware.py`. The decorator injects `entity_id: str` and `player_info: PlayerSession` as keyword arguments. Never duplicate the auth-check boilerplate manually.
+- **Party Invite State**: All invite tracking (pending, outgoing, timeouts, cooldowns) lives on `PartyManager` — the party handler (`server/net/handlers/party.py`) is stateless. `PartyManager` takes `connection_manager` via constructor injection. Never add module-level mutable state to handler files.
 
 ### Directory Structure
 ```

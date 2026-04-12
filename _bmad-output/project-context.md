@@ -171,6 +171,7 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 - NEVER modify `game.npc_templates` after startup
 - NEVER use `==` for secret comparison — always `hmac.compare_digest()`
 - NEVER hardcode game balance values (HP, attack, stat defaults, spawn room, auth lengths, etc.) — always reference `settings.*` from `server/core/config.py` (Story 14.1)
+- NEVER add module-level mutable state (dicts, lists, globals) to handler files — all state belongs on manager classes owned by `Game`
 
 **Easy-to-Forget:**
 - New player stats MUST be added to `_STATS_WHITELIST` in `player/repo.py` — unlisted stats are silently dropped on save
@@ -243,4 +244,4 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 - Review periodically for outdated rules
 - Remove rules that become obvious over time
 
-Last Updated: 2026-04-11 (Story 15.2 done — player cleanup relocated from auth.py to PlayerManager.cleanup_session(), 807 tests passing)
+Last Updated: 2026-04-11 (Story 15.4 done — party invite state moved to PartyManager, 807 tests passing)
