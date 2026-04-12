@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-21
-last_updated: 2026-04-12 (Story 15.6 done — EventBus resilience & config gaps)
+last_updated: 2026-04-12 (Story 15.7 done — SpawnCheckpoint repo extraction)
 project: The-Ages-II
 project_key: NOKEY
 tracking_system: file-system
@@ -241,5 +241,5 @@ development_status:
   15-5a-extract-effect-targeting: done                      # Clean — deduplicate effect source/target resolution
   15-5b-npc-entity-and-dataclass-relocation: done    # Clean — relocate NpcEntity, split Trade/Party dataclasses
   15-6-eventbus-resilience-config-gaps: done         # Clean — error isolation, _RARE_CHECK_INTERVAL to config
-  15-7-data-layer-consistency: backlog                  # Clean — SpawnCheckpoint repo, shared upsert utility
+  15-7-data-layer-consistency: done                       # Clean — SpawnCheckpoint repo, shared upsert utility
   epic-15-retrospective: optional

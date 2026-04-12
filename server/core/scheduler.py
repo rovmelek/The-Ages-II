@@ -7,11 +7,9 @@ import random
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
-
 from server.core.config import settings
+from server.room import spawn_repo
 from server.room.npc import create_npc_from_template
-from server.room.spawn_models import SpawnCheckpoint
 
 if TYPE_CHECKING:
     from server.app import Game
@@ -143,22 +141,10 @@ class Scheduler:
                     continue
 
                 # Load or create checkpoint
-                result = await session.execute(
-                    select(SpawnCheckpoint).where(
-                        SpawnCheckpoint.npc_key == npc_key,
-                        SpawnCheckpoint.room_key == room_key,
-                    )
+                cp = await spawn_repo.upsert_checkpoint(
+                    session, room_key, npc_key,
+                    next_check_at=now, currently_spawned=False,
                 )
-                cp = result.scalar_one_or_none()
-                if cp is None:
-                    cp = SpawnCheckpoint(
-                        npc_key=npc_key,
-                        room_key=room_key,
-                        next_check_at=now,
-                        currently_spawned=False,
-                    )
-                    session.add(cp)
-                    await session.flush()
 
                 # Not yet due
                 if cp.next_check_at and _ensure_aware(cp.next_check_at) > now:
@@ -211,8 +197,7 @@ class Scheduler:
         """Load SpawnCheckpoints from DB and run any overdue checks."""
         now = datetime.now(UTC)
         async with self._game.transaction() as session:
-            result = await session.execute(select(SpawnCheckpoint))
-            checkpoints = result.scalars().all()
+            checkpoints = await spawn_repo.get_all_checkpoints(session)
 
         for cp in checkpoints:
             if cp.next_check_at and _ensure_aware(cp.next_check_at) <= now:
