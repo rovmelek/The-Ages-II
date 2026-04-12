@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from server.party.manager import Party, PartyManager
+from server.party.manager import PartyManager
+from server.party.party import Party
 
 
 from server.player.manager import PlayerManager

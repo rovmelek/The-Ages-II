@@ -12,7 +12,7 @@ from server.net.handlers.query import (
     handle_who,
 )
 from server.player.entity import PlayerEntity
-from server.room.objects.npc import NpcEntity
+from server.room.npc import NpcEntity
 from server.room.room import RoomInstance
 
 

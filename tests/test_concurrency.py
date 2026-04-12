@@ -16,7 +16,7 @@ from server.core.effects.registry import create_default_registry
 from server.party.manager import PartyManager
 from server.player.manager import PlayerManager
 from server.player.session import PlayerSession
-from server.room.objects.npc import NpcEntity
+from server.room.npc import NpcEntity
 
 
 def _ps(d: dict) -> PlayerSession:

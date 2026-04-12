@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from server.player.entity import PlayerEntity
 from server.room.models import Room as RoomModel
-from server.room.objects.npc import create_npc_from_template
+from server.room.npc import create_npc_from_template
 from server.room.room import RoomInstance
 
 

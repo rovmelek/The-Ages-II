@@ -5,22 +5,12 @@ import asyncio
 import logging
 import time
 import uuid
-from dataclasses import dataclass, field
 
 from server.core.config import settings
 from server.net.connection_manager import ConnectionManager
+from server.party.party import Party
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class Party:
-    """Represents an active party group."""
-
-    party_id: str
-    leader: str  # entity_id of party leader
-    members: list[str] = field(default_factory=list)  # entity_ids, ordered by join time
-    created_at: float = field(default_factory=time.time)
 
 
 class PartyManager:

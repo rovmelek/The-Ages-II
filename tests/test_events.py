@@ -153,7 +153,7 @@ class TestRareSpawnAnnouncement:
     async def test_scheduler_emits_rare_spawn_event(self):
         """AC #1: Scheduler emits rare_spawn event after successful spawn."""
         from server.core.scheduler import Scheduler
-        from server.room.objects.npc import load_npc_templates
+        from server.room.npc import load_npc_templates
         from server.room.room import RoomInstance
 
         templates = [

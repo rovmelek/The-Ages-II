@@ -67,7 +67,7 @@ class Game:
         # Load NPC templates first (needed before room NPC spawning)
         npcs_dir = settings.DATA_DIR / "npcs"
         if npcs_dir.exists():
-            from server.room.objects.npc import load_npc_templates
+            from server.room.npc import load_npc_templates
 
             self.npc_templates = load_npc_templates(npcs_dir)
 

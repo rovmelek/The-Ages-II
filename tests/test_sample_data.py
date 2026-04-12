@@ -162,7 +162,7 @@ class TestBaseNpcs:
 
     @pytest.mark.asyncio
     async def test_npc_templates_load(self):
-        from server.room.objects.npc import load_npc_templates
+        from server.room.npc import load_npc_templates
         templates = load_npc_templates(DATA_DIR / "npcs")
         assert "slime" in templates
         assert "cave_troll" in templates

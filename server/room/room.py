@@ -11,7 +11,7 @@ from server.room.objects.registry import create_object
 from server.room.tile import TileType, is_walkable
 
 if TYPE_CHECKING:
-    from server.room.objects.npc import NpcEntity
+    from server.room.npc import NpcEntity
 
 DIRECTION_DELTAS: dict[str, tuple[int, int]] = {
     "up": (0, -1),

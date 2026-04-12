@@ -15,7 +15,7 @@ from server.core.database import Base
 from server.items.item_def import ItemDef
 from server.net.connection_manager import ConnectionManager
 from server.room.manager import RoomManager
-from server.room.objects.npc import NpcEntity
+from server.room.npc import NpcEntity
 from server.room.room import RoomInstance
 
 

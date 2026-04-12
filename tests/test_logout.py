@@ -171,7 +171,7 @@ async def test_logout_dead_in_combat_restores_hp():
 async def test_logout_last_player_releases_npc():
     """When the last player logs out of combat, NPC in_combat is cleared."""
     from server.net.handlers.auth import handle_logout
-    from server.room.objects.npc import NpcEntity
+    from server.room.npc import NpcEntity
 
     game, room = _make_game()
     entity, ws = _add_player(game, room)

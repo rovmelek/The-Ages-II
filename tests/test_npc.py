@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from server.room.objects.npc import (
+from server.room.npc import (
     NpcEntity,
     create_npc_from_template,
     load_npc_templates,

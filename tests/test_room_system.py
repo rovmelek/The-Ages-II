@@ -211,7 +211,7 @@ def test_move_entity_mob_encounter():
     player = _make_entity(x=2, y=2)
     room.add_entity(player)
 
-    from server.room.objects.npc import NpcEntity
+    from server.room.npc import NpcEntity
     npc = NpcEntity(id="npc_goblin_1", npc_key="goblin", name="Goblin", x=3, y=2, behavior_type="hostile")
     room.add_npc(npc)
 

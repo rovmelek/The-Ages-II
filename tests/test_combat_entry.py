@@ -6,7 +6,7 @@ from server.combat.instance import CombatInstance
 from server.combat.manager import CombatManager
 from server.core.effects import create_default_registry
 from server.player.entity import PlayerEntity
-from server.room.objects.npc import NpcEntity
+from server.room.npc import NpcEntity
 from server.room.room import RoomInstance
 from server.room.tile import TileType
 

@@ -195,7 +195,7 @@ class TestRoomDataIntegration:
     def test_dark_cave_npc_spawns_resolve(self):
         """NPCs referenced in dark_cave spawn points can be created from templates."""
         import json
-        from server.room.objects.npc import create_npc_from_template, load_npc_templates
+        from server.room.npc import create_npc_from_template, load_npc_templates
         from pathlib import Path
 
         npc_templates = load_npc_templates(Path("data/npcs"))
@@ -223,7 +223,7 @@ class TestRoomDataIntegration:
 
         from server.room.manager import RoomManager
         from server.room.models import Room
-        from server.room.objects.npc import load_npc_templates
+        from server.room.npc import load_npc_templates
 
         npc_templates = load_npc_templates(Path("data/npcs"))
 

@@ -112,7 +112,7 @@ def _make_game():
 
 
 def _make_npc(npc_id="npc_1", loot_table="slime_loot"):
-    from server.room.objects.npc import NpcEntity
+    from server.room.npc import NpcEntity
     return NpcEntity(
         id=npc_id, npc_key="slime", name="Slime",
         x=2, y=2, behavior_type="hostile",

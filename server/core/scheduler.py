@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
-from server.room.objects.npc import create_npc_from_template
+from server.room.npc import create_npc_from_template
 from server.room.spawn_models import SpawnCheckpoint
 
 if TYPE_CHECKING:
