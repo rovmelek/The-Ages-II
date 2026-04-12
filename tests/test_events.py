@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from tests.conftest import make_bare_game
 
 from server.core.events import EventBus
 from server.net.connection_manager import ConnectionManager
@@ -130,12 +131,10 @@ class TestRareSpawnAnnouncement:
     @pytest.mark.asyncio
     async def test_rare_spawn_triggers_announcement(self):
         """AC #1, #2: Rare spawn emits event → broadcast_to_all with announcement."""
-        from server.app import Game
-
-        game = Game.__new__(Game)
-        game.connection_manager = MagicMock()
+        game = make_bare_game(
+            event_bus=EventBus(),
+        )
         game.connection_manager.broadcast_to_all = AsyncMock()
-        game.event_bus = EventBus()
 
         # Register events the same way Game does
         game._register_events()
@@ -151,12 +150,10 @@ class TestRareSpawnAnnouncement:
     @pytest.mark.asyncio
     async def test_announcement_message_format(self):
         """Announcement format: '<NPC name> has appeared in <room name>!'"""
-        from server.app import Game
-
-        game = Game.__new__(Game)
-        game.connection_manager = MagicMock()
+        game = make_bare_game(
+            event_bus=EventBus(),
+        )
         game.connection_manager.broadcast_to_all = AsyncMock()
-        game.event_bus = EventBus()
         game._register_events()
 
         await game.event_bus.emit("rare_spawn", npc_name="Test Dragon", room_name="Test Room")

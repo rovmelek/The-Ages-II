@@ -10,31 +10,20 @@ import pytest
 from server.core.config import settings
 from server.player.entity import PlayerEntity
 from server.player.session import PlayerSession
+from tests.conftest import make_bare_game
 
 
 def _make_game():
-    """Create a minimal Game-like object for grace period testing."""
-    from server.app import Game
-
-    game = Game.__new__(Game)
-    game._heartbeat_tasks = {}
-    game._pong_events = {}
-    game._shutting_down = False
-    game._cleanup_handles = {}
-    game.connection_manager = MagicMock()
+    """Create a Game for grace period testing with async-safe mocks."""
+    game = make_bare_game()
     game.connection_manager.get_entity_id.return_value = "player_1"
     game.connection_manager.get_websocket.return_value = None
     game.connection_manager.broadcast_to_room = AsyncMock()
     game.connection_manager.send_to_player = AsyncMock()
-    game.player_manager = MagicMock()
-    game.player_manager._cleanup_trade = AsyncMock()
     game.player_manager.cancel_trade = AsyncMock()
     game.player_manager.cleanup_session = AsyncMock()
     game.player_manager.deferred_cleanup = AsyncMock()
-    game.combat_manager = MagicMock()
     game.combat_manager.get_player_instance.return_value = None
-    game.room_manager = MagicMock()
-    game.token_store = MagicMock()
     return game
 
 
@@ -348,17 +337,9 @@ class TestShutdownCancelsCleanupHandles:
     """Test that shutdown cancels all pending deferred cleanup timers."""
 
     async def test_shutdown_cancels_cleanup_handles(self):
-        from server.app import Game
-
-        game = Game.__new__(Game)
-        game._heartbeat_tasks = {}
-        game._pong_events = {}
-        game._cleanup_handles = {}
-        game.connection_manager = MagicMock()
-        game.player_manager = MagicMock()
+        game = make_bare_game()
         game.player_manager.all_entity_ids.return_value = []
         game.player_manager.clear = MagicMock()
-        game.scheduler = MagicMock()
         game.scheduler.stop = AsyncMock()
 
         handle1 = MagicMock()

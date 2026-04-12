@@ -1,5 +1,5 @@
 ---
-stepsCompleted: ["step-01-validate-prerequisites", "step-02-design-epics", "step-03-create-stories", "step-04-final-validation", "step-01-epic10-prerequisites", "step-02-epic10-design", "step-03-epic10-stories", "step-04-epic10-validation", "step-01-epic11-prerequisites", "step-02-epic11-design", "step-03-epic11-stories", "step-04-epic11-validation", "step-01-epic12-prerequisites", "step-02-epic12-design", "step-03-epic12-stories", "step-04-epic12-validation", "step-01-epic14-prerequisites", "step-02-epic14-design", "step-03-epic14-stories", "step-04-epic14-validation"]
+stepsCompleted: ["step-01-validate-prerequisites", "step-02-design-epics", "step-03-create-stories", "step-04-final-validation", "step-01-epic10-prerequisites", "step-02-epic10-design", "step-03-epic10-stories", "step-04-epic10-validation", "step-01-epic11-prerequisites", "step-02-epic11-design", "step-03-epic11-stories", "step-04-epic11-validation", "step-01-epic12-prerequisites", "step-02-epic12-design", "step-03-epic12-stories", "step-04-epic12-validation", "step-01-epic14-prerequisites", "step-02-epic14-design", "step-03-epic14-stories", "step-04-epic14-validation", "step-01-epic16-prerequisites", "step-02-epic16-design", "step-03-epic16-stories", "step-04-epic16-validation"]
 inputDocuments:
   - "THE_AGES_SERVER_PLAN.md"
   - "_bmad-output/planning-artifacts/architecture.md"
@@ -8,6 +8,9 @@ inputDocuments:
   - "CLAUDE.md"
   - "_bmad-output/implementation-artifacts/sprint-status.yaml"
   - "Deep code analysis (Epic 14 source) — web client logic leaks, hardcoded parameters, modularity violations, DB/infrastructure gaps"
+  - "_bmad-output/planning-artifacts/epic-16-tech-spec.md"
+  - "_bmad-output/implementation-artifacts/codebase-review-2026-04-12.md"
+  - "_bmad-output/implementation-artifacts/epic-16-gap-analysis.md"
 ---
 
 # The-Ages-II - Epic Breakdown
@@ -138,6 +141,20 @@ FR115: Add PostgreSQL-compatible connection pooling config to `create_async_engi
 FR116: Fix `SpawnCheckpoint` DateTime handling — use timezone-aware datetimes consistently instead of `datetime.now(UTC).replace(tzinfo=None)` for PostgreSQL compatibility
 FR117: Consolidate transaction granularity in `_check_combat_end` — currently opens 3-4 separate transactions per participant in a loop; should be one transaction per combat resolution
 FR118: Make effect targeting data-driven — add `"target": "self"|"enemy"` field on card/item effects instead of hardcoded if/else in `CombatInstance.resolve_card_effects()`
+FR119: Define Pydantic inbound schemas for all 21 WebSocket actions with validation, replacing ad-hoc `data.get()` field-presence checks (config-dependent range checks remain in handlers)
+FR120: Define Pydantic outbound schemas for all 38 server-to-client message types as documentation and optional runtime validation
+FR121: Generate protocol specification document from Pydantic schemas with auto-regeneration (`make protocol-doc` + `make check-protocol`)
+FR122: Extract combat business logic (~230 lines) from `server/net/handlers/combat.py` into `server/combat/service.py` service layer
+FR123: Decompose `handle_login` (167 lines, 12 concerns) into focused helper functions with field-parameter-based `_build_login_response`
+FR124: Replace `TradeManager.set_connection_manager()` setter injection with constructor injection matching `PartyManager` pattern
+FR125: Add optional `request_id` echo-back in direct WebSocket responses for client-side async correlation
+FR126: Add application-level WebSocket ping/pong heartbeat with configurable interval/timeout, started after login (not at accept)
+FR127: Issue session tokens on login for reconnection without re-sending credentials, with 3-outcome reconnect (grace resume, full DB restore, invalid)
+FR128: Keep player in-game state during brief disconnects via configurable grace period with deferred cleanup timers
+FR129: Add message sequence numbers (`seq`) to critical outbound messages via `ConnectionManager._msg_seq` for reconnect state detection
+FR130: Add configurable `CHAT_FORMAT` metadata field to chat/party_chat/announcement messages; client-side markdown rendering (server client-agnostic)
+FR131: Refactor `grant_xp` into `apply_xp` (business + DB, returns `XpResult`) + `notify_xp` (WebSocket messaging) with backward-compatible `grant_xp` wrapper
+FR132: Implement combat turn timeout enforcement using `COMBAT_TURN_TIMEOUT_SECONDS` with `turn_timeout_at` timestamp in combat state for client countdown UI
 
 ### NonFunctional Requirements
 
@@ -297,6 +314,20 @@ Web demo client (`web-demo/`) implemented as a proof-of-concept test tool. Vanil
 | FR116 | Epic 14 (Story 14.7) | Timezone-aware datetimes |
 | FR117 | Epic 14 (Story 14.7) | Transaction consolidation in combat resolution |
 | FR118 | Backlog | Data-driven effect targeting (deferred from Epic 14) |
+| FR119 | Epic 16 (Story 16.1) | Pydantic inbound schemas for 21 WebSocket actions |
+| FR120 | Epic 16 (Story 16.2) | Pydantic outbound schemas for 38 message types |
+| FR121 | Epic 16 (Story 16.3) | Auto-generated protocol specification document |
+| FR122 | Epic 16 (Story 16.4) | Combat service layer extraction |
+| FR123 | Epic 16 (Story 16.5) | Login handler decomposition |
+| FR124 | Epic 16 (Story 16.6) | TradeManager constructor injection |
+| FR125 | Epic 16 (Story 16.7) | Optional request_id echo-back |
+| FR126 | Epic 16 (Story 16.8) | WebSocket heartbeat ping/pong |
+| FR127 | Epic 16 (Story 16.9) | Session tokens for reconnection |
+| FR128 | Epic 16 (Story 16.10) | Disconnected player grace period |
+| FR129 | Epic 16 (Story 16.11) | Message sequence numbers |
+| FR130 | Epic 16 (Story 16.12) | Chat markdown format field |
+| FR131 | Epic 16 (Story 16.4a) | grant_xp refactor (apply_xp + notify_xp) |
+| FR132 | Epic 16 (Story 16.10a) | Combat turn timeout enforcement |
 
 ## Epic List
 
@@ -504,7 +535,7 @@ The server's internal structure is tightened — player session lifecycle gets a
 **No new FRs** — internal refactoring driven by codebase review findings, not new functionality.
 **Dependencies:** Epic 14 complete.
 **Findings source:** Adversarial codebase review (2026-04-11), findings C/D/E/I/J/K/L/O/Q/R/U/W/X.
-**Deferred findings:** (A) `xp.py` mixing business logic with WebSocket sending — acknowledged trade-off; centralizing notification prevents forgotten sends, refactoring requires callback/event pattern design. (V) untyped stats dicts — requires TypedDict/dataclass design; scope for a future epic. (G) `TradeManager.set_connection_manager()` setter injection — low impact, defer unless touched by another story.
+**Deferred findings:** (A) `xp.py` mixing business logic with WebSocket sending — **resolved in Epic 16 Story 16.4a**. (V) untyped stats dicts — requires TypedDict/dataclass design; scope for a future epic. (G) `TradeManager.set_connection_manager()` setter injection — **resolved in Epic 16 Story 16.6**.
 
 **Execution order:**
 ```
@@ -533,6 +564,40 @@ Phase 2 (Clean): 15.4, 15.5a, 15.5b, 15.6, 15.7 (all independent)
 | 15.5b | NpcEntity & Dataclass Relocation | C, X | Clean |
 | 15.6 | EventBus Resilience & Config Gaps | R, O, L | Clean |
 | 15.7 | Data Layer Consistency | J, K | Clean |
+
+### Epic 16: Server Architecture Maturation & Protocol Specification
+Game engine developers (Godot, Unity, Unreal) can integrate with the server using a formal protocol specification, reconnect seamlessly after network interruptions, and players can use markdown formatting in chat. Server internals are matured: combat service layer, login decomposition, consistent DI, and `grant_xp` separation of concerns. Turn timeout enforcement fixes a current bug where disconnected players block combat indefinitely.
+**FRs covered:** FR119, FR120, FR121, FR122, FR123, FR124, FR125, FR126, FR127, FR128, FR129, FR130, FR131, FR132
+**Dependencies:** Epics 1-15 complete. Resolves deferred findings (A) and (G) from Epic 15.
+**No Alembic migrations required** — all 14 stories modify runtime dataclasses, config, handlers, and schemas.
+**Detailed tech spec:** `_bmad-output/planning-artifacts/epic-16-tech-spec.md` (1760+ lines, 9 Red Team rounds, 7 ADRs)
+**Sprint plan:**
+
+| Sprint | Stories | Milestone |
+|--------|---------|-----------|
+| Sprint 1 | 16.1, 16.2, 16.3, 16.12 | Protocol formalized — Godot dev unblocked |
+| Sprint 2 | 16.4a, 16.4, 16.5, 16.6, 16.10a | Refactoring + turn timeout bug fix |
+| Sprint 3a | 16.7, 16.8 | Client polish — request correlation + heartbeat |
+| Sprint 3b | 16.9, 16.10, 16.11 | Resilience — session tokens → grace period → message ack |
+
+**Stories:**
+
+| Story | Title | FRs | Sprint |
+|-------|-------|-----|--------|
+| 16.1 | WebSocket Inbound Schemas | FR119 | 1 |
+| 16.2 | WebSocket Outbound Schemas | FR120 | 1 |
+| 16.3 | Protocol Specification Document | FR121 | 1 |
+| 16.12 | Chat Markdown Support | FR130 | 1 |
+| 16.4a | Refactor grant_xp | FR131 | 2 |
+| 16.4 | Extract Combat Service Layer | FR122 | 2 |
+| 16.5 | Decompose handle_login | FR123 | 2 |
+| 16.6 | TradeManager Constructor Injection | FR124 | 2 |
+| 16.10a | Combat Turn Timeout Enforcement | FR132 | 2 |
+| 16.7 | Request-Response Correlation | FR125 | 3a |
+| 16.8 | Heartbeat / Connection Health | FR126 | 3a |
+| 16.9 | Session Tokens for Reconnection | FR127 | 3b |
+| 16.10 | Disconnected Player Grace Period | FR128 | 3b |
+| 16.11 | Message Acknowledgment IDs | FR129 | 3b |
 
 ---
 
@@ -3930,3 +3995,618 @@ So that the data layer is consistent across all persistable entities.
 - No duplicated effect source/target logic in `CombatInstance` — `_resolve_effect_targets` is the single call site
 - No direct `select(SpawnCheckpoint)` or `session.add(SpawnCheckpoint(...))` in `scheduler.py` — all access via `spawn_repo`
 - CLAUDE.md updated with: PlayerManager convention, `@requires_auth` usage, NpcEntity location
+
+## Epic 16: Server Architecture Maturation & Protocol Specification
+
+Game engine developers can integrate with the server using a formal protocol specification, reconnect seamlessly after network interruptions, and players can use markdown formatting in chat. Server internals are matured with combat service layer, login decomposition, and consistent DI. Turn timeout enforcement fixes combat stalling when players disconnect.
+
+**Detailed tech spec:** `_bmad-output/planning-artifacts/epic-16-tech-spec.md`
+**Gap analysis:** `_bmad-output/implementation-artifacts/epic-16-gap-analysis.md`
+**Hardening:** 9 Red Team rounds (31 findings fixed), Pre-mortem (5 preventions), War Room (sprint reorder), 7 ADRs, Stakeholder Round Table (3 improvements)
+
+### Story 16.1: WebSocket Inbound Schemas
+
+As a **server developer**,
+I want all 21 WebSocket inbound actions validated by Pydantic schemas at the framework level,
+So that handlers can trust input is valid without manual `data.get()` checks, and malformed messages get clear error responses.
+
+**Acceptance Criteria:**
+
+**Given** a client sends a valid JSON message with a known action and correct fields
+**When** the message reaches the WebSocket endpoint (`server/app.py:386-406`)
+**Then** the corresponding Pydantic schema from `ACTION_SCHEMAS` validates it
+**And** the handler receives validated `data` dict with guaranteed field types
+
+**Given** a client sends a message with missing required fields (e.g., `{"action": "move"}` without `direction`)
+**When** the schema validates
+**Then** a `ValidationError` is raised
+**And** the client receives `{"type": "error", "detail": "..."}` with specific field error
+**And** the handler is never called
+
+**Given** a client sends `{"action": "move", "direction": "diagonal"}`
+**When** the `MoveMessage` schema's `field_validator` runs
+**Then** the invalid direction is rejected (must be `up/down/left/right`)
+
+**Given** a client sends `{"action": "interact"}` with neither `target_id` nor `direction`
+**When** the `InteractMessage` `model_validator` runs
+**Then** it rejects the message — at least one of `target_id` or `direction` is required
+
+**Given** a client sends `{"action": "chat", "message": "hello"}`
+**When** the schema validates
+**Then** it passes — config-dependent range checks (`MAX_CHAT_MESSAGE_LENGTH`, `MIN_USERNAME_LENGTH`, `MIN_PASSWORD_LENGTH`) remain in handlers, not schemas
+
+**Given** all 808+ existing tests
+**When** Story 16.1 is implemented
+**Then** all tests pass unchanged
+
+**Implementation notes:**
+- New file: `server/net/schemas.py` (~150 lines)
+- Modified: `server/app.py` websocket_endpoint (~10 lines)
+- Modified: 10 WebSocket handler files (remove field-presence checks; `admin.py` REST-only, unchanged)
+- See tech spec Story 16.1 for full schema examples
+
+---
+
+### Story 16.2: WebSocket Outbound Schemas
+
+As a **game engine client developer**,
+I want all 38 server-to-client message types documented as Pydantic models,
+So that I have a machine-readable protocol reference and can auto-generate client-side types.
+
+**Acceptance Criteria:**
+
+**Given** the server sends messages with `type` field (e.g., `login_success`, `room_state`, `combat_turn`)
+**When** Story 16.2 is implemented
+**Then** a Pydantic model exists for each of the 38 outbound message types in `server/net/outbound_schemas.py`
+**And** each model documents field names, types, and optionality
+
+**Given** a `PartyChatMessage` which uses `"from"` as a key (Python reserved word)
+**When** the schema is defined
+**Then** it uses `Field(alias="from")` with `from_` attribute
+**And** `send_typed` uses `model_dump(exclude_none=True, by_alias=True)` to serialize correctly
+
+**Given** any outbound schema
+**When** `model_json_schema()` is called
+**Then** it produces valid JSON Schema
+
+**Given** Stories 16.8, 16.9, and 16.12 will later add `ping`, `session_token`, and `format` fields
+**When** Story 16.2 is implemented
+**Then** schemas document the CURRENT protocol — `ChatMessage`, `PartyChatMessage`, and `AnnouncementMessage` do NOT include `format` field (added by 16.12 later)
+
+**Given** all 808+ existing tests
+**When** Story 16.2 is implemented
+**Then** all tests pass unchanged (schemas are additive, no handler changes)
+
+**Implementation notes:**
+- New file: `server/net/outbound_schemas.py` (~300 lines)
+- 10 categories: Auth, Room, Combat, Interaction, Inventory, Query, XP/Level, Trade, Party, System
+- See tech spec Story 16.2 for field definitions
+
+---
+
+### Story 16.3: Protocol Specification Document
+
+As a **Godot client developer**,
+I want a comprehensive protocol specification document,
+So that I can implement a game client without reading server source code.
+
+**Acceptance Criteria:**
+
+**Given** Pydantic schemas from Stories 16.1 and 16.2
+**When** `make protocol-doc` is run
+**Then** `_bmad-output/planning-artifacts/protocol-spec.md` is generated from schema imports
+
+**Given** the generated protocol doc
+**When** a Godot developer reads it
+**Then** it contains: transport details (WebSocket endpoint, JSON text frames), initial connection sequence with exact message shapes (open WS → send login → receive login_success → receive room_state → start rendering, including reconnect variant), all 21 inbound actions with fields/types/validation, all 38 outbound types with fields/types/delivery scope, tile type enum (7 values: FLOOR=0 through STAIRS_DOWN=6), combat/trade/party state machines
+
+**Given** movement directions
+**When** documented in the protocol spec
+**Then** it clarifies: movement uses `up/down/left/right` only; vertical transitions (`ascend/descend`) are exit-triggered when stepping onto stairs tiles, not player-input directions
+
+**Given** a later story modifies schemas (e.g., 16.12 adds `format`)
+**When** `make check-protocol` is run
+**Then** it fails if the committed protocol-spec.md doesn't match the current schema output
+
+**Given** all 808+ existing tests
+**When** Story 16.3 is implemented
+**Then** all tests pass unchanged
+
+**Implementation notes:**
+- New: `scripts/generate_protocol_doc.py` (~100 lines) — `scripts/` directory must be created
+- Modified: `Makefile` (add `protocol-doc` and `check-protocol` targets)
+- New: `_bmad-output/planning-artifacts/protocol-spec.md` (~400-500 lines)
+
+---
+
+### Story 16.12: Chat Markdown Support
+
+As a **player**,
+I want to use markdown formatting in chat messages (**bold**, *italic*, `code`, ~~strikethrough~~),
+So that I can express myself more clearly in room chat, whispers, and party chat.
+
+**Acceptance Criteria:**
+
+**Given** a player sends a chat message containing `**bold**`
+**When** the server broadcasts it
+**Then** the message includes `"format": "markdown"` (from `settings.CHAT_FORMAT`)
+**And** the server does NOT modify the message content (client-agnostic — no HTML stripping)
+
+**Given** a player sends a chat message containing `<script>alert(1)</script>`
+**When** the server processes it
+**Then** the message passes through unmodified (server is client-agnostic, per ADR-16-4)
+**And** the web-demo client HTML-escapes the content before rendering (XSS prevention is a client concern)
+
+**Given** the web-demo receives a chat message with `format: "markdown"`
+**When** `appendChat` renders it
+**Then** HTML-escaping happens FIRST (before markdown regex)
+**And** code spans are processed FIRST (prevents formatting inside code)
+**And** only safe subset rendered: bold, italic, code, strikethrough — NO links, NO images
+
+**Given** a server admin sets `CHAT_FORMAT=plain` in environment
+**When** chat messages are broadcast
+**Then** they include `"format": "plain"` and clients render as plain text
+
+**Given** a chat message contains control characters (null bytes, etc.)
+**When** the server processes it
+**Then** control characters are stripped (content-neutral validation)
+**And** printable characters including `<`, `>`, `&` pass through unmodified
+
+**Given** all 808+ existing tests
+**When** Story 16.12 is implemented
+**Then** all tests pass unchanged
+
+**Implementation notes:**
+- Modified: `server/core/config.py` (add `CHAT_FORMAT`)
+- Modified: `server/net/handlers/chat.py` (control char strip, `format` field)
+- Modified: `server/net/handlers/party.py` (`format` field on `party_chat`)
+- Modified: `server/app.py` (`format` field on `announcement`)
+- Modified: `server/net/outbound_schemas.py` (add `format` to chat/party_chat/announcement schemas)
+- Modified: `web-demo/js/game.js` (safe markdown rendering in `appendChat`)
+
+---
+
+### Story 16.4a: Refactor grant_xp — Separate Business from Messaging
+
+As a **server developer**,
+I want `grant_xp` split into `apply_xp` (business + DB) and `notify_xp` (WebSocket messaging),
+So that the combat service (Story 16.4) can apply XP without triggering WebSocket side effects.
+
+**Acceptance Criteria:**
+
+**Given** `grant_xp` currently mixes XP calculation, DB persistence, and WebSocket messaging in one function (`server/core/xp.py:29-82`)
+**When** Story 16.4a is implemented
+**Then** `apply_xp(entity_id, player_entity, amount, source, detail, game, ...)` performs XP math + DB write and returns an `XpResult` dataclass
+**And** `notify_xp(entity_id, result, player_entity, game)` sends `xp_gained` and optional `level_up_available` messages
+**And** `grant_xp` wrapper calls `apply_xp` then `notify_xp` — identical behavior to current implementation
+
+**Given** `apply_xp` takes `entity_id` as its first parameter
+**When** it looks up the player session for level-up detection
+**Then** it uses the passed `entity_id` directly — never reconstructs it from `player_db_id`
+
+**Given** all 3 existing call sites (`combat.py:79`, `movement.py:326`, `interact.py:112`) and 41 test references across 7 files
+**When** Story 16.4a is implemented
+**Then** all use the unchanged `grant_xp` wrapper and pass without modification
+
+**Implementation notes:**
+- Modified: `server/core/xp.py` (add `XpResult` dataclass, `apply_xp`, `notify_xp`; refactor `grant_xp`)
+- See tech spec Story 16.4a for full implementation
+
+---
+
+### Story 16.4: Extract Combat Service Layer
+
+As a **server developer**,
+I want combat business logic separated from the WebSocket handler,
+So that combat orchestration (XP, loot, NPC outcomes, respawn) is testable independently and the handler only does I/O.
+
+**Acceptance Criteria:**
+
+**Given** `server/net/handlers/combat.py` contains 7 business logic functions (lines 22-251): `_sync_combat_stats`, `_clean_player_combat_stats`, `_award_combat_xp`, `_distribute_combat_loot`, `_handle_npc_combat_outcome`, `_respawn_defeated_players`, `_check_combat_end`
+**When** Story 16.4 is implemented
+**Then** all 7 functions are in `server/combat/service.py`
+**And** `finalize_combat` returns data for the handler to send messages
+
+**Given** `_broadcast_combat_state` and `_send_combat_end_message` do WebSocket I/O
+**When** Story 16.4 is implemented
+**Then** they remain in the handler file
+
+**Given** handler functions `handle_play_card`, `handle_pass_turn`, `handle_use_item_combat`, `handle_flee`
+**When** Story 16.4 is implemented
+**Then** they call service functions for business logic and handle WebSocket I/O themselves
+
+**Given** 30 test patch references across 3 files (`test_party_combat.py`:15, `test_loot.py`:12, `test_stats_persistence.py`:3) that patch `server.net.handlers.combat._check_combat_end`, `_sync_combat_stats`, `_distribute_combat_loot`, etc.
+**When** those functions move to `server.combat.service`
+**Then** all 30 patch targets are updated to new module paths (e.g., `patch("server.combat.service.finalize_combat")`)
+**And** all 808+ tests pass with no assertion value changes (behavior identical, only module path changed)
+
+**Implementation notes:**
+- New: `server/combat/service.py` (~200 lines)
+- Modified: `server/net/handlers/combat.py` (remove ~230 lines, add ~15 lines of service calls)
+- See tech spec Story 16.4 for function-by-function classification
+
+---
+
+### Story 16.5: Decompose handle_login
+
+As a **server developer**,
+I want `handle_login` (167 lines, 12 concerns) broken into focused helper functions,
+So that the login flow is readable, testable, and reusable by `handle_reconnect` (Story 16.9).
+
+**Acceptance Criteria:**
+
+**Given** `handle_login` at `server/net/handlers/auth.py:112-278` mixes 12 concerns
+**When** Story 16.5 is implemented
+**Then** `_default_stats()` is a module-level FUNCTION (not constant) that reads `settings.*` on each call (supports test monkeypatching)
+**And** `_resolve_stats(player, session)` handles first-time vs returning player stats
+**And** `_resolve_room_and_place(entity, player, room_key, game, session)` loads room + finds spawn (raises `ValueError` if room not found — caller must catch)
+**And** `_hydrate_inventory(player, session)` rebuilds `Inventory` from DB
+**And** `_build_login_response(db_id, entity_id, username, stats, session_token=None)` takes field parameters (not `Player` model) — enables reuse in `handle_reconnect`
+**And** `handle_login` is ≤60 lines
+
+**Given** line 274 currently shadows `session` variable (DB session → PlayerSession)
+**When** Story 16.5 is implemented
+**Then** the shadowing is eliminated (use `player_session` for the PlayerManager lookup)
+
+**Given** all 808+ existing tests
+**When** Story 16.5 is implemented
+**Then** all tests pass unchanged
+
+**Implementation notes:**
+- Modified: `server/net/handlers/auth.py` (refactor into 4-5 helpers + smaller `handle_login`)
+
+---
+
+### Story 16.6: TradeManager Constructor Injection
+
+As a **server developer**,
+I want `TradeManager` to use constructor injection for `connection_manager`,
+So that all managers follow the same DI pattern (`PartyManager` already uses constructor injection).
+
+**Acceptance Criteria:**
+
+**Given** `TradeManager.__init__` (`server/trade/manager.py:21-26`) takes no arguments and `set_connection_manager` (`server/trade/manager.py:28-30`) is called separately
+**When** Story 16.6 is implemented
+**Then** `TradeManager.__init__` takes `connection_manager` as keyword argument
+**And** `set_connection_manager` method is removed
+**And** `server/app.py` creates `TradeManager(connection_manager=self.connection_manager)` — single line, matching `PartyManager` at line 45
+
+**Given** all 808+ existing tests
+**When** Story 16.6 is implemented
+**Then** all tests pass (test files constructing `TradeManager` updated to pass `connection_manager`)
+
+**Implementation notes:**
+- Modified: `server/trade/manager.py`, `server/app.py`, affected test files
+- Resolves deferred finding (G) from Epic 15
+
+---
+
+### Story 16.10a: Combat Turn Timeout Enforcement
+
+As a **player in party combat**,
+I want disconnected or idle players' turns to auto-pass after 30 seconds,
+So that combat doesn't stall indefinitely when someone goes AFK or loses connection.
+
+**Acceptance Criteria:**
+
+**Given** a player's combat turn begins (via `_advance_turn` or `start_turn_timer`)
+**When** `COMBAT_TURN_TIMEOUT_SECONDS` (default 30, `server/core/config.py:32`) elapses without action
+**Then** the turn auto-passes (same behavior as `pass_turn`)
+**And** all combat participants receive the `combat_turn` broadcast
+
+**Given** a timeout is scheduled for a player's turn
+**When** the player acts (play_card, pass_turn, use_item, flee)
+**Then** the timer is cancelled at the START of the action — BEFORE validation
+**And** if validation fails (wrong turn, insufficient energy), the timer is re-scheduled
+
+**Given** `CombatManager.start_combat()` creates an instance and adds participants
+**When** `set_turn_timeout_callback()` is called AFTER `start_combat()`
+**Then** `start_turn_timer()` activates the first turn timeout
+**And** `add_participant()` does NOT schedule a timeout (avoids chicken-and-egg)
+
+**Given** `combat_start` and `combat_turn` outbound messages
+**When** a turn timeout is active
+**Then** messages include `turn_timeout_at` (Unix timestamp float)
+**And** clients can render a countdown timer ("Player B's turn — 23s remaining")
+
+**Given** combat ends or a participant is removed
+**When** cleanup runs
+**Then** any pending turn timeout is cancelled
+
+**Given** all 808+ existing tests
+**When** Story 16.10a is implemented
+**Then** all tests pass
+
+**Implementation notes:**
+- Modified: `server/combat/instance.py` (timer fields, scheduling methods, `turn_timeout_at` in `get_state()`)
+- Modified: `server/combat/service.py` OR `server/net/handlers/combat.py` (timeout callback — placement depends on whether 16.4 has completed)
+- Modified: `server/net/handlers/movement.py` (register callback + start timer on combat start)
+- Timer pattern: `loop.call_later` + `loop.create_task` consistent with `TradeManager._handle_timeout`
+
+---
+
+### Story 16.7: Request-Response Correlation
+
+As a **game engine client developer**,
+I want to optionally include a `request_id` in my messages and have the server echo it back,
+So that I can match async responses to my requests in Godot/Unity/Unreal networking code.
+
+**Acceptance Criteria:**
+
+**Given** a client sends `{"action": "move", "direction": "up", "request_id": "abc123"}`
+**When** the server processes the move
+**Then** the direct response to THIS player includes `"request_id": "abc123"`
+**And** broadcasts to OTHER players (e.g., `entity_moved`) do NOT include `request_id`
+
+**Given** a client sends `{"action": "move", "direction": "up"}` without `request_id`
+**When** the server responds
+**Then** the response does NOT contain a `request_id` field (no `null` value)
+
+**Given** the framework-level "Missing action field" error (`server/app.py`)
+**When** the malformed `data` dict contains a `request_id`
+**Then** the error response includes it via `with_request_id(response, data)`
+
+**Given** the framework-level "Invalid JSON" error
+**When** `data` doesn't exist (unparseable)
+**Then** the error response correctly omits `request_id`
+
+**Given** all 808+ existing tests (which don't send `request_id`)
+**When** Story 16.7 is implemented
+**Then** all tests pass unchanged and the web-demo works unchanged
+
+**Implementation notes:**
+- Modified: `server/net/schemas.py` (add `request_id: str | None = None` to `InboundMessage` base)
+- New utility: `with_request_id()` function
+- Modified: 10 WebSocket handler files (wrap direct responses)
+
+---
+
+### Story 16.8: Heartbeat / Connection Health
+
+As a **player on a mobile device**,
+I want the server to detect when my connection silently dies,
+So that my session is cleaned up promptly instead of leaving a ghost entity in the room.
+
+**Acceptance Criteria:**
+
+**Given** a player has successfully logged in
+**When** the heartbeat task starts (NOT at WebSocket accept — after login/reconnect only)
+**Then** the server sends `{"type": "ping"}` every `HEARTBEAT_INTERVAL_SECONDS` (default 30)
+**And** the task is stored in `Game._heartbeat_tasks[entity_id]`
+
+**Given** the client receives `{"type": "ping"}`
+**When** it responds with `{"action": "pong"}`
+**Then** the heartbeat task resets and waits for the next interval
+
+**Given** the client does NOT respond with `pong` within `HEARTBEAT_TIMEOUT_SECONDS` (default 10)
+**When** the timeout elapses
+**Then** the server closes the WebSocket
+**And** `handle_disconnect` fires normally
+
+**Given** the `pong` handler
+**When** registered
+**Then** it uses `@requires_auth` — unauthenticated stray pongs are rejected
+
+**Given** a player disconnects normally
+**When** `handle_disconnect` runs
+**Then** the heartbeat task is cancelled BEFORE any other cleanup (ordering constraint)
+**And** the task is removed from `Game._heartbeat_tasks[entity_id]`
+
+**Given** a player reconnects (via Story 16.9)
+**When** the reconnect handler restores the session
+**Then** the OLD heartbeat task is cancelled first (prevents duplicate tasks racing)
+**And** a NEW heartbeat task is started for the new WebSocket
+**And** stored in `Game._heartbeat_tasks[entity_id]`
+
+**Given** the server is shutting down
+**When** `Game.shutdown()` runs
+**Then** all heartbeat tasks are cancelled before session iteration
+
+**Given** all 808+ existing tests
+**When** Story 16.8 is implemented
+**Then** all tests pass
+
+**Implementation notes:**
+- Modified: `server/core/config.py` (add 2 settings)
+- Modified: `server/app.py` (`_heartbeat_tasks` dict, cancellation in disconnect/shutdown)
+- Modified: `server/net/handlers/auth.py` (start heartbeat after login/reconnect)
+- Modified: `server/net/schemas.py` (add `PongMessage`), `server/net/outbound_schemas.py` (add `PingMessage`)
+- Modified: `web-demo/js/game.js` (add `ping` handler)
+
+---
+
+### Story 16.9: Session Tokens for Reconnection
+
+As a **player whose connection dropped**,
+I want to reconnect using a session token instead of re-typing my password,
+So that brief network interruptions don't require full re-authentication.
+
+**Acceptance Criteria:**
+
+**Given** a player successfully logs in
+**When** the `login_success` response is sent
+**Then** it includes a `session_token` field (cryptographically random, `secrets.token_urlsafe(32)`)
+
+**Given** a player sends `{"action": "reconnect", "session_token": "..."}`
+**When** the token is valid and a disconnected session exists (Case 1: grace period resume)
+**Then** the deferred cleanup timer is cancelled, `disconnected_at` cleared, `entity.connected` set to `True`, WebSocket re-registered, `entity_entered` broadcast to room
+**And** the player receives `login_success` (with new token) + `room_state` + combat state if applicable
+
+**Given** a valid token but no session exists (Case 2: grace expired, full DB restore)
+**When** `handle_reconnect` runs
+**Then** the player is restored from DB using Story 16.5's helpers (`_resolve_stats`, `_resolve_room_and_place`, `_hydrate_inventory`, `_build_login_response`)
+**And** a new session is created (same as login, skip password check)
+
+**Given** an invalid or expired token (Case 3)
+**When** `handle_reconnect` runs
+**Then** the client receives `{"type": "error", "detail": "Invalid or expired token"}`
+
+**Given** a valid token used for reconnection
+**When** the reconnect succeeds (Case 1 or Case 2)
+**Then** the old token is consumed (revoked) and a new token is issued in the response
+**And** the old token cannot be used again (single-use — prevents replay attacks by network attackers)
+
+**Given** a WebSocket that already has a different player's session
+**When** a reconnect for a different player arrives on that WebSocket
+**Then** the existing session is cleaned up first (prevents session hijacking)
+
+**Given** a player explicitly logs out
+**When** logout completes
+**Then** the player's token is revoked via `token_store.revoke_for_player(db_id)`
+
+**Given** the `TokenStore` over time
+**When** `issue()` is called
+**Then** `_purge_expired()` runs first — removes all expired tokens, preventing unbounded memory growth
+
+**Given** all 808+ existing tests
+**When** Story 16.9 is implemented
+**Then** all tests pass unchanged
+
+**Implementation notes:**
+- New: `server/player/tokens.py` (~60 lines) — `TokenStore` with issue/validate/revoke/_purge_expired
+- Modified: `server/core/config.py` (`SESSION_TOKEN_TTL_SECONDS: 300`)
+- Modified: `server/app.py` (add `TokenStore` to `Game.__init__`, register `reconnect` handler)
+- Modified: `server/net/handlers/auth.py` (`session_token` in login, `handle_reconnect`, revoke on logout)
+- Modified: `server/net/outbound_schemas.py` (add `session_token` to `LoginSuccessMessage`)
+
+---
+
+### Story 16.10: Disconnected Player Grace Period
+
+As a **player who briefly backgrounds the app to check a text message**,
+I want my combat, party, and room position preserved for 2 minutes,
+So that I don't lose my game state from a brief interruption.
+
+**Acceptance Criteria:**
+
+**Given** a player's WebSocket connection drops
+**When** `handle_disconnect` runs
+**Then** the WebSocket mapping is removed, `session.disconnected_at` set, `entity.connected` set to `False`
+**And** trades ARE cancelled immediately (can't block other player)
+**And** combat, party, and room presence are NOT cleaned up
+**And** a deferred cleanup timer is scheduled for `DISCONNECT_GRACE_SECONDS` (default 120)
+**And** the timer handle is stored in `Game._cleanup_handles[entity_id]`
+
+**Given** an existing deferred cleanup timer for the same entity
+**When** `handle_disconnect` runs again (disconnect→reconnect→disconnect)
+**Then** the old timer is cancelled before the new one is stored (defensive idempotency)
+
+**Given** the server is shutting down (`self._shutting_down is True`)
+**When** `handle_disconnect` runs
+**Then** it returns early — no deferred timer scheduled (shutdown handles all cleanup)
+
+**Given** the grace period expires without reconnection
+**When** the deferred cleanup timer fires
+**Then** `player_manager.deferred_cleanup(entity_id, game)` runs (PUBLIC method, not private `_cleanup_*` calls)
+**And** combat, party, room, and DB state are fully cleaned up
+
+**Given** a player reconnects within the grace period (via Story 16.9 Case 1)
+**When** the reconnect handler runs
+**Then** the deferred cleanup timer is cancelled, `disconnected_at` cleared, `entity.connected` restored to `True`
+
+**Given** a player logs in from another device during grace period (via `handle_login`, not reconnect)
+**When** `handle_login` checks `player_manager.has_session(entity_id)`
+**Then** it finds the grace-period session, cancels the timer, runs full cleanup, then creates new session
+**And** combat/party state from the old session is properly cleaned up (no dangling references)
+
+**Given** `room_state` entity data during grace period
+**When** other players request room state
+**Then** the disconnected entity includes `connected: false` (read from `PlayerEntity.connected` field — no `get_state()` signature change)
+
+**Given** `Game.shutdown()` runs
+**When** cleanup handles exist
+**Then** all pending deferred timers are cancelled before session iteration
+
+**Given** the test suite
+**When** Story 16.10 is implemented
+**Then** an `autouse` fixture in `tests/conftest.py` sets `DISCONNECT_GRACE_SECONDS=0` (FIRST sub-task before any code changes)
+**And** all 808+ existing tests pass via the fixture (immediate cleanup preserved)
+**And** new grace-period-specific tests use non-zero values
+
+**Implementation notes:**
+- Modified: `server/player/entity.py` (add `connected: bool = True`)
+- Modified: `server/player/session.py` (add `disconnected_at: float | None = None`)
+- Modified: `server/player/manager.py` (add public `deferred_cleanup` method)
+- Modified: `server/app.py` (`_cleanup_handles`, modified `handle_disconnect`, `_deferred_cleanup`, shutdown timer cancellation)
+- Modified: `server/core/config.py` (`DISCONNECT_GRACE_SECONDS: 120`)
+- Modified: `server/net/handlers/auth.py` (login grace check, reconnect timer cancel + broadcast)
+- Modified: `server/room/room.py` (`get_state()` includes `connected` via `getattr(e, "connected", True)`)
+- Known test impact: 25 refs across 4 files — protected by `autouse` fixture
+- **Sub-task ordering** (this story has 8 concerns — implement in this order): (1) `autouse` test fixture in `conftest.py` FIRST, (2) `PlayerEntity.connected` field, (3) `PlayerManager.deferred_cleanup()` public method, (4) modified `handle_disconnect` with `_cleanup_handles` + `_shutting_down` check + cancel-before-store, (5) `_deferred_cleanup` on `Game`, (6) `handle_login` grace-period detection, (7) `get_state()` includes `connected` field
+
+---
+
+### Story 16.11: Message Acknowledgment IDs
+
+As a **game engine client developer**,
+I want critical server messages to include sequence numbers,
+So that after reconnecting I can tell the server the last message I received and determine if I missed anything.
+
+**Acceptance Criteria:**
+
+**Given** the server sends a critical message (combat_turn, combat_end, trade_update, xp_gained, level_up_available)
+**When** `connection_manager.send_to_player_seq(entity_id, message)` is called
+**Then** the message includes a `seq` field (integer, monotonically increasing per player)
+
+**Given** a player connects for the first time
+**When** `ConnectionManager.connect()` is called
+**Then** `_msg_seq` is initialized to 0 via `setdefault` (preserves existing value on reconnect)
+
+**Given** a player reconnects with `{"action": "reconnect", "session_token": "...", "last_seq": 42}`
+**When** the server compares `last_seq` with `connection_manager.get_msg_seq(entity_id)`
+**Then** if they match: client is up to date; if they differ: full state resync sent
+
+**Given** a player disconnects during grace period
+**When** the `_msg_seq` counter is checked
+**Then** it persists (not removed by `disconnect()`) — only cleared by `clear_msg_seq` during full cleanup
+
+**Given** cosmetic messages (entity_moved, chat, entity_entered)
+**When** sent via broadcast
+**Then** they do NOT include `seq` — only critical direct messages use sequence numbers
+
+**Given** `ConnectionManager`
+**When** `send_to_player_seq` is added
+**Then** `ConnectionManager` has NO new imports from player/combat/trade modules (per ADR-16-3)
+
+**Given** `notify_xp` in `server/core/xp.py`
+**When** Story 16.11 is implemented
+**Then** it switches from `ws.send_json` to `connection_manager.send_to_player_seq` for `xp_gained` and `level_up_available`
+
+**Given** all 808+ existing tests
+**When** Story 16.11 is implemented
+**Then** all tests pass unchanged (`seq` field is additive)
+
+**Implementation notes:**
+- Modified: `server/net/connection_manager.py` (`_msg_seq` dict, `get_msg_seq`, `clear_msg_seq`, `send_to_player_seq`)
+- Modified: `server/net/handlers/auth.py` (reconnect checks `last_seq`)
+- Modified: `server/player/manager.py` (`clear_msg_seq` in full cleanup)
+- Modified: `server/core/xp.py` (`notify_xp` uses `send_to_player_seq`)
+- Modified: Key handlers (combat, trade — gradual adoption)
+
+---
+
+### Epic 16 — Architecture Decisions
+
+- **ADR-16-1:** WebSocket retained — only transport satisfying all constraints (Godot, Unity, Unreal, web, FastAPI). Mobile backgrounding mitigated by 16.9+16.10. Single-process ceiling accepted at current scale.
+- **ADR-16-2:** In-memory TokenStore — 300s TTL too short for DB persistence. Server restart kills all in-memory state anyway. `_purge_expired()` prevents leak.
+- **ADR-16-3:** `msg_seq` on ConnectionManager — networking concern, preserves Epic 14-15 architectural separation. PlayerSession coupling rejected.
+- **ADR-16-4:** Server client-agnostic for chat — no HTML stripping. Godot=BBCode, Unity=TMP, web=HTML. Stripping corrupts `<`/`>`, misses markdown XSS. Each client owns rendering security.
+- **ADR-16-5:** `PlayerEntity.connected` field — avoids changing `get_state()` signature (5 call sites) and `RoomInstance` depending on `ConnectionManager`.
+- **ADR-16-6:** Deferred cleanup via `call_later` + public `PlayerManager.deferred_cleanup()` — consistent with `TradeManager`. Cancel-before-store. `_shutting_down` check. `autouse` test fixture.
+- **ADR-16-7:** `_default_stats()` function, not constant — supports test monkeypatching of `settings.*`.
+
+### Epic 16 — Definition of Done
+
+- All 14 stories complete across 3 sprints
+- All 808+ existing tests pass with no assertion value changes
+- Protocol spec (`protocol-spec.md`) covers all inbound + outbound messages
+- `make check-protocol` passes (doc matches schemas)
+- `server/net/handlers/combat.py` contains only handler functions (I/O), no business logic
+- `handle_login` ≤60 lines
+- `TradeManager` uses constructor injection (no `set_connection_manager`)
+- `grant_xp` wrapper calls `apply_xp` + `notify_xp` — 41 test references unchanged
+- `COMBAT_TURN_TIMEOUT_SECONDS` is actually enforced (turn auto-passes)
+- Session tokens: login_success includes `session_token`, reconnect works with 3 outcomes
+- Grace period: disconnect preserves combat/party/room for `DISCONNECT_GRACE_SECONDS`
+- `ConnectionManager` has zero new game-logic imports
+- CLAUDE.md updated with: combat service convention, protocol schemas location, reconnect flow, heartbeat, grace period, chat markdown format

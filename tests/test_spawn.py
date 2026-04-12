@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from tests.conftest import make_bare_game
 from server.core.scheduler import Scheduler
 from server.room.npc import (
     NpcEntity,
@@ -401,15 +402,9 @@ class TestKillNpcHook:
         assert npc is not None
         room.add_npc(npc)
 
-        # Build a real-ish Game with mock scheduler
-        from server.app import Game
-
-        game = Game.__new__(Game)
-        game.room_manager = MagicMock()
+        game = make_bare_game(npc_templates=self.npc_templates)
         game.room_manager.get_room.return_value = room
-        game.scheduler = MagicMock()
         game.scheduler.schedule_respawn = MagicMock()
-        game.npc_templates = self.npc_templates
 
         await game.kill_npc("test", "npc_1")
 
@@ -425,13 +420,8 @@ class TestKillNpcHook:
         npc.is_alive = False
         room.add_npc(npc)
 
-        from server.app import Game
-
-        game = Game.__new__(Game)
-        game.room_manager = MagicMock()
+        game = make_bare_game(npc_templates=self.npc_templates)
         game.room_manager.get_room.return_value = room
-        game.scheduler = MagicMock()
-        game.npc_templates = self.npc_templates
 
         await game.kill_npc("test", "npc_1")
         game.scheduler.schedule_respawn.assert_not_called()

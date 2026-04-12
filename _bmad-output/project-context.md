@@ -261,4 +261,53 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 **Config Values (added in Epic 15):**
 - `RARE_CHECK_INTERVAL_SECONDS = 60`
 
-Last Updated: 2026-04-12 (Epic 15 complete — all 7 stories done, 808 tests passing)
+### Epic 16: Server Architecture Maturation & Protocol Specification (Complete)
+
+**Protocol & Schemas:**
+- All 21 inbound actions validated via Pydantic schemas in `server/net/schemas.py` — `ACTION_SCHEMAS` dict maps action name to schema class (23 entries including `reconnect`)
+- All 38 outbound message types documented as Pydantic models in `server/net/outbound_schemas.py` — documentation/validation only, handlers still use raw dicts
+- Protocol spec auto-generated via `make protocol-doc`, verified via `make check-protocol`
+- `with_request_id(response, data)` in `server/net/schemas.py` echoes `request_id` from inbound to outbound for request correlation
+
+**Session Tokens & Reconnection:**
+- `game.token_store` — `TokenStore` (`server/player/tokens.py`), in-memory with TTL (`SESSION_TOKEN_TTL_SECONDS: 300`). `issue(db_id)` returns token, `validate(token)` returns `db_id | None`, `revoke(token)`, `revoke_for_player(db_id)`. ADR-16-2: not DB-backed (server restart kills all state anyway)
+- `handle_reconnect` (`server/net/handlers/auth.py`) — NOT decorated with `@requires_auth` (pre-auth handler, same as login/register). Three cases: Case 1 (grace period resume), Case 2 (full DB restore using Story 16.5 helpers), Case 3 (invalid token → error)
+- `_build_login_response` accepts optional `session_token` param — used by both `handle_login` and `handle_reconnect`
+- Token is single-use: consumed on reconnect, new token issued in response
+- Logout revokes token via `token_store.revoke_for_player(db_id)`
+
+**Disconnect Grace Period:**
+- `handle_disconnect` defers cleanup for `DISCONNECT_GRACE_SECONDS` (default 120). WebSocket mapping removed immediately, trades cancelled, but combat/party/room presence preserved during grace period
+- `session.disconnected_at` set to `time.time()`, `entity.connected` set to `False` on disconnect
+- `Game._cleanup_handles: dict[str, asyncio.TimerHandle]` stores deferred cleanup timers — cancelled on reconnect or shutdown
+- `PlayerManager.deferred_cleanup(entity_id, game)` — PUBLIC method for grace-period expiry. Skips trade + WS disconnect (already done in `handle_disconnect`). `Game._deferred_cleanup` delegates to it
+- `PlayerManager.cancel_trade(entity_id, game)` — PUBLIC wrapper for immediate trade cancellation on disconnect
+- If `DISCONNECT_GRACE_SECONDS == 0`, cleanup runs immediately (test mode via autouse fixture in `tests/conftest.py`)
+- `handle_disconnect` checks `self._shutting_down` and returns early — shutdown handles all cleanup directly
+- `handle_login` checks `player_manager.get_session(entity_id)` for grace-period sessions (WS gone, session alive) — cancels timer + cleans up before creating new session
+- `RoomInstance.get_state()` includes `"connected": getattr(e, "connected", True)` in entity dict — clients render disconnected players as "away"
+
+**Message Acknowledgment:**
+- `ConnectionManager._msg_seq: dict[str, int]` — per-player outbound sequence counter
+- `send_to_player_seq(entity_id, message)` — creates dict copy (`{**message, "seq": seq}`), increments counter even without WebSocket (grace period consistency). Includes try/except error guard
+- `connect()` uses `setdefault(entity_id, 0)` — preserves counter on reconnect, initializes on first login
+- `disconnect()` does NOT remove `_msg_seq` — grace period needs it. Only `clear_msg_seq()` removes it (called in `cleanup_session` and `deferred_cleanup`)
+- Critical messages using `send_to_player_seq`: `combat_turn`, `combat_end`, `trade_update`, `xp_gained`, `level_up_available`
+- Cosmetic messages (entity_moved, chat, broadcasts) do NOT include seq — ADR-16-3
+- `ReconnectMessage` accepts optional `last_seq`; Case 1 reconnect sends `seq_status: up_to_date` if matching
+
+**Combat & Heartbeat:**
+- `CombatInstance` turn timeout via `loop.call_later` — `COMBAT_TURN_TIMEOUT_SECONDS: 30` now enforced. Auto-passes on timeout. Timer cancelled at START of action (before validation, prevents race)
+- Combat service layer at `server/combat/service.py` — business logic extracted from handler
+- `apply_xp` / `notify_xp` split in `server/core/xp.py` — `XpResult` dataclass decouples business from messaging. `grant_xp` is backward-compatible wrapper
+- Heartbeat: `Game._heartbeat_tasks` + `Game._pong_events` — `asyncio.Task` + `asyncio.Event` pattern. Ping/pong at `HEARTBEAT_INTERVAL_SECONDS: 30`, timeout at `HEARTBEAT_TIMEOUT_SECONDS: 10`
+- Chat messages include `"format": settings.CHAT_FORMAT` (default `"markdown"`) — server is client-agnostic per ADR-16-4
+
+**Config Values (added in Epic 16):**
+- `SESSION_TOKEN_TTL_SECONDS = 300`
+- `DISCONNECT_GRACE_SECONDS = 120`
+- `HEARTBEAT_INTERVAL_SECONDS = 30`
+- `HEARTBEAT_TIMEOUT_SECONDS = 10`
+- `CHAT_FORMAT = "markdown"`
+
+Last Updated: 2026-04-12 (Epic 16 complete — all 14 stories done, 1062 tests passing)

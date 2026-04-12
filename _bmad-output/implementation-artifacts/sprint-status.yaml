@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-21
-last_updated: 2026-04-12 (Story 16.11 ready-for-dev)
+last_updated: 2026-04-12 (Epic 16 done, retrospective complete)
 project: The-Ages-II
 project_key: NOKEY
 tracking_system: file-system
@@ -251,7 +251,7 @@ development_status:
   # Sprint 3b: Resilience (session tokens → grace period → message ack)
   # Tech spec: _bmad-output/planning-artifacts/epic-16-tech-spec.md
   # No Alembic migrations required
-  epic-16: in-progress
+  epic-16: done
 
   # Sprint 1 — Protocol formalized (Godot dev unblocked)
   16-1-websocket-inbound-schemas: done
@@ -275,4 +275,5 @@ development_status:
   16-10-disconnected-player-grace-period: done
   16-11-message-acknowledgment-ids: done
 
-  epic-16-retrospective: optional
+  ISS-030-game-new-fragile-test-pattern: done   # Medium — replaced 11 Game.__new__ instances with shared make_bare_game() helper
+  epic-16-retrospective: done

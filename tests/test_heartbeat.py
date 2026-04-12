@@ -7,6 +7,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from server.core.config import settings
+from tests.conftest import make_bare_game
 
 
 class TestHeartbeatConfig:
@@ -50,13 +51,7 @@ class TestHeartbeatLifecycle:
 
     def _make_game(self):
         """Create a minimal Game-like object with heartbeat support."""
-        from server.app import Game
-        game = Game.__new__(Game)
-        game._heartbeat_tasks = {}
-        game._pong_events = {}
-        game.connection_manager = MagicMock()
-        game.player_manager = MagicMock()
-        return game
+        return make_bare_game()
 
     def test_start_heartbeat_creates_task_and_event(self):
         game = self._make_game()
@@ -116,11 +111,7 @@ class TestHeartbeatLoop:
 
     async def test_heartbeat_sends_ping(self):
         """Heartbeat loop sends ping after interval."""
-        from server.app import Game
-        game = Game.__new__(Game)
-        game._heartbeat_tasks = {}
-        game._pong_events = {}
-        game.connection_manager = MagicMock()
+        game = make_bare_game()
 
         ws = AsyncMock()
         game.connection_manager.get_websocket.return_value = ws
@@ -152,11 +143,7 @@ class TestHeartbeatLoop:
 
     async def test_heartbeat_timeout_closes_ws(self):
         """Heartbeat closes WebSocket when pong not received within timeout."""
-        from server.app import Game
-        game = Game.__new__(Game)
-        game._heartbeat_tasks = {}
-        game._pong_events = {}
-        game.connection_manager = MagicMock()
+        game = make_bare_game()
 
         ws = AsyncMock()
         game.connection_manager.get_websocket.return_value = ws
@@ -177,16 +164,8 @@ class TestHandleDisconnectCancelsHeartbeat:
     """Verify handle_disconnect cancels heartbeat before cleanup."""
 
     async def test_disconnect_cancels_heartbeat(self):
-        from server.app import Game
-        game = Game.__new__(Game)
-        game._heartbeat_tasks = {}
-        game._pong_events = {}
-        game._shutting_down = False
-        game._cleanup_handles = {}
-        game.connection_manager = MagicMock()
-        game.player_manager = MagicMock()
+        game = make_bare_game()
         game.player_manager.get_session.return_value = MagicMock(disconnected_at=None)
-        game.player_manager._cleanup_trade = AsyncMock()
         game.player_manager.cancel_trade = AsyncMock()
         game.player_manager.deferred_cleanup = AsyncMock()
 
@@ -211,16 +190,9 @@ class TestShutdownCancelsHeartbeats:
     """Verify shutdown cancels all heartbeat tasks."""
 
     async def test_shutdown_cancels_all(self):
-        from server.app import Game
-        game = Game.__new__(Game)
-        game._heartbeat_tasks = {}
-        game._pong_events = {}
-        game._cleanup_handles = {}
-        game.connection_manager = MagicMock()
-        game.player_manager = MagicMock()
+        game = make_bare_game()
         game.player_manager.all_entity_ids.return_value = []
         game.player_manager.clear = MagicMock()
-        game.scheduler = MagicMock()
         game.scheduler.stop = AsyncMock()
 
         task1 = MagicMock()

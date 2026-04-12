@@ -6,11 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **The-Ages-II** is a multiplayer room-based dungeon game with turn-based card combat. The project combines:
 - A **BMAD framework** (v6.2.0) for AI-assisted design, planning, and project management workflows
-- A **Python game server** (Epics 1-15 complete; 808 tests passing) built with FastAPI + WebSockets
+- A **Python game server** (Epics 1-16 complete; 1062 tests passing) built with FastAPI + WebSockets
 - A **web demo client** (`web-demo/`) — vanilla HTML/CSS/JS proof-of-concept for testing and demos; production client planned in Godot
 
 **Key reference documents:**
 - `_bmad-output/planning-artifacts/architecture.md` — **Authoritative** architecture spec (structure, systems, data models, design decisions)
+- `_bmad-output/planning-artifacts/epic-16-tech-spec.md` — **Epic 16** detailed tech spec (1760+ lines, 14 stories, 7 ADRs, adversarial-hardened)
 - `_bmad-output/project-context.md` — AI agent rules and implementation patterns
 - `THE_AGES_SERVER_PLAN.md` — Original file-by-file blueprint (superseded by architecture.md where conflicts arise)
 
@@ -104,6 +105,13 @@ open http://localhost:8000     # web demo client (requires server running)
 - **SpawnCheckpoint Repo**: All spawn checkpoint DB access goes through `server/room/spawn_repo.py` (get_checkpoint, upsert_checkpoint, get_all_checkpoints) — never inline `select(SpawnCheckpoint)` in scheduler or elsewhere.
 - **Handler Auth Middleware**: All WebSocket handlers (except `handle_login`/`handle_register`) use `@requires_auth` decorator from `server/net/auth_middleware.py`. The decorator injects `entity_id: str` and `player_info: PlayerSession` as keyword arguments. Never duplicate the auth-check boilerplate manually.
 - **Party Invite State**: All invite tracking (pending, outgoing, timeouts, cooldowns) lives on `PartyManager` — the party handler (`server/net/handlers/party.py`) is stateless. `PartyManager` takes `connection_manager` via constructor injection. Never add module-level mutable state to handler files.
+- **Combat Turn Timeout**: `COMBAT_TURN_TIMEOUT_SECONDS: 30` exists in config (`config.py:32`) but is **not yet enforced** — Story 16.10a will implement timer-based auto-pass.
+- **Epic 16 Planned Changes** (not yet implemented — reference `epic-16-tech-spec.md` for details):
+  - Story 16.1/16.2: Pydantic schemas for all WebSocket messages in `server/net/schemas.py` and `server/net/outbound_schemas.py`
+  - Story 16.4: Combat business logic will move from `server/net/handlers/combat.py` to `server/combat/service.py`
+  - Story 16.4a: `grant_xp` will split into `apply_xp` (business) + `notify_xp` (messaging) with backward-compatible wrapper
+  - Story 16.9/16.10: Session tokens + grace period for reconnection (changes `handle_disconnect` from immediate to deferred cleanup)
+  - Story 16.12: Chat messages will include `"format": settings.CHAT_FORMAT` field — server remains client-agnostic (no HTML stripping, per ADR-16-4)
 
 ### Directory Structure
 ```
@@ -174,6 +182,13 @@ When fixing any bug, warning, or issue (whether found during testing, code revie
 4. **Track**: Add entry to `sprint-status.yaml` with status `done`.
 
 **Never fix a bug without creating the ISS doc first.** This applies even for trivial fixes like test warnings.
+
+### Story Specification Guidelines
+
+When creating story files (via `/gds-create-story` or manually):
+
+- **Prefer function/class names over line numbers** when referencing code locations. Line numbers shift as earlier stories modify files; function names are stable. Write `in _broadcast_combat_state()` rather than `at combat.py:41-50`.
+- Line numbers may be included as supplementary context but should never be the **only** identifier for a code location.
 
 ### Design Workflow Phases (WDS)
 
