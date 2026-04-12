@@ -101,6 +101,7 @@ def client(test_session_factory, room_manager, connection_manager):
 
     with patch("server.net.handlers.movement.player_repo") as mock_player_repo, \
          patch("server.net.handlers.combat.player_repo") as mock_combat_player_repo, \
+         patch("server.combat.service.player_repo") as mock_service_player_repo, \
          patch("server.net.handlers.inventory.player_repo") as mock_inv_player_repo, \
          patch("server.app.player_repo") as mock_app_player_repo:
         mock_player_repo.update_position = AsyncMock()
@@ -109,6 +110,9 @@ def client(test_session_factory, room_manager, connection_manager):
         mock_app_player_repo.update_inventory = AsyncMock()
         mock_combat_player_repo.update_stats = AsyncMock()
         mock_combat_player_repo.update_inventory = AsyncMock()
+        mock_service_player_repo.update_stats = AsyncMock()
+        mock_service_player_repo.update_inventory = AsyncMock()
+        mock_service_player_repo.get_by_id = AsyncMock(return_value=None)
         mock_inv_player_repo.update_stats = AsyncMock()
         mock_inv_player_repo.update_inventory = AsyncMock()
         with TestClient(app) as c:

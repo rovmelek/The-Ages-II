@@ -141,7 +141,7 @@ def _make_combat_instance(npc_id="npc_1", room_key="test_room"):
 @pytest.mark.asyncio
 async def test_combat_victory_includes_loot():
     """Combat victory with an NPC that has a loot_table includes loot in combat_end."""
-    from server.net.handlers.combat import _check_combat_end
+    from server.combat.service import finalize_combat
     from server.player.entity import PlayerEntity
     from server.items.inventory import Inventory
 
@@ -185,8 +185,8 @@ async def test_combat_victory_includes_loot():
     mock_item.usable_outside_combat = True
     mock_item.description = "Heals 25 HP"
 
-    with patch("server.net.handlers.combat.player_repo") as mock_repo, \
-         patch("server.net.handlers.combat.items_repo") as mock_items_repo:
+    with patch("server.combat.service.player_repo") as mock_repo, \
+         patch("server.combat.service.items_repo") as mock_items_repo:
         mock_repo.get_by_id = AsyncMock(return_value=mock_player)
         mock_repo.update_stats = AsyncMock()
         mock_repo.update_inventory = AsyncMock()
@@ -194,28 +194,21 @@ async def test_combat_victory_includes_loot():
 
         game.kill_npc = AsyncMock()
 
-        await _check_combat_end(instance, game)
+        result = await finalize_combat(instance, game)
 
-    # Find the combat_end message
-    combat_end_msg = None
-    for call in ws.send_json.call_args_list:
-        msg = call.args[0]
-        if msg.get("type") == "combat_end":
-            combat_end_msg = msg
-            break
-
-    assert combat_end_msg is not None
-    assert combat_end_msg["victory"] is True
-    assert "loot" in combat_end_msg
-    assert len(combat_end_msg["loot"]) == 1
-    assert combat_end_msg["loot"][0]["item_key"] == "healing_potion"
-    assert combat_end_msg["loot"][0]["quantity"] == 1
+    # Check returned CombatEndResult for loot data
+    assert result is not None
+    assert result.end_result["victory"] is True
+    assert "player_1" in result.player_loot
+    assert len(result.player_loot["player_1"]) == 1
+    assert result.player_loot["player_1"][0]["item_key"] == "healing_potion"
+    assert result.player_loot["player_1"][0]["quantity"] == 1
 
 
 @pytest.mark.asyncio
 async def test_combat_victory_no_loot_table():
     """Combat victory with NPC that has empty loot_table produces no loot."""
-    from server.net.handlers.combat import _check_combat_end
+    from server.combat.service import finalize_combat
     from server.player.entity import PlayerEntity
     from server.items.inventory import Inventory
 
@@ -242,29 +235,23 @@ async def test_combat_victory_no_loot_table():
     game.combat_manager._player_to_instance["player_1"] = "combat_1"
     game.combat_manager._instances["combat_1"] = instance
 
-    with patch("server.net.handlers.combat.player_repo") as mock_repo, \
-         patch("server.net.handlers.combat.items_repo"):
+    with patch("server.combat.service.player_repo") as mock_repo, \
+         patch("server.combat.service.items_repo"):
         mock_repo.update_stats = AsyncMock()
 
         game.kill_npc = AsyncMock()
 
-        await _check_combat_end(instance, game)
+        result = await finalize_combat(instance, game)
 
-    combat_end_msg = None
-    for call in ws.send_json.call_args_list:
-        msg = call.args[0]
-        if msg.get("type") == "combat_end":
-            combat_end_msg = msg
-            break
-
-    assert combat_end_msg is not None
-    assert "loot" not in combat_end_msg
+    # No loot for player_1 when NPC has no loot table
+    assert result is not None
+    assert "player_1" not in result.player_loot
 
 
 @pytest.mark.asyncio
 async def test_combat_victory_loot_updates_inventory():
     """Loot is added to player's runtime inventory on victory."""
-    from server.net.handlers.combat import _check_combat_end
+    from server.combat.service import finalize_combat
     from server.player.entity import PlayerEntity
     from server.items.inventory import Inventory
 
@@ -305,8 +292,8 @@ async def test_combat_victory_loot_updates_inventory():
     mock_item.usable_outside_combat = False
     mock_item.description = "A shard of iron"
 
-    with patch("server.net.handlers.combat.player_repo") as mock_repo, \
-         patch("server.net.handlers.combat.items_repo") as mock_items_repo:
+    with patch("server.combat.service.player_repo") as mock_repo, \
+         patch("server.combat.service.items_repo") as mock_items_repo:
         mock_repo.get_by_id = AsyncMock(return_value=mock_player)
         mock_repo.update_stats = AsyncMock()
         mock_repo.update_inventory = AsyncMock()
@@ -314,7 +301,7 @@ async def test_combat_victory_loot_updates_inventory():
 
         game.kill_npc = AsyncMock()
 
-        await _check_combat_end(instance, game)
+        await finalize_combat(instance, game)
 
     # Runtime inventory should have the loot
     assert inventory.has_item("iron_shard")
@@ -328,7 +315,7 @@ async def test_combat_victory_loot_updates_inventory():
 @pytest.mark.asyncio
 async def test_combat_victory_multi_player_same_loot():
     """Multiple players in combat each receive the same loot."""
-    from server.net.handlers.combat import _check_combat_end
+    from server.combat.service import finalize_combat
     from server.player.entity import PlayerEntity
     from server.items.inventory import Inventory
 
@@ -389,8 +376,8 @@ async def test_combat_victory_multi_player_same_loot():
             return mock_player1
         return mock_player2
 
-    with patch("server.net.handlers.combat.player_repo") as mock_repo, \
-         patch("server.net.handlers.combat.items_repo") as mock_items_repo:
+    with patch("server.combat.service.player_repo") as mock_repo, \
+         patch("server.combat.service.items_repo") as mock_items_repo:
         mock_repo.get_by_id = AsyncMock(side_effect=mock_get_by_id)
         mock_repo.update_stats = AsyncMock()
         mock_repo.update_inventory = AsyncMock()
@@ -398,7 +385,7 @@ async def test_combat_victory_multi_player_same_loot():
 
         game.kill_npc = AsyncMock()
 
-        await _check_combat_end(instance, game)
+        await finalize_combat(instance, game)
 
     # Both players should have loot in runtime inventory
     assert inv1.has_item("healing_potion")
@@ -410,7 +397,7 @@ async def test_combat_victory_multi_player_same_loot():
 @pytest.mark.asyncio
 async def test_combat_victory_disconnected_participant_skipped():
     """A participant not in player_manager is silently skipped for loot."""
-    from server.net.handlers.combat import _check_combat_end
+    from server.combat.service import finalize_combat
     from server.player.entity import PlayerEntity
     from server.items.inventory import Inventory
 
@@ -457,8 +444,8 @@ async def test_combat_victory_disconnected_participant_skipped():
     mock_item.usable_outside_combat = True
     mock_item.description = "Heals 25 HP"
 
-    with patch("server.net.handlers.combat.player_repo") as mock_repo, \
-         patch("server.net.handlers.combat.items_repo") as mock_items_repo:
+    with patch("server.combat.service.player_repo") as mock_repo, \
+         patch("server.combat.service.items_repo") as mock_items_repo:
         mock_repo.get_by_id = AsyncMock(return_value=mock_player)
         mock_repo.update_stats = AsyncMock()
         mock_repo.update_inventory = AsyncMock()
@@ -467,7 +454,7 @@ async def test_combat_victory_disconnected_participant_skipped():
         game.kill_npc = AsyncMock()
 
         # Should not raise — player_2 is silently skipped
-        await _check_combat_end(instance, game)
+        await finalize_combat(instance, game)
 
     # player_1 got loot
     assert inv1.has_item("healing_potion")
@@ -476,7 +463,7 @@ async def test_combat_victory_disconnected_participant_skipped():
 @pytest.mark.asyncio
 async def test_combat_defeat_no_loot():
     """Combat defeat does not generate loot."""
-    from server.net.handlers.combat import _check_combat_end
+    from server.combat.service import finalize_combat
     from server.player.entity import PlayerEntity
     from server.items.inventory import Inventory
 
@@ -505,22 +492,16 @@ async def test_combat_defeat_no_loot():
     game.combat_manager._player_to_instance["player_1"] = "combat_1"
     game.combat_manager._instances["combat_1"] = instance
 
-    with patch("server.net.handlers.combat.player_repo") as mock_repo, \
-         patch("server.net.handlers.combat.items_repo"):
+    with patch("server.combat.service.player_repo") as mock_repo, \
+         patch("server.combat.service.items_repo"):
         mock_repo.update_stats = AsyncMock()
 
         game.respawn_player = AsyncMock()
 
-        await _check_combat_end(instance, game)
+        result = await finalize_combat(instance, game)
 
-    combat_end_msg = None
-    for call in ws.send_json.call_args_list:
-        msg = call.args[0]
-        if msg.get("type") == "combat_end":
-            combat_end_msg = msg
-            break
-
-    assert combat_end_msg is not None
-    assert combat_end_msg["victory"] is False
-    assert "loot" not in combat_end_msg
+    # Check returned CombatEndResult — defeat means no loot
+    assert result is not None
+    assert result.end_result["victory"] is False
+    assert result.player_loot == {}
     assert not inventory.has_item("healing_potion")

@@ -562,11 +562,11 @@ class TestCheckCombatEndParty:
         room.get_npc.return_value = npc
         game.room_manager.get_room.return_value = room
 
-        from server.net.handlers.combat import _check_combat_end
-        with patch("server.net.handlers.combat.player_repo") as mock_repo, \
-             patch("server.net.handlers.combat.grant_xp", new_callable=AsyncMock) as mock_grant:
+        from server.combat.service import finalize_combat
+        with patch("server.combat.service.player_repo") as mock_repo, \
+             patch("server.combat.service.grant_xp", new_callable=AsyncMock) as mock_grant:
             mock_repo.update_stats = AsyncMock()
-            await _check_combat_end(instance, game)
+            await finalize_combat(instance, game)
 
         # grant_xp should be called for both alive players
         assert mock_grant.call_count == 2
@@ -612,11 +612,11 @@ class TestCheckCombatEndParty:
         room.get_npc.return_value = npc
         game.room_manager.get_room.return_value = room
 
-        from server.net.handlers.combat import _check_combat_end
-        with patch("server.net.handlers.combat.player_repo") as mock_repo, \
-             patch("server.net.handlers.combat.grant_xp", new_callable=AsyncMock) as mock_grant:
+        from server.combat.service import finalize_combat
+        with patch("server.combat.service.player_repo") as mock_repo, \
+             patch("server.combat.service.grant_xp", new_callable=AsyncMock) as mock_grant:
             mock_repo.update_stats = AsyncMock()
-            await _check_combat_end(instance, game)
+            await finalize_combat(instance, game)
 
         # Only player_1 (alive) gets XP
         assert mock_grant.call_count == 1
@@ -647,11 +647,11 @@ class TestCheckCombatEndParty:
         room.get_npc.return_value = npc
         game.room_manager.get_room.return_value = room
 
-        from server.net.handlers.combat import _check_combat_end
-        with patch("server.net.handlers.combat.player_repo") as mock_repo, \
-             patch("server.net.handlers.combat.grant_xp", new_callable=AsyncMock) as mock_grant:
+        from server.combat.service import finalize_combat
+        with patch("server.combat.service.player_repo") as mock_repo, \
+             patch("server.combat.service.grant_xp", new_callable=AsyncMock) as mock_grant:
             mock_repo.update_stats = AsyncMock()
-            await _check_combat_end(instance, game)
+            await finalize_combat(instance, game)
 
         # XP should be base (no bonus)
         from server.core.xp import calculate_combat_xp

@@ -280,7 +280,7 @@ class TestCombatStatsSync:
             instance.participant_stats["player_1"]["hp"] = 60
 
             # Call sync — mock the session factory on game
-            from server.net.handlers.combat import _sync_combat_stats
+            from server.combat.service import sync_combat_stats
             mock_session = AsyncMock()
             mock_ctx = MagicMock()
             mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
@@ -290,7 +290,7 @@ class TestCombatStatsSync:
             game.transaction = mock_factory
             try:
                 asyncio.get_event_loop().run_until_complete(
-                    _sync_combat_stats(instance, game)
+                    sync_combat_stats(instance, game)
                 )
             finally:
                 game.session_factory = old_sf
