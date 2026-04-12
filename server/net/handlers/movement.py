@@ -217,6 +217,11 @@ async def _handle_mob_encounter(
             npc_id=npc_id, room_key=room_key, mob_hit_dice=mob_hit_dice,
         )
 
+        # Register turn timeout callback and start the first timer
+        from server.net.handlers.combat import make_turn_timeout_callback
+        instance.set_turn_timeout_callback(make_turn_timeout_callback(game))
+        instance.start_turn_timer()
+
         # Mark all participants as in combat and send combat_start
         state = instance.get_state()
         for pid in all_player_ids:

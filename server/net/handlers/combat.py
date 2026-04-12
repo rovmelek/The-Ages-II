@@ -1,6 +1,7 @@
 """Combat action handlers for WebSocket clients."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,25 @@ if TYPE_CHECKING:
     from server.app import Game
 
 logger = logging.getLogger(__name__)
+
+
+def make_turn_timeout_callback(game: Game):
+    """Create a turn timeout callback bound to a specific Game instance."""
+    def _on_turn_timeout(entity_id: str, instance) -> None:
+        """Sync callback for loop.call_later — creates async task."""
+        loop = asyncio.get_running_loop()
+        loop.create_task(_handle_turn_timeout(entity_id, instance, game))
+    return _on_turn_timeout
+
+
+async def _handle_turn_timeout(entity_id: str, instance, game: Game) -> None:
+    """Execute auto-pass and broadcast result when a turn times out."""
+    try:
+        result = await instance.pass_turn(entity_id)
+    except ValueError:
+        return  # Not their turn anymore (race with reconnect/action)
+    await _broadcast_combat_state(instance, result, game)
+    await _check_combat_end(instance, game)
 
 
 async def _broadcast_combat_state(instance, result: dict, game: Game) -> None:

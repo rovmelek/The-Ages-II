@@ -1,9 +1,11 @@
 """CombatInstance — manages a single turn-based combat encounter."""
 from __future__ import annotations
 
+import asyncio
 import random
+import time
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from server.combat.cards.card_def import CardDef
 from server.combat.cards.card_hand import CardHand
@@ -42,6 +44,9 @@ class CombatInstance:
         self._turn_index: int = 0
         self._actions_this_cycle: int = 0
         self._effect_registry = effect_registry
+        self._turn_timeout_handle: asyncio.TimerHandle | None = None
+        self._turn_timeout_callback: Callable | None = None
+        self._turn_timeout_at: float | None = None
 
     def add_participant(
         self, entity_id: str, player_stats: dict, card_defs: list[CardDef]
@@ -58,8 +63,42 @@ class CombatInstance:
         self.hands[entity_id] = hand
         return hand
 
+    def set_turn_timeout_callback(self, callback: Callable) -> None:
+        """Set the callback invoked when a turn times out. Called once by Game setup."""
+        self._turn_timeout_callback = callback
+
+    def start_turn_timer(self) -> None:
+        """Activate turn timeout for the current turn. Call AFTER set_turn_timeout_callback."""
+        self._schedule_turn_timeout()
+
+    def _schedule_turn_timeout(self) -> None:
+        """Schedule auto-pass for the current turn."""
+        self._cancel_turn_timeout()
+        if not self.participants or self._turn_timeout_callback is None:
+            return
+        current = self.get_current_turn()
+        if current is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return  # No event loop (e.g., tests without async context)
+        timeout = settings.COMBAT_TURN_TIMEOUT_SECONDS
+        self._turn_timeout_at = time.time() + timeout
+        self._turn_timeout_handle = loop.call_later(
+            timeout, self._turn_timeout_callback, current, self,
+        )
+
+    def _cancel_turn_timeout(self) -> None:
+        """Cancel any pending turn timeout."""
+        if self._turn_timeout_handle is not None:
+            self._turn_timeout_handle.cancel()
+            self._turn_timeout_handle = None
+        self._turn_timeout_at = None
+
     def remove_participant(self, entity_id: str) -> None:
         """Remove a player from combat (e.g. flee)."""
+        self._cancel_turn_timeout()
         if entity_id in self.participants:
             idx = self.participants.index(entity_id)
             self.participants.remove(entity_id)
@@ -129,9 +168,12 @@ class CombatInstance:
 
         Returns dict with card info, effect results, and any mob attack from cycle end.
         """
+        self._cancel_turn_timeout()
         if entity_id != self.get_current_turn():
+            self._schedule_turn_timeout()
             raise ValueError("Not your turn")
         if self.participant_stats[entity_id]["hp"] <= 0:
+            self._schedule_turn_timeout()
             raise ValueError("You are dead")
 
         # Process DoT effects at start of turn
@@ -151,6 +193,7 @@ class CombatInstance:
         # Check energy cost before playing
         card_cost = hand.get_card_cost(card_key)
         if stats.get("energy", 0) < card_cost:
+            self._schedule_turn_timeout()
             raise ValueError("Not enough energy")
 
         played = hand.play_card(card_key)
@@ -181,9 +224,12 @@ class CombatInstance:
 
         Returns dict with item info, effect results, and any mob attack from cycle end.
         """
+        self._cancel_turn_timeout()
         if entity_id != self.get_current_turn():
+            self._schedule_turn_timeout()
             raise ValueError("Not your turn")
         if self.participant_stats[entity_id]["hp"] <= 0:
+            self._schedule_turn_timeout()
             raise ValueError("You are dead")
 
         # Process DoT effects at start of turn
@@ -227,9 +273,12 @@ class CombatInstance:
 
     async def pass_turn(self, entity_id: str) -> dict:
         """Player passes. Mob attacks the passer, then advance turn."""
+        self._cancel_turn_timeout()
         if entity_id != self.get_current_turn():
+            self._schedule_turn_timeout()
             raise ValueError("Not your turn")
         if self.participant_stats[entity_id]["hp"] <= 0:
+            self._schedule_turn_timeout()
             raise ValueError("You are dead")
 
         # Process DoT effects at start of turn
@@ -339,6 +388,10 @@ class CombatInstance:
                 break
             self._turn_index = (self._turn_index + 1) % max(1, len(self.participants))
 
+        # Schedule timeout for the new current turn
+        if not self.is_finished:
+            self._schedule_turn_timeout()
+
         return mob_attack
 
     def _mob_attack_target(self, target_id: str) -> dict:
@@ -395,7 +448,7 @@ class CombatInstance:
         for eid, hand in self.hands.items():
             hands[eid] = hand.get_hand()
 
-        return {
+        state = {
             "instance_id": self.instance_id,
             "current_turn": self.get_current_turn(),
             "participants": participants,
@@ -406,6 +459,9 @@ class CombatInstance:
             },
             "hands": hands,
         }
+        if self._turn_timeout_at is not None:
+            state["turn_timeout_at"] = self._turn_timeout_at
+        return state
 
     @property
     def is_finished(self) -> bool:

@@ -264,7 +264,7 @@ development_status:
   16-4-extract-combat-service-layer: done
   16-5-decompose-handle-login: done
   16-6-trademanager-constructor-injection: done
-  16-10a-combat-turn-timeout-enforcement: backlog
+  16-10a-combat-turn-timeout-enforcement: done
 
   # Sprint 3a — Client polish (lightweight, independent)
   16-7-request-response-correlation: backlog
