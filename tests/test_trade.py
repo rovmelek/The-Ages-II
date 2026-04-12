@@ -263,10 +263,9 @@ class TestTradeManagerCancel:
 class TestTradeManagerTimeout:
     @pytest.mark.asyncio
     async def test_timeout_notifies_players(self):
-        tm = TradeManager()
         cm = AsyncMock()
         cm.send_to_player = AsyncMock()
-        tm.set_connection_manager(cm)
+        tm = TradeManager(connection_manager=cm)
         trade = tm.initiate_trade("player_1", "player_2")
         if trade.timeout_handle:
             trade.timeout_handle.cancel()
@@ -281,10 +280,9 @@ class TestTradeManagerTimeout:
 
     @pytest.mark.asyncio
     async def test_timeout_cleans_up_trade(self):
-        tm = TradeManager()
         cm = AsyncMock()
         cm.send_to_player = AsyncMock()
-        tm.set_connection_manager(cm)
+        tm = TradeManager(connection_manager=cm)
         trade = tm.initiate_trade("player_1", "player_2")
         if trade.timeout_handle:
             trade.timeout_handle.cancel()

@@ -263,7 +263,7 @@ development_status:
   16-4a-refactor-grant-xp: done
   16-4-extract-combat-service-layer: done
   16-5-decompose-handle-login: done
-  16-6-trademanager-constructor-injection: backlog
+  16-6-trademanager-constructor-injection: done
   16-10a-combat-turn-timeout-enforcement: backlog
 
   # Sprint 3a — Client polish (lightweight, independent)

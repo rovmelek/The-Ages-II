@@ -14,20 +14,16 @@ class TradeManager:
 
     Timeout notifications are delivered by scheduling an async coroutine via
     ``loop.create_task`` from the sync ``call_later`` callback.  The manager
-    stores a reference to the ``ConnectionManager`` (set via ``set_connection_manager``)
+    stores a reference to the ``ConnectionManager`` (injected via constructor)
     so the callback can send messages.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, connection_manager=None) -> None:
         self._trades: dict[str, Trade] = {}  # trade_id -> Trade
         self._player_trade: dict[str, str] = {}  # entity_id -> trade_id
         self._cooldowns: dict[str, float] = {}  # entity_id -> cooldown_end timestamp
         self._trade_locks: dict[str, asyncio.Lock] = {}  # trade_id -> Lock
-        self._connection_manager = None  # set by Game after init
-
-    def set_connection_manager(self, cm) -> None:  # noqa: ANN001
-        """Inject ConnectionManager so timeout callbacks can notify players."""
-        self._connection_manager = cm
+        self._connection_manager = connection_manager
 
     def get_trade_lock(self, trade_id: str) -> asyncio.Lock:
         """Return the lock for a trade, creating it lazily if needed."""
