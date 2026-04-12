@@ -127,8 +127,6 @@ class TestExplorationXP:
 
     async def test_visited_rooms_persisted_on_cleanup(self):
         """visited_rooms saved to DB during player cleanup."""
-        from server.net.handlers.auth import _cleanup_player
-
         entity = _make_entity()
         game = MagicMock()
         factory, mock_session = _mock_transaction()
@@ -148,13 +146,13 @@ class TestExplorationXP:
         game.connection_manager.broadcast_to_room = AsyncMock()
         game.connection_manager.disconnect = MagicMock()
 
-        with patch("server.net.handlers.auth.player_repo") as mock_repo:
+        with patch("server.player.manager.player_repo") as mock_repo:
             mock_repo.update_position = AsyncMock()
             mock_repo.update_stats = AsyncMock()
             mock_repo.update_inventory = AsyncMock()
             mock_repo.update_visited_rooms = AsyncMock()
 
-            await _cleanup_player(entity.id, game)
+            await game.player_manager.cleanup_session(entity.id, game)
 
             mock_repo.update_visited_rooms.assert_called_once()
             call_args = mock_repo.update_visited_rooms.call_args[0]

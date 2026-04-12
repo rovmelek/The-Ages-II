@@ -182,7 +182,7 @@ async def test_game_shutdown_saves_player_state():
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
     game.transaction = MagicMock(return_value=mock_ctx)
 
-    with patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
+    with patch("server.player.manager.player_repo", new_callable=AsyncMock) as mock_repo:
         await game.shutdown()
 
         # Position saved
@@ -271,7 +271,7 @@ async def test_handle_disconnect_saves_position():
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
     game.transaction = MagicMock(return_value=mock_ctx)
 
-    with patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
+    with patch("server.player.manager.player_repo", new_callable=AsyncMock) as mock_repo:
         await game.handle_disconnect(mock_ws)
 
         mock_repo.update_position.assert_called_once_with(

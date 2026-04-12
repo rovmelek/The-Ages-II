@@ -319,12 +319,12 @@ class TestHandleDisconnect:
 
 
 # ---------------------------------------------------------------------------
-# Integration test: party cleanup in _cleanup_player
+# Integration test: party cleanup in PlayerManager.cleanup_session
 # ---------------------------------------------------------------------------
 
 
 class TestCleanupPlayerPartyIntegration:
-    """Party cleanup is called during _cleanup_player and notifies members."""
+    """Party cleanup is called during cleanup_session and notifies members."""
 
     @pytest.fixture
     def game_with_party(self):
@@ -384,12 +384,10 @@ class TestCleanupPlayerPartyIntegration:
 
     @pytest.mark.asyncio
     async def test_cleanup_notifies_remaining_members(self, game_with_party):
-        from server.net.handlers.auth import _cleanup_player
-
         game = game_with_party
 
         # Disconnect player_2 (non-leader)
-        await _cleanup_player("player_2", game)
+        await game.player_manager.cleanup_session("player_2", game)
 
         # player_1 should receive party_update
         calls = game.connection_manager.send_to_player.call_args_list
@@ -406,12 +404,10 @@ class TestCleanupPlayerPartyIntegration:
 
     @pytest.mark.asyncio
     async def test_cleanup_leader_disconnect_notifies_with_new_leader(self, game_with_party):
-        from server.net.handlers.auth import _cleanup_player
-
         game = game_with_party
 
         # Disconnect player_1 (leader)
-        await _cleanup_player("player_1", game)
+        await game.player_manager.cleanup_session("player_1", game)
 
         # player_2 should receive party_update with new_leader
         calls = game.connection_manager.send_to_player.call_args_list
@@ -426,15 +422,13 @@ class TestCleanupPlayerPartyIntegration:
 
     @pytest.mark.asyncio
     async def test_cleanup_last_member_no_notification(self, game_with_party):
-        from server.net.handlers.auth import _cleanup_player
-
         game = game_with_party
 
         # Remove player_2 first
         game.party_manager.remove_member("player_2")
 
         # Now disconnect player_1 (last member)
-        await _cleanup_player("player_1", game)
+        await game.player_manager.cleanup_session("player_1", game)
 
         # No party_update should be sent (party dissolved, no members to notify)
         calls = game.connection_manager.send_to_player.call_args_list

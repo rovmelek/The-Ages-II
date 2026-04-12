@@ -79,7 +79,7 @@ async def test_logout_saves_state_and_removes_player():
     game, room = _make_game()
     entity, ws = _add_player(game, room)
 
-    with patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
+    with patch("server.player.manager.player_repo", new_callable=AsyncMock) as mock_repo:
         await handle_logout(ws, {}, game=game)
 
         # State saved
@@ -119,7 +119,7 @@ async def test_logout_in_combat_removes_from_combat_and_syncs_stats():
     game.combat_manager._player_to_instance["player_1"] = instance.instance_id
     entity.in_combat = True
 
-    with patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock):
+    with patch("server.player.manager.player_repo", new_callable=AsyncMock):
         await handle_logout(ws, {}, game=game)
 
     # Combat stats synced to entity before save
@@ -152,7 +152,7 @@ async def test_logout_dead_in_combat_restores_hp():
     game.combat_manager._player_to_instance["player_1"] = instance.instance_id
     entity.in_combat = True
 
-    with patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
+    with patch("server.player.manager.player_repo", new_callable=AsyncMock) as mock_repo:
         await handle_logout(ws, {}, game=game)
 
         # HP restored to max_hp (not saved as 0)
@@ -194,7 +194,7 @@ async def test_logout_last_player_releases_npc():
     game.combat_manager._player_to_instance["player_1"] = instance.instance_id
     entity.in_combat = True
 
-    with patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock):
+    with patch("server.player.manager.player_repo", new_callable=AsyncMock):
         await handle_logout(ws, {}, game=game)
 
     # NPC released from combat
@@ -229,7 +229,7 @@ async def test_logout_remaining_participants_receive_combat_update():
     entity1.in_combat = True
     entity2.in_combat = True
 
-    with patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock):
+    with patch("server.player.manager.player_repo", new_callable=AsyncMock):
         await handle_logout(ws1, {}, game=game)
 
     # Player 2 received combat_update
@@ -273,7 +273,7 @@ async def test_double_logout_returns_error():
     game, room = _make_game()
     _, ws = _add_player(game, room)
 
-    with patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock):
+    with patch("server.player.manager.player_repo", new_callable=AsyncMock):
         await handle_logout(ws, {}, game=game)
         # Reset mock to check second call
         ws.send_json.reset_mock()
@@ -296,7 +296,8 @@ async def test_relogin_same_socket_after_logout():
     game, room = _make_game()
     entity, ws = _add_player(game, room)
 
-    with patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
+    with patch("server.player.manager.player_repo", new_callable=AsyncMock), \
+         patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
         # Logout first
         await handle_logout(ws, {}, game=game)
 
@@ -343,7 +344,8 @@ async def test_relogin_same_socket_without_logout():
     game, room = _make_game()
     entity, ws = _add_player(game, room)
 
-    with patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
+    with patch("server.player.manager.player_repo", new_callable=AsyncMock), \
+         patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
         mock_player = AsyncMock()
         mock_player.id = 1
         mock_player.username = "hero"
@@ -380,7 +382,7 @@ async def test_logout_broadcasts_entity_left_to_others():
     _, ws1 = _add_player(game, room, "player_1", "alice", 1, 1, 1)
     _, ws2 = _add_player(game, room, "player_2", "bob", 2, 2, 2)
 
-    with patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock):
+    with patch("server.player.manager.player_repo", new_callable=AsyncMock):
         await handle_logout(ws1, {}, game=game)
 
     # Player 2 should receive entity_left for player_1
@@ -409,7 +411,7 @@ async def test_logout_saves_inventory():
     inventory = Inventory()
     game.player_manager.get_session("player_1").inventory = inventory
 
-    with patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
+    with patch("server.player.manager.player_repo", new_callable=AsyncMock) as mock_repo:
         await handle_logout(ws, {}, game=game)
 
         mock_repo.update_inventory.assert_called_once()

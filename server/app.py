@@ -111,8 +111,6 @@ class Game:
 
     async def shutdown(self) -> None:
         """Gracefully shut down: save all player states, notify, and disconnect."""
-        from server.net.handlers.auth import _cleanup_player
-
         await self.scheduler.stop()
 
         player_count = 0
@@ -127,7 +125,7 @@ class Game:
                 except Exception:
                     pass
 
-            await _cleanup_player(entity_id, self)
+            await self.player_manager.cleanup_session(entity_id, self)
 
             # Close WebSocket after cleanup
             if ws:
@@ -356,13 +354,11 @@ class Game:
 
     async def handle_disconnect(self, websocket: WebSocket) -> None:
         """Handle a player disconnecting: save state, clean up, notify room."""
-        from server.net.handlers.auth import _cleanup_player
-
         entity_id = self.connection_manager.get_entity_id(websocket)
         if entity_id is None:
             return  # Unauthenticated connection, nothing to clean up
 
-        await _cleanup_player(entity_id, self)
+        await self.player_manager.cleanup_session(entity_id, self)
 
 
 # ---------------------------------------------------------------------------

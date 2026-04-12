@@ -381,12 +381,11 @@ class TestCombatEndConditions:
 # ---------------------------------------------------------------------------
 
 class TestDisconnectCleanup:
-    """_cleanup_player handles multi-player combat disconnect."""
+    """PlayerManager.cleanup_session handles multi-player combat disconnect."""
 
     @pytest.mark.asyncio
     async def test_disconnect_removes_from_combat_notifies_remaining(self):
         """Disconnecting player is removed; remaining participants notified."""
-        from server.net.handlers.auth import _cleanup_player
 
         game = MagicMock()
         game.transaction = MagicMock(return_value=MagicMock(
@@ -441,7 +440,7 @@ class TestDisconnectCleanup:
         with patch.object(player_repo, "update_stats", new_callable=AsyncMock):
             with patch.object(player_repo, "update_position", new_callable=AsyncMock):
                 with patch.object(player_repo, "update_inventory", new_callable=AsyncMock):
-                    await _cleanup_player("player_1", game)
+                    await game.player_manager.cleanup_session("player_1", game)
 
         # player_1 should be removed from the instance
         assert "player_1" not in instance.participants

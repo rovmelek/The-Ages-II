@@ -84,7 +84,7 @@ def _in_shared_combat(game: Game, entity_a: str, entity_b: str) -> bool:
 def cleanup_pending_invites(entity_id: str) -> None:
     """Clean up all pending invites involving this entity (as inviter or target).
 
-    Called from _cleanup_player on disconnect.
+    Called from PlayerManager.cleanup_session() on disconnect.
     """
     # As target
     _cancel_invite(entity_id)
