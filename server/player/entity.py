@@ -13,3 +13,4 @@ class PlayerEntity:
     player_db_id: int  # DB primary key
     stats: dict = field(default_factory=dict)
     in_combat: bool = False
+    connected: bool = True

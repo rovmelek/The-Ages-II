@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-21
-last_updated: 2026-04-12 (Story 16.8 done)
+last_updated: 2026-04-12 (Story 16.9 ready-for-dev)
 project: The-Ages-II
 project_key: NOKEY
 tracking_system: file-system
@@ -271,7 +271,7 @@ development_status:
   16-8-heartbeat-connection-health: done
 
   # Sprint 3b — Resilience (sequential chain)
-  16-9-session-tokens-for-reconnection: backlog
+  16-9-session-tokens-for-reconnection: done
   16-10-disconnected-player-grace-period: backlog
   16-11-message-acknowledgment-ids: backlog
 

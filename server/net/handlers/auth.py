@@ -143,6 +143,7 @@ async def handle_logout(
     entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle the 'logout' action: save state, clean up, keep WebSocket open."""
+    game.token_store.revoke_for_player(player_info.db_id)
     game._cancel_heartbeat(entity_id)
     await game.player_manager.cleanup_session(entity_id, game)
 
@@ -274,7 +275,8 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
             entity=entity, room_key=room_key, db_id=player.id,
             inventory=inventory, visited_rooms=set(visited_rooms), pending_level_ups=0,
         ))
-        await websocket.send_json(with_request_id(_build_login_response(player.id, entity_id, player.username, stats), data))
+        token = game.token_store.issue(player.id)
+        await websocket.send_json(with_request_id(_build_login_response(player.id, entity_id, player.username, stats, session_token=token), data))
         await websocket.send_json({"type": "room_state", **room.get_state()})
         await game.connection_manager.broadcast_to_room(
             room_key,
@@ -291,4 +293,165 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
                 player_session.pending_level_ups = pending
             await send_level_up_available(entity_id, entity, game)
         # Start heartbeat after successful login (AC #1, #11)
+        game._start_heartbeat(entity_id)
+
+
+async def handle_reconnect(websocket: WebSocket, data: dict, *, game: Game) -> None:
+    """Handle the 'reconnect' action: validate token, restore session."""
+    token = data.get("session_token", "")
+    if not token:
+        await websocket.send_json(
+            with_request_id({"type": "error", "detail": "Missing session_token"}, data)
+        )
+        return
+
+    db_id = game.token_store.validate(token)
+    if db_id is None:
+        await websocket.send_json(
+            with_request_id({"type": "error", "detail": "Invalid or expired token"}, data)
+        )
+        return
+
+    # Consume old token, issue new one
+    game.token_store.revoke(token)
+    entity_id = f"player_{db_id}"
+    new_token = game.token_store.issue(db_id)
+
+    # Security: if WebSocket already has a different player logged in, clean up first
+    existing_entity = game.connection_manager.get_entity_id(websocket)
+    if existing_entity is not None and existing_entity != entity_id:
+        game._cancel_heartbeat(existing_entity)
+        await game.player_manager.cleanup_session(existing_entity, game)
+
+    # Check for Case 1: grace period resume (disconnected session still in memory)
+    existing_session = game.player_manager.get_session(entity_id)
+
+    if existing_session and existing_session.disconnected_at is not None:
+        # Case 1: Cancel deferred cleanup, restore connection
+        handle = game._cleanup_handles.pop(entity_id, None)
+        if handle is not None:
+            handle.cancel()
+
+        # Re-check session after cancelling (race condition: timer may have fired)
+        existing_session = game.player_manager.get_session(entity_id)
+        if existing_session is None:
+            # Session was cleaned up by timer — fall through to Case 2
+            pass
+        else:
+            existing_session.disconnected_at = None
+            existing_session.entity.connected = True
+            game.connection_manager.connect(
+                entity_id, websocket, existing_session.room_key,
+                name=existing_session.entity.name,
+            )
+            room = game.room_manager.get_room(existing_session.room_key)
+            await websocket.send_json(
+                with_request_id(
+                    _build_login_response(
+                        existing_session.db_id, entity_id,
+                        existing_session.entity.name,
+                        existing_session.entity.stats,
+                        session_token=new_token,
+                    ),
+                    data,
+                )
+            )
+            if room:
+                await websocket.send_json({"type": "room_state", **room.get_state()})
+            # Broadcast entity_entered to room
+            await game.connection_manager.broadcast_to_room(
+                existing_session.room_key,
+                {"type": "entity_entered", "entity": {
+                    "id": entity_id,
+                    "name": existing_session.entity.name,
+                    "x": existing_session.entity.x,
+                    "y": existing_session.entity.y,
+                    "level": existing_session.entity.stats.get("level", 1),
+                }},
+                exclude=entity_id,
+            )
+            # Send combat state if in combat
+            combat_instance = game.combat_manager.get_player_instance(entity_id)
+            if combat_instance:
+                await websocket.send_json(
+                    {"type": "combat_update", **combat_instance.get_state()}
+                )
+            pending = get_pending_level_ups(existing_session.entity.stats)
+            if pending > 0:
+                existing_session.pending_level_ups = pending
+                await send_level_up_available(entity_id, existing_session.entity, game)
+            game._start_heartbeat(entity_id)
+            return
+
+    # Case 2: Full DB restore (no session exists or disconnected_at is None)
+    async with game.transaction() as session:
+        player = await player_repo.get_by_id(session, db_id)
+        if player is None:
+            await websocket.send_json(
+                with_request_id({"type": "error", "detail": "Player not found"}, data)
+            )
+            return
+
+        # Handle existing active session for this account (kick old)
+        old_ws = game.connection_manager.get_websocket(entity_id)
+        if old_ws is not None:
+            if old_ws is websocket:
+                await game.player_manager.cleanup_session(entity_id, game)
+            else:
+                await _kick_old_session(entity_id, old_ws, game)
+
+        stats = await _resolve_stats(player, session)
+        entity = PlayerEntity(
+            id=entity_id, name=player.username,
+            x=player.position_x, y=player.position_y,
+            player_db_id=player.id, stats=stats,
+        )
+        room_key = player.current_room_id or settings.DEFAULT_SPAWN_ROOM
+        try:
+            room_key, room = await _resolve_room_and_place(
+                entity, player, room_key, game, session
+            )
+        except ValueError:
+            await websocket.send_json(
+                with_request_id({"type": "error", "detail": "Room not found"}, data)
+            )
+            return
+        room.add_entity(entity)
+        game.connection_manager.connect(
+            entity_id, websocket, room_key, name=player.username
+        )
+        inventory = await _hydrate_inventory(player, session)
+        visited_rooms = player.visited_rooms or []
+        if room_key not in visited_rooms:
+            visited_rooms.append(room_key)
+        game.player_manager.set_session(entity_id, PlayerSession(
+            entity=entity, room_key=room_key, db_id=player.id,
+            inventory=inventory, visited_rooms=set(visited_rooms),
+            pending_level_ups=0,
+        ))
+        await websocket.send_json(
+            with_request_id(
+                _build_login_response(
+                    player.id, entity_id, player.username, stats,
+                    session_token=new_token,
+                ),
+                data,
+            )
+        )
+        await websocket.send_json({"type": "room_state", **room.get_state()})
+        await game.connection_manager.broadcast_to_room(
+            room_key,
+            {"type": "entity_entered", "entity": {
+                "id": entity.id, "name": entity.name,
+                "x": entity.x, "y": entity.y,
+                "level": stats.get("level", 1),
+            }},
+            exclude=entity_id,
+        )
+        pending = get_pending_level_ups(stats)
+        if pending > 0:
+            player_session = game.player_manager.get_session(entity_id)
+            if player_session:
+                player_session.pending_level_ups = pending
+            await send_level_up_available(entity_id, entity, game)
         game._start_heartbeat(entity_id)

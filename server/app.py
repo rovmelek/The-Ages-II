@@ -27,6 +27,7 @@ from server.room.manager import RoomManager
 from server.room.provider import JsonRoomProvider
 from server.party.manager import PartyManager
 from server.player.manager import PlayerManager
+from server.player.tokens import TokenStore
 from server.trade.manager import TradeManager
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,8 @@ class Game:
         self.npc_templates: dict[str, dict] = {}
         self._heartbeat_tasks: dict[str, asyncio.Task] = {}
         self._pong_events: dict[str, asyncio.Event] = {}
+        self.token_store = TokenStore()
+        self._cleanup_handles: dict[str, asyncio.TimerHandle] = {}
 
     @asynccontextmanager
     async def transaction(self):
@@ -149,7 +152,7 @@ class Game:
 
     def _register_handlers(self) -> None:
         """Register all WebSocket action handlers."""
-        from server.net.handlers.auth import handle_login, handle_logout, handle_pong, handle_register
+        from server.net.handlers.auth import handle_login, handle_logout, handle_pong, handle_reconnect, handle_register
         from server.net.handlers.chat import handle_chat
         from server.net.handlers.combat import (
             handle_flee,
@@ -240,6 +243,9 @@ class Game:
         )
         self.router.register(
             "pong", lambda ws, d: handle_pong(ws, d, game=self)
+        )
+        self.router.register(
+            "reconnect", lambda ws, d: handle_reconnect(ws, d, game=self)
         )
 
     def _register_events(self) -> None:

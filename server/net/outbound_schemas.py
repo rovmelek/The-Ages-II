@@ -160,6 +160,7 @@ class LoginSuccessMessage(BaseModel):
     entity_id: str
     username: str
     stats: PlayerStatsPayload
+    session_token: str | None = None
     request_id: str | None = None
 
 

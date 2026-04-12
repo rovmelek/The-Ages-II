@@ -18,3 +18,4 @@ class PlayerSession:
     inventory: Inventory | None = None
     visited_rooms: set[str] = field(default_factory=set)
     pending_level_ups: int = 0
+    disconnected_at: float | None = None

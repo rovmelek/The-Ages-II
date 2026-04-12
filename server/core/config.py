@@ -80,6 +80,9 @@ class Settings(BaseSettings):
     HEARTBEAT_INTERVAL_SECONDS: int = 30
     HEARTBEAT_TIMEOUT_SECONDS: int = 10
 
+    # --- Session Tokens ---
+    SESSION_TOKEN_TTL_SECONDS: int = 300
+
     # --- Database ---
     DATABASE_URL: str = f"sqlite+aiosqlite:///{BASE_DIR / 'data' / 'game.db'}"
     DATA_DIR: Path = BASE_DIR / "data"

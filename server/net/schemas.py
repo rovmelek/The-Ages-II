@@ -159,6 +159,14 @@ class PongMessage(InboundMessage):
     action: str = "pong"
 
 
+# --- Reconnect ---
+
+
+class ReconnectMessage(InboundMessage):
+    action: str = "reconnect"
+    session_token: str = Field(min_length=1)
+
+
 # --- Utility ---
 
 
@@ -195,4 +203,5 @@ ACTION_SCHEMAS: dict[str, type[InboundMessage]] = {
     "trade": TradeMessage,
     "party": PartyMessage,
     "pong": PongMessage,
+    "reconnect": ReconnectMessage,
 }

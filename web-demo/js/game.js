@@ -117,6 +117,8 @@ const MAX_RECONNECT = 5;
 /** @type {number|null} */
 let reconnectTimer = null;
 let serverShuttingDown = false;
+/** @type {string|null} */
+let sessionToken = null;
 /** @type {number|null} */
 let moveErrorTimer = null;
 const LOG_MAX = 200;
@@ -310,8 +312,10 @@ function connectWebSocket() {
     reconnectAttempts = 0;
     setConnectionStatus('connected');
 
-    // Auto re-send pending action on reconnect (login or register)
-    if (gameState.credentials && gameState.pendingAction) {
+    // Try token-based reconnect first, fall back to credentials
+    if (sessionToken && gameState.player) {
+      sendAction('reconnect', { session_token: sessionToken });
+    } else if (gameState.credentials && gameState.pendingAction) {
       sendAction(gameState.pendingAction, gameState.credentials);
     } else if (gameState.credentials) {
       gameState.pendingAction = 'login';
@@ -387,7 +391,8 @@ function resetToLogin(statusMessage) {
     moveErrorTimer = null;
   }
 
-  // Clear game state (preserve credentials)
+  // Clear game state (preserve credentials, clear token)
+  sessionToken = null;
   gameState.player = null;
   gameState.room = null;
   gameState.combat = null;
@@ -522,6 +527,10 @@ function handleLoginSuccess(data) {
     y: 0,
     stats: data.stats || {},
   };
+  // Store session token for reconnection (if present)
+  if (data.session_token) {
+    sessionToken = data.session_token;
+  }
 }
 
 /** @param {Object} data */
@@ -592,6 +601,12 @@ function handlePartyChat(data) {
 }
 
 function handleError(data) {
+  // Token reconnect failed — fall back to credential login
+  if (data.detail === 'Invalid or expired token' && gameState.credentials) {
+    sessionToken = null;
+    sendAction('login', gameState.credentials);
+    return;
+  }
   if (gameState.mode === 'auth') {
     $authError.textContent = data.detail || 'Unknown error';
   } else if (gameState.mode === 'combat') {
@@ -614,7 +629,8 @@ function handleServerShutdown(data) {
 
 /** @param {Object} _data */
 function handleLoggedOut(_data) {
-  // Clear credentials to prevent auto-login (unlike kicked which preserves them)
+  // Clear credentials and token to prevent auto-login (unlike kicked which preserves them)
+  sessionToken = null;
   gameState.credentials = null;
   gameState.player = null;
   gameState.room = null;
