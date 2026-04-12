@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 from fastapi import WebSocket
 
 from server.core.config import settings
+from server.net.auth_middleware import requires_auth
+from server.player.session import PlayerSession
 
 if TYPE_CHECKING:
     from server.app import Game
@@ -114,20 +116,12 @@ def _get_entity_name(game: Game, entity_id: str) -> str:
     return entity_id
 
 
+@requires_auth
 async def handle_party(
-    websocket: WebSocket, data: dict, *, game: Game
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle the 'party' action — subcommand-based party operations."""
-    entity_id = game.connection_manager.get_entity_id(websocket)
-    if entity_id is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
-    player_info = game.player_manager.get_session(entity_id)
-    if player_info is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
     args_str = data.get("args", "").strip()
 
     if not args_str:
@@ -154,7 +148,10 @@ async def handle_party(
     else:
         # Unknown subcommand — route to party chat if in a party
         if game.party_manager.is_in_party(entity_id):
-            await handle_party_chat(websocket, {"message": args_str}, game=game)
+            await handle_party_chat.__wrapped__(
+                websocket, {"message": args_str}, game=game,
+                entity_id=entity_id, player_info=player_info,
+            )
         else:
             await websocket.send_json(
                 {"type": "error", "detail": "You are not in a party"}
@@ -569,20 +566,12 @@ async def _handle_status(
     )
 
 
+@requires_auth
 async def handle_party_chat(
-    websocket: WebSocket, data: dict, *, game: Game
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle the 'party_chat' action — send a message to all party members."""
-    entity_id = game.connection_manager.get_entity_id(websocket)
-    if entity_id is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
-    player_info = game.player_manager.get_session(entity_id)
-    if player_info is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
     message = data.get("message", "").strip()
     if not message:
         return  # Ignore empty messages

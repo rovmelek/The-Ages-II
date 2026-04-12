@@ -65,7 +65,8 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 
 **Connection/Room Model:**
 - `ConnectionManager` maps `entity_id → WebSocket` and `entity_id → room_key`
-- On disconnect: remove from combat → save to DB → remove from room → broadcast → disconnect
+- On disconnect: `game.player_manager.cleanup_session(entity_id, game)` — trades → combat → party → save to DB → remove from room → disconnect
+- Cleanup lives on `PlayerManager` (not in auth.py handler) — test patches target `server.player.manager.player_repo`
 
 **Room Grid:**
 - `grid[y][x]` (row-major) — NOT `grid[x][y]`
@@ -240,4 +241,4 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 - Review periodically for outdated rules
 - Remove rules that become obvious over time
 
-Last Updated: 2026-04-11 (Epic 14 complete — Alembic migrations, async locks, PlayerSession dataclass, transaction consolidation, NPC templates single source, 807 tests passing)
+Last Updated: 2026-04-11 (Story 15.2 done — player cleanup relocated from auth.py to PlayerManager.cleanup_session(), 807 tests passing)

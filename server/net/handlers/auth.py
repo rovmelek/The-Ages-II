@@ -9,6 +9,7 @@ from fastapi import WebSocket
 from server.items import item_repo
 from server.items.inventory import Inventory
 from server.items.item_def import ItemDef
+from server.net.auth_middleware import requires_auth
 from server.player import repo as player_repo
 from server.core.config import settings
 from server.core.xp import get_pending_level_ups, send_level_up_available
@@ -23,15 +24,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def handle_logout(websocket: WebSocket, data: dict, *, game: Game) -> None:
+@requires_auth
+async def handle_logout(
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
+) -> None:
     """Handle the 'logout' action: save state, clean up, keep WebSocket open."""
-    entity_id = game.connection_manager.get_entity_id(websocket)
-    if entity_id is None:
-        await websocket.send_json(
-            {"type": "error", "detail": "Not logged in"}
-        )
-        return
-
     await game.player_manager.cleanup_session(entity_id, game)
 
     # Send confirmation via raw websocket (connection_manager already cleared)

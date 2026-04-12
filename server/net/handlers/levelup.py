@@ -7,7 +7,9 @@ from fastapi import WebSocket
 
 from server.core.config import settings
 from server.core.xp import get_pending_level_ups, send_level_up_available
+from server.net.auth_middleware import requires_auth
 from server.player import repo as player_repo
+from server.player.session import PlayerSession
 
 if TYPE_CHECKING:
     from server.app import Game
@@ -18,20 +20,12 @@ _VALID_LEVEL_UP_STATS = {
 }
 
 
+@requires_auth
 async def handle_level_up(
-    websocket: WebSocket, data: dict, *, game: Game
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle the 'level_up' action: apply stat choices for a pending level-up."""
-    entity_id = game.connection_manager.get_entity_id(websocket)
-    if entity_id is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
-    player_info = game.player_manager.get_session(entity_id)
-    if player_info is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
     entity = player_info.entity
     if entity.in_combat:
         await websocket.send_json(

@@ -8,7 +8,9 @@ from fastapi import WebSocket
 
 from server.core.config import settings
 from server.core.xp import grant_xp
+from server.net.auth_middleware import requires_auth
 from server.player import repo as player_repo
+from server.player.session import PlayerSession
 from server.room import repo as room_repo
 from server.room.room import DIRECTION_DELTAS
 
@@ -31,18 +33,12 @@ def _find_nearby_objects(room, x: int, y: int) -> list[dict]:
     return nearby
 
 
-async def handle_move(websocket: WebSocket, data: dict, *, game: Game) -> None:
+@requires_auth
+async def handle_move(
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
+) -> None:
     """Handle the 'move' action: move player in a direction on the tile grid."""
-    entity_id = game.connection_manager.get_entity_id(websocket)
-    if entity_id is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
-    player_info = game.player_manager.get_session(entity_id)
-    if player_info is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
     entity = player_info.entity
     room_key = player_info.room_key
 

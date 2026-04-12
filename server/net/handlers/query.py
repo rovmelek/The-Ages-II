@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 from fastapi import WebSocket
 
 from server.core.config import settings
+from server.net.auth_middleware import requires_auth
+from server.player.session import PlayerSession
 
 if TYPE_CHECKING:
     from server.app import Game
@@ -22,20 +24,12 @@ _SCAN_OFFSETS = [
 ]
 
 
+@requires_auth
 async def handle_look(
-    websocket: WebSocket, data: dict, *, game: Game
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle the 'look' action — return nearby objects, NPCs, and players."""
-    entity_id = game.connection_manager.get_entity_id(websocket)
-    if entity_id is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
-    player_info = game.player_manager.get_session(entity_id)
-    if player_info is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
     entity = player_info.entity
     room = game.room_manager.get_room(player_info.room_key)
     if room is None:
@@ -65,20 +59,12 @@ async def handle_look(
     })
 
 
+@requires_auth
 async def handle_who(
-    websocket: WebSocket, data: dict, *, game: Game
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle the 'who' action — return all players in the current room."""
-    entity_id = game.connection_manager.get_entity_id(websocket)
-    if entity_id is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
-    player_info = game.player_manager.get_session(entity_id)
-    if player_info is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
     room_key = player_info.room_key
     room = game.room_manager.get_room(room_key)
     if room is None:
@@ -97,20 +83,12 @@ async def handle_who(
     })
 
 
+@requires_auth
 async def handle_stats(
-    websocket: WebSocket, data: dict, *, game: Game
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle the 'stats' action — return the player's current stats."""
-    entity_id = game.connection_manager.get_entity_id(websocket)
-    if entity_id is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
-    player_info = game.player_manager.get_session(entity_id)
-    if player_info is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
     stats = player_info.entity.stats
     level = stats.get("level", 1)
     await websocket.send_json({
@@ -134,20 +112,12 @@ async def handle_stats(
     })
 
 
+@requires_auth
 async def handle_help_actions(
-    websocket: WebSocket, data: dict, *, game: Game
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle the 'help_actions' action — return actions grouped by category."""
-    entity_id = game.connection_manager.get_entity_id(websocket)
-    if entity_id is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
-    player_info = game.player_manager.get_session(entity_id)
-    if player_info is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
     categories = {
         "Movement": ["move"],
         "Combat": ["play_card", "pass_turn", "flee", "use_item_combat"],
@@ -161,20 +131,12 @@ async def handle_help_actions(
     })
 
 
+@requires_auth
 async def handle_map(
-    websocket: WebSocket, data: dict, *, game: Game
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle the 'map' action — return discovered rooms and connections."""
-    entity_id = game.connection_manager.get_entity_id(websocket)
-    if entity_id is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
-    player_info = game.player_manager.get_session(entity_id)
-    if player_info is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
     visited_rooms = player_info.visited_rooms
 
     rooms = []

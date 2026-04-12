@@ -11,7 +11,9 @@ from server.core.config import settings
 from server.core.xp import grant_xp
 from server.items.item_def import ItemDef
 from server.items import item_repo as items_repo
+from server.net.auth_middleware import requires_auth
 from server.player import repo as player_repo
+from server.player.session import PlayerSession
 
 if TYPE_CHECKING:
     from server.app import Game
@@ -248,15 +250,12 @@ async def _check_combat_end(instance, game: Game) -> None:
     game.combat_manager.remove_instance(instance.instance_id)
 
 
+@requires_auth
 async def handle_play_card(
-    websocket: WebSocket, data: dict, *, game: Game
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle the 'play_card' action during combat."""
-    entity_id = game.connection_manager.get_entity_id(websocket)
-    if entity_id is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
     instance = game.combat_manager.get_player_instance(entity_id)
     if instance is None:
         await websocket.send_json({"type": "error", "detail": "Not in combat"})
@@ -282,15 +281,12 @@ async def handle_play_card(
     await _check_combat_end(instance, game)
 
 
+@requires_auth
 async def handle_flee(
-    websocket: WebSocket, data: dict, *, game: Game
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle the 'flee' action during combat."""
-    entity_id = game.connection_manager.get_entity_id(websocket)
-    if entity_id is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
     instance = game.combat_manager.get_player_instance(entity_id)
     if instance is None:
         await websocket.send_json({"type": "error", "detail": "Not in combat"})
@@ -307,9 +303,7 @@ async def handle_flee(
     game.combat_manager.remove_player(entity_id)
 
     # Mark player as not in combat
-    player_info = game.player_manager.get_session(entity_id)
-    if player_info:
-        player_info.entity.in_combat = False
+    player_info.entity.in_combat = False
 
     # Notify the fleeing player
     await websocket.send_json({"type": "combat_fled"})
@@ -332,15 +326,12 @@ async def handle_flee(
         game.combat_manager.remove_instance(instance.instance_id)
 
 
+@requires_auth
 async def handle_use_item_combat(
-    websocket: WebSocket, data: dict, *, game: Game
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle 'use_item' action during combat — uses item as turn action."""
-    entity_id = game.connection_manager.get_entity_id(websocket)
-    if entity_id is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
     instance = game.combat_manager.get_player_instance(entity_id)
     if instance is None:
         await websocket.send_json({"type": "error", "detail": "Not in combat"})
@@ -349,12 +340,6 @@ async def handle_use_item_combat(
     item_key = data.get("item_key", "")
     if not item_key:
         await websocket.send_json({"type": "error", "detail": "Missing item_key"})
-        return
-
-    # Get player inventory
-    player_info = game.player_manager.get_session(entity_id)
-    if player_info is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
     inventory = player_info.inventory
@@ -388,15 +373,12 @@ async def handle_use_item_combat(
     await _check_combat_end(instance, game)
 
 
+@requires_auth
 async def handle_pass_turn(
-    websocket: WebSocket, data: dict, *, game: Game
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle the 'pass_turn' action during combat."""
-    entity_id = game.connection_manager.get_entity_id(websocket)
-    if entity_id is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
     instance = game.combat_manager.get_player_instance(entity_id)
     if instance is None:
         await websocket.send_json({"type": "error", "detail": "Not in combat"})

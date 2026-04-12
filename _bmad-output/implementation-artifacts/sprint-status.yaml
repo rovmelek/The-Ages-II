@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-21
-last_updated: 2026-04-11 (Story 15.2 done — cleanup function relocated to PlayerManager)
+last_updated: 2026-04-11 (Story 15.3 done — handler auth middleware)
 project: The-Ages-II
 project_key: NOKEY
 tracking_system: file-system
@@ -236,7 +236,7 @@ development_status:
   epic-15: in-progress
   15-1-player-session-manager: done                 # Core — extract PlayerManager from raw dict on Game
   15-2-relocate-player-cleanup: done                      # Core — move _cleanup_player from auth.py to PlayerManager
-  15-3-handler-auth-middleware: backlog                 # Core — @requires_auth decorator eliminates 20x boilerplate
+  15-3-handler-auth-middleware: done                       # Core — @requires_auth decorator eliminates 20x boilerplate
   15-4-party-invite-state-to-manager: backlog          # Clean — move module-level globals to PartyManager
   15-5a-extract-effect-targeting: backlog                # Clean — deduplicate effect source/target resolution
   15-5b-npc-entity-and-dataclass-relocation: backlog    # Clean — relocate NpcEntity, split Trade/Party dataclasses

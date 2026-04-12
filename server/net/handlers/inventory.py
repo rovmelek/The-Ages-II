@@ -6,26 +6,20 @@ from typing import TYPE_CHECKING
 from fastapi import WebSocket
 
 from server.core.config import settings
+from server.net.auth_middleware import requires_auth
 from server.player import repo as player_repo
+from server.player.session import PlayerSession
 
 if TYPE_CHECKING:
     from server.app import Game
 
 
+@requires_auth
 async def handle_inventory(
-    websocket: WebSocket, data: dict, *, game: Game
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle the 'inventory' action — return player's inventory."""
-    entity_id = game.connection_manager.get_entity_id(websocket)
-    if entity_id is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
-    player_info = game.player_manager.get_session(entity_id)
-    if player_info is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
     inventory = player_info.inventory
     if inventory is None:
         await websocket.send_json({"type": "inventory", "items": []})
@@ -37,20 +31,12 @@ async def handle_inventory(
     })
 
 
+@requires_auth
 async def handle_use_item(
-    websocket: WebSocket, data: dict, *, game: Game
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle the 'use_item' action outside of combat."""
-    entity_id = game.connection_manager.get_entity_id(websocket)
-    if entity_id is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
-    player_info = game.player_manager.get_session(entity_id)
-    if player_info is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
     entity = player_info.entity
 
     # Cannot use items this way during combat

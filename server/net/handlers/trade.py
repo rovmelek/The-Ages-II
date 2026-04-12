@@ -5,7 +5,9 @@ import logging
 from typing import TYPE_CHECKING
 
 from fastapi import WebSocket
+from server.net.auth_middleware import requires_auth
 from server.player import repo as player_repo
+from server.player.session import PlayerSession
 
 if TYPE_CHECKING:
     from server.app import Game
@@ -50,20 +52,12 @@ async def _send_trade_update(trade, game: Game) -> None:
     await game.connection_manager.send_to_player(trade.player_b, msg)
 
 
+@requires_auth
 async def handle_trade(
-    websocket: WebSocket, data: dict, *, game: Game
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle the 'trade' action — subcommand-based trade operations."""
-    entity_id = game.connection_manager.get_entity_id(websocket)
-    if entity_id is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
-    player_info = game.player_manager.get_session(entity_id)
-    if player_info is None:
-        await websocket.send_json({"type": "error", "detail": "Not logged in"})
-        return
-
     entity = player_info.entity
     args_str = data.get("args", "").strip()
 
