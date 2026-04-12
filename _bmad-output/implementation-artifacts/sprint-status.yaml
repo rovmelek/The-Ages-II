@@ -262,7 +262,7 @@ development_status:
   # Sprint 2 — Refactoring + turn timeout bug fix
   16-4a-refactor-grant-xp: done
   16-4-extract-combat-service-layer: done
-  16-5-decompose-handle-login: backlog
+  16-5-decompose-handle-login: done
   16-6-trademanager-constructor-injection: backlog
   16-10a-combat-turn-timeout-enforcement: backlog
 
