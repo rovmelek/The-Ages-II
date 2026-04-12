@@ -47,9 +47,6 @@ async def handle_use_item(
         return
 
     item_key = data.get("item_key", "")
-    if not item_key:
-        await websocket.send_json({"type": "error", "detail": "Missing item_key"})
-        return
 
     inventory = player_info.inventory
     if inventory is None or not inventory.has_item(item_key):

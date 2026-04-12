@@ -128,7 +128,7 @@ def test_register_username_empty(client):
         ws.send_json({"action": "register", "username": "", "password": "secret123"})
         resp = ws.receive_json()
         assert resp["type"] == "error"
-        assert resp["detail"] == "Username must be at least 3 characters"
+        assert "username" in resp["detail"].lower()
 
 
 def test_register_password_too_short(client):
@@ -144,7 +144,7 @@ def test_register_password_empty(client):
         ws.send_json({"action": "register", "username": "hero", "password": ""})
         resp = ws.receive_json()
         assert resp["type"] == "error"
-        assert resp["detail"] == "Password must be at least 6 characters"
+        assert "password" in resp["detail"].lower()
 
 
 def test_register_duplicate_username(client):

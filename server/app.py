@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
 from starlette.responses import FileResponse
 
 from server.core.config import settings
@@ -14,6 +15,7 @@ from server.core.database import init_db
 from server.core import database as _database
 from server.net.connection_manager import ConnectionManager
 from server.net.message_router import MessageRouter
+from server.net.schemas import ACTION_SCHEMAS
 from server.player import repo as player_repo
 from server.combat.manager import CombatManager
 from server.core.effects import create_default_registry
@@ -401,6 +403,17 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     {"type": "error", "detail": "Missing action field"}
                 )
                 continue
+            action = data["action"]
+            schema_cls = ACTION_SCHEMAS.get(action)
+            if schema_cls:
+                try:
+                    validated = schema_cls(**data)
+                    data = validated.model_dump()
+                except ValidationError as e:
+                    await websocket.send_json(
+                        {"type": "error", "detail": str(e)}
+                    )
+                    continue
             await game.router.route(websocket, data)
     except WebSocketDisconnect:
         await game.handle_disconnect(websocket)

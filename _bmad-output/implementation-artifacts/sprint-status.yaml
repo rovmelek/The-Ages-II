@@ -254,7 +254,7 @@ development_status:
   epic-16: in-progress
 
   # Sprint 1 — Protocol formalized (Godot dev unblocked)
-  16-1-websocket-inbound-schemas: ready-for-dev
+  16-1-websocket-inbound-schemas: done
   16-2-websocket-outbound-schemas: backlog
   16-3-protocol-specification-document: backlog
   16-12-chat-markdown-support: backlog

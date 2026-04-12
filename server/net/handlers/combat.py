@@ -262,11 +262,6 @@ async def handle_play_card(
         return
 
     card_key = data.get("card_key", "")
-    if not card_key:
-        await websocket.send_json(
-            {"type": "error", "detail": "Missing card_key"}
-        )
-        return
 
     try:
         result = await instance.play_card(entity_id, card_key)
@@ -338,9 +333,6 @@ async def handle_use_item_combat(
         return
 
     item_key = data.get("item_key", "")
-    if not item_key:
-        await websocket.send_json({"type": "error", "detail": "Missing item_key"})
-        return
 
     inventory = player_info.inventory
     if inventory is None or not inventory.has_item(item_key):

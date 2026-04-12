@@ -193,7 +193,7 @@ def test_login_empty_username(client):
         ws.send_json({"action": "login", "username": "", "password": "secret123"})
         resp = ws.receive_json()
         assert resp["type"] == "error"
-        assert resp["detail"] == "Username and password required"
+        assert "username" in resp["detail"].lower()
 
 
 def test_login_empty_password(client):
@@ -201,7 +201,7 @@ def test_login_empty_password(client):
         ws.send_json({"action": "login", "username": "hero", "password": ""})
         resp = ws.receive_json()
         assert resp["type"] == "error"
-        assert resp["detail"] == "Username and password required"
+        assert "password" in resp["detail"].lower()
 
 
 def test_login_no_current_room_uses_default(client, room_manager):

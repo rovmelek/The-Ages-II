@@ -85,6 +85,7 @@ async def handle_interact(
         # No adjacency check needed — direction guarantees distance 1
 
     else:
+        # Schema rejects both-empty at framework level; guard for direct calls
         await websocket.send_json(
             {"type": "error", "detail": "Missing target_id or direction"}
         )

@@ -114,12 +114,6 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
     username = data.get("username", "").strip()
     password = data.get("password", "")
 
-    if not username or not password:
-        await websocket.send_json(
-            {"type": "error", "detail": "Username and password required"}
-        )
-        return
-
     async with game.transaction() as session:
         player = await player_repo.get_by_username(session, username)
         if player is None or not verify_password(password, player.password_hash):

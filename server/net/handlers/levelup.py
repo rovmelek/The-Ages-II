@@ -41,11 +41,6 @@ async def handle_level_up(
         return
 
     chosen_stats = data.get("stats", [])
-    if not isinstance(chosen_stats, list):
-        await websocket.send_json(
-            {"type": "error", "detail": "stats must be a list"}
-        )
-        return
 
     # Validate and deduplicate (max 3 unique)
     unique_stats = list(dict.fromkeys(chosen_stats))[:settings.LEVEL_UP_STAT_CHOICES]
