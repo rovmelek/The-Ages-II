@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 from fastapi import WebSocket
 
-from server.core.database import async_session
 from server.player import repo as player_repo
 
 if TYPE_CHECKING:
@@ -92,7 +91,7 @@ async def handle_use_item(
 
     # Persist inventory and stats to DB
     db_id = player_info["db_id"]
-    async with async_session() as session:
+    async with game.transaction() as session:
         await player_repo.update_inventory(session, db_id, inventory.to_dict())
         await player_repo.update_stats(session, db_id, entity.stats)
 

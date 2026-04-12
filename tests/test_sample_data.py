@@ -146,7 +146,8 @@ class TestBaseNpcs:
         assert slime is not None
         assert slime["spawn_type"] == "persistent"
         assert slime["spawn_config"]["respawn_seconds"] == 60
-        assert slime["stats"]["hp"] > 0
+        assert slime["hit_dice"] == 3
+        assert slime["hp_multiplier"] == 10
 
     def test_cave_troll_definition(self):
         with open(DATA_DIR / "npcs" / "base_npcs.json") as f:
@@ -156,7 +157,8 @@ class TestBaseNpcs:
         assert troll["spawn_type"] == "rare"
         assert troll["spawn_config"]["check_interval_hours"] == 12
         assert troll["spawn_config"]["spawn_chance"] == 0.15
-        assert troll["stats"]["hp"] > 100  # high stats
+        assert troll["hit_dice"] == 7
+        assert troll["hp_multiplier"] == 28
 
     @pytest.mark.asyncio
     async def test_npc_templates_load(self):

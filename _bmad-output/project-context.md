@@ -28,7 +28,7 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 **Constraints:**
 - All server code is async — never use blocking I/O
 - SQLite single-writer — no concurrent write transactions
-- No Alembic — schema changes require deleting `game.db`
+- No Alembic yet — schema changes require deleting `game.db` (Alembic planned in Epic 14 Story 14.7)
 
 ---
 
@@ -47,6 +47,7 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 - WebSocket: `async def handle_X(ws: WebSocket, data: dict, game: Game)` — `game` passed via lambda closure at registration
 - REST admin: `APIRouter` with `Depends(verify_admin_secret)` — must use deferred `from server.app import game` inside each function (avoids circular imports)
 - Access managers through `game.*` — never import managers directly
+- DB access: `async with game.transaction() as session:` — auto-commits on success, rolls back on exception
 
 **Player State — Dual Storage:**
 - In-memory: `game.player_entities[entity_id]` → `{"entity": PlayerEntity, "room_key": str, "inventory": Inventory}`
@@ -107,7 +108,8 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 **Repository Pattern:**
 - Repos are module-level async functions, NOT classes
 - All take `session: AsyncSession` as first parameter
-- Repos call `session.commit()` internally — callers don't commit
+- Repos do NOT call `session.commit()` — the `Game.transaction()` context manager handles commit/rollback
+- `player_repo.create()` and `room_repo.upsert_room()` (insert branch) use `session.flush()` before `session.refresh()` to get auto-increment IDs without committing
 
 **Data Classes vs Dicts:**
 - Runtime entities: `@dataclass` — `PlayerEntity`, `RoomObject`, `NpcEntity`
@@ -139,16 +141,15 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 
 **Critical Mock Rules:**
 - Async functions MUST use `AsyncMock` — awaiting `MagicMock` raises `TypeError`
-- `patch("server.app.async_session")` for Game-level DB mocking
+- For unit tests: mock `game.transaction = MagicMock(return_value=mock_ctx)` where `mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)` and `mock_ctx.__aexit__ = AsyncMock(return_value=False)`
+- For integration tests with real DB: assign `game.session_factory = test_session_factory` — `Game.transaction()` wraps `session_factory` so the real transaction path is tested
 - Import ALL model modules before `create_all()` — SQLAlchemy only creates tables for registered models
-
-**Known Issues:**
-- 2 tests hang: `test_disconnect_notifies_others`, `test_register_returns_player_id` — always exclude via `-k` filter
 
 ### Platform & Build Rules
 
-- Pure Python — no compilation; `pip install -e ".[dev]"`
-- Entry point: `python run.py` → uvicorn with hot reload in DEBUG mode
+- Pure Python — no compilation; `make install` (or `.venv/bin/pip install -e ".[dev]"`)
+- Entry point: `make server` (or `.venv/bin/python run.py`) → uvicorn with hot reload in DEBUG mode
+- Run tests: `make test` — always use this, never bare `pytest` (system Python lacks dependencies)
 - `data/game.db` auto-created, gitignored — JSON data files committed
 - Web client: `web-demo/index.html` at `/`, `web-demo/` mounted at `/static`
 - Client is vanilla HTML/CSS/JS — no bundler, no npm
@@ -163,9 +164,10 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 - NEVER persist `shield` or `active_effects` — combat-only transient data
 - NEVER generate custom entity IDs — always `f"player_{db_id}"`
 - NEVER use `MagicMock` for async — always `AsyncMock`
-- NEVER call `session.commit()` outside repos
+- NEVER call `session.commit()` outside `Game.transaction()` — repos and handlers must not commit directly
 - NEVER modify `_NPC_TEMPLATES` after startup
 - NEVER use `==` for secret comparison — always `hmac.compare_digest()`
+- NEVER hardcode game balance values (HP, attack, stat defaults, spawn room, auth lengths, etc.) — always reference `settings.*` from `server/core/config.py` (Story 14.1)
 
 **Easy-to-Forget:**
 - New player stats MUST be added to `_STATS_WHITELIST` in `player/repo.py` — unlisted stats are silently dropped on save
@@ -195,6 +197,33 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 - Duplicate login: kick old session (save → combat cleanup → room cleanup → close WS)
 - Inventory: `Inventory.from_dict(db_data, item_lookup)` — requires loaded item defs
 
+### Epic 12: Social Systems (In-Progress — All 8 Stories Done)
+
+**New Managers (owned by `Game` class):**
+- `TradeManager` (`server/trade/manager.py`) — mutual exchange trade sessions, async lock, state machine
+- `PartyManager` (`server/party/manager.py`) — in-memory party groups, leader succession
+
+**Key Patterns:**
+- Trade and party state are **ephemeral** (in-memory only) — dissolved on server restart
+- `ConnectionManager` gains name → entity_id index for `/trade @player` and `/party invite @player`
+- Disconnect cleanup order: cancel trades → remove from combat → handle party departure → save state → remove from room → notify
+- `ItemDef` gains `tradeable: bool = True` field (defaults `True` when missing from JSON)
+- `CombatInstance` supports N players (round-robin turns, random mob targeting of alive players only)
+- `CombatManager.start_combat()` accepts single entity_id or list — convenience method wrapping create+add flow
+- Party combat scales mob HP by party size; `XP_PARTY_BONUS_PERCENT` (config, default 10) applies when 2+ members at victory
+- `/trade` and `/party` use subcommand pattern — handler parses first arg as subcommand
+- `/party <message>` (unknown subcommand) routes to party chat when in a party; `party_chat` is also a dedicated action
+- `MAX_CHAT_MESSAGE_LENGTH` enforced on party chat messages
+- World map reuses existing `visited_rooms` field — no new DB schema
+
+**Config Values (all implemented):**
+- `TRADE_SESSION_TIMEOUT_SECONDS = 60`
+- `TRADE_REQUEST_TIMEOUT_SECONDS = 30`
+- `MAX_TRADE_ITEMS = 10`
+- `MAX_PARTY_SIZE = 4`
+- `MAX_CHAT_MESSAGE_LENGTH = 500`
+- `XP_PARTY_BONUS_PERCENT = 10`
+
 ---
 
 ## Usage Guidelines
@@ -211,4 +240,4 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 - Review periodically for outdated rules
 - Remove rules that become obvious over time
 
-Last Updated: 2026-03-25
+Last Updated: 2026-04-11 (Story 14.1 done — All game balance values centralized in Settings class; never hardcode HP/attack/stat defaults/spawn room/auth lengths)

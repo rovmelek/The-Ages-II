@@ -11,12 +11,19 @@ class ConnectionManager:
         self._connections: dict[str, WebSocket] = {}
         self._player_rooms: dict[str, str] = {}
         self._ws_to_entity: dict[int, str] = {}
+        self._name_to_entity: dict[str, str] = {}
+        self._entity_to_name: dict[str, str] = {}
 
-    def connect(self, entity_id: str, websocket: WebSocket, room_key: str) -> None:
+    def connect(
+        self, entity_id: str, websocket: WebSocket, room_key: str, name: str = ""
+    ) -> None:
         """Register a player's WebSocket connection."""
         self._connections[entity_id] = websocket
         self._player_rooms[entity_id] = room_key
         self._ws_to_entity[id(websocket)] = entity_id
+        if name:
+            self._name_to_entity[name.lower()] = entity_id
+            self._entity_to_name[entity_id] = name.lower()
 
     def disconnect(self, entity_id: str) -> None:
         """Remove a player's connection."""
@@ -24,10 +31,17 @@ class ConnectionManager:
         self._player_rooms.pop(entity_id, None)
         if ws:
             self._ws_to_entity.pop(id(ws), None)
+        name_lower = self._entity_to_name.pop(entity_id, None)
+        if name_lower:
+            self._name_to_entity.pop(name_lower, None)
 
     def get_entity_id(self, websocket: WebSocket) -> str | None:
         """Reverse lookup: find entity_id for a WebSocket."""
         return self._ws_to_entity.get(id(websocket))
+
+    def get_entity_id_by_name(self, name: str) -> str | None:
+        """Find entity_id for a player name (case-insensitive)."""
+        return self._name_to_entity.get(name.lower())
 
     def get_room(self, entity_id: str) -> str | None:
         """Get the room key for a player entity."""

@@ -318,6 +318,7 @@ body {
 .chat-whisper { font-style: italic; color: #aa66ff; }
 .chat-announcement { color: #ffaa00; font-weight: bold; }
 .chat-system { color: #999; font-style: italic; }
+.chat-party { color: #7289da; }
 
 #chat-input-area {
   display: flex;
@@ -615,6 +616,187 @@ body {
   border: 1px solid #444;
 }
 
+/* === Level Section === */
+#level-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+#level-section .stat-label { margin-bottom: 0; }
+#level-section .stat-value { margin-bottom: 0; font-weight: bold; color: #e0e0e0; }
+
+#levelup-badge {
+  font-size: 11px;
+  font-weight: bold;
+  color: #d4a030;
+  animation: levelup-pulse 1s infinite;
+  cursor: pointer;
+}
+
+@keyframes levelup-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* === XP Bar === */
+.xp-bar-track {
+  width: 100%;
+  height: 14px;
+  background: #222;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 2px;
+  position: relative;
+}
+
+.xp-bar-fill {
+  height: 100%;
+  background: #d4a030;
+  transition: width 0.3s ease;
+  border-radius: 3px;
+}
+
+.xp-bar-text {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 10px;
+  line-height: 14px;
+  color: #e0e0e0;
+  text-shadow: 0 0 2px #000;
+  pointer-events: none;
+}
+
+/* === Stats Toggle & Detail Panel === */
+#stats-toggle-btn {
+  width: 100%;
+  padding: 4px 8px;
+  margin-top: 6px;
+  font-size: 11px;
+  background: #222;
+  border: 1px solid #444;
+  border-radius: 3px;
+  color: #888;
+  cursor: pointer;
+}
+
+#stats-toggle-btn:hover { background: #2a2a2a; color: #ccc; }
+
+#stats-detail-panel {
+  margin-top: 6px;
+  padding: 6px;
+  background: #111;
+  border-radius: 3px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  padding: 2px 0;
+  color: #ccc;
+}
+
+/* === Level-Up Overlay === */
+#levelup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+#levelup-panel {
+  background: #1a1a1a;
+  border: 2px solid #d4a030;
+  border-radius: 8px;
+  padding: 24px;
+  width: 440px;
+  max-height: 80vh;
+  overflow-y: auto;
+  text-align: center;
+  position: relative;
+}
+
+#levelup-panel h2 {
+  color: #d4a030;
+  margin-bottom: 8px;
+  font-family: 'Courier New', monospace;
+}
+
+#levelup-subtitle {
+  font-size: 13px;
+  color: #888;
+  margin-bottom: 16px;
+}
+
+#levelup-close-btn {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+#levelup-close-btn:hover { color: #ccc; }
+
+#levelup-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.levelup-stat-btn {
+  padding: 10px 8px;
+  background: #222;
+  border: 2px solid #444;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.levelup-stat-btn:hover { border-color: #888; }
+.levelup-stat-btn.selected { border-color: #d4a030; background: #2a2a1a; }
+.levelup-stat-btn.disabled { opacity: 0.4; cursor: default; pointer-events: none; }
+
+.levelup-stat-name { font-size: 13px; font-weight: bold; color: #e0e0e0; }
+.levelup-stat-change { font-size: 11px; color: #888; margin-top: 2px; }
+.levelup-stat-effect { font-size: 10px; color: #666; margin-top: 2px; }
+
+#levelup-feedback {
+  font-size: 12px;
+  color: #d4a030;
+  min-height: 18px;
+  margin-bottom: 8px;
+}
+
+#levelup-confirm-btn {
+  padding: 8px 24px;
+  background: #3a3a1a;
+  border: 1px solid #d4a030;
+  border-radius: 4px;
+  color: #d4a030;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+#levelup-confirm-btn:hover { background: #4a4a2a; }
+#levelup-confirm-btn:disabled { opacity: 0.4; cursor: default; }
+
 /* === Animations === */
 @keyframes damage-flash {
   0% { background-color: rgba(255, 68, 68, 0.4); }
@@ -628,6 +810,13 @@ body {
 
 .damage-anim { animation: damage-flash 0.5s ease-out; }
 .heal-anim { animation: heal-pulse 0.5s ease-out; }
+
+@keyframes xp-flash {
+  0% { box-shadow: 0 0 8px rgba(212, 160, 48, 0.8); }
+  100% { box-shadow: none; }
+}
+
+.xp-flash-anim { animation: xp-flash 0.5s ease-out; }
 
 /* === Scrollbars === */
 ::-webkit-scrollbar { width: 6px; }

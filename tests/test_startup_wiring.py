@@ -46,8 +46,8 @@ class TestHandlerRegistration:
         from server.app import Game
 
         game = Game()
+        game.session_factory = test_session_factory
         with patch("server.app.init_db", return_value=None), \
-             patch("server.app.async_session", test_session_factory), \
              patch("server.app.settings") as mock_settings, \
              patch("server.app.JsonRoomProvider") as MockProvider:
             mock_settings.DATA_DIR = Path("/tmp/nonexistent_data_dir")
@@ -101,8 +101,8 @@ class TestStartupDataLoading:
         mock_room.spawn_points = []
 
         game = Game()
+        game.session_factory = test_session_factory
         with patch("server.app.init_db", return_value=None), \
-             patch("server.app.async_session", test_session_factory), \
              patch("server.app.settings") as mock_settings, \
              patch("server.app.JsonRoomProvider") as MockProvider:
             mock_settings.DATA_DIR = Path("/tmp/nonexistent_data_dir")
@@ -120,8 +120,8 @@ class TestStartupDataLoading:
         from server.app import Game
 
         game = Game()
+        game.session_factory = test_session_factory
         with patch("server.app.init_db", return_value=None), \
-             patch("server.app.async_session", test_session_factory), \
              patch("server.app.settings") as mock_settings, \
              patch("server.app.JsonRoomProvider") as MockProvider:
             mock_settings.DATA_DIR = Path("/tmp/nonexistent_data_dir")

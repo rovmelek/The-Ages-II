@@ -1,5 +1,5 @@
 ---
-stepsCompleted: ["step-01-validate-prerequisites", "step-02-design-epics", "step-03-create-stories", "step-04-final-validation", "step-01-epic10-prerequisites", "step-02-epic10-design", "step-03-epic10-stories", "step-04-epic10-validation"]
+stepsCompleted: ["step-01-validate-prerequisites", "step-02-design-epics", "step-03-create-stories", "step-04-final-validation", "step-01-epic10-prerequisites", "step-02-epic10-design", "step-03-epic10-stories", "step-04-epic10-validation", "step-01-epic11-prerequisites", "step-02-epic11-design", "step-03-epic11-stories", "step-04-epic11-validation", "step-01-epic12-prerequisites", "step-02-epic12-design", "step-03-epic12-stories", "step-04-epic12-validation", "step-01-epic14-prerequisites", "step-02-epic14-design", "step-03-epic14-stories", "step-04-epic14-validation"]
 inputDocuments:
   - "THE_AGES_SERVER_PLAN.md"
   - "_bmad-output/planning-artifacts/architecture.md"
@@ -7,6 +7,7 @@ inputDocuments:
   - "_bmad-output/implementation-artifacts/tech-spec-web-test-client.md"
   - "CLAUDE.md"
   - "_bmad-output/implementation-artifacts/sprint-status.yaml"
+  - "Deep code analysis (Epic 14 source) — web client logic leaks, hardcoded parameters, modularity violations, DB/infrastructure gaps"
 ---
 
 # The-Ages-II - Epic Breakdown
@@ -96,16 +97,47 @@ FR74: Mob loot drops — combat victory generates loot from NPC's `loot_table`, 
 FR75: Mob loot tables — add loot table entries for all NPC types (goblin_loot, slime_loot, bat_loot, troll_loot, dragon_loot)
 FR76: Increased NPC spawn density — add more slime/mob spawn points in larger rooms (town_square, dark_cave)
 FR77: XP level thresholds — define XP required per level with scaling curve
-FR78: Level-up mechanic — when XP exceeds threshold, player levels up with stat increases (HP, attack)
+FR78: Level-up mechanic — when XP exceeds threshold, player chooses up to 3 of 6 D&D-style stats to boost +1 (cap 10), max_hp recalculated from CON
 FR79: Level-up notification — server sends `level_up` message to player with new level and stat changes
 FR80: Level display — player level shown in stats HUD and included in entity data visible to other players
 FR81: `/stats` updated to include level and XP-to-next-level
-FR82: Trade system — `/trade @player` initiates trade request; accept/reject flow; item transfer between inventories
-FR83: Trade validation — both players must be in same room, online, not in combat; items validated before transfer
-FR84: Party system — `/party invite @player`, `/party accept`, `/party leave`, `/party disband`
-FR85: Party chat — `/party message` sends to party members only, regardless of room
-FR86: Party combat — party members in same room enter combat together when any member encounters a mob
-FR87: World map — `/map` shows discovered rooms and their connections; rooms discovered on first visit; persisted to DB
+FR88: D&D-style stat system — STR, DEX, CON, INT, WIS, CHA for PC (default 1) and NPC (derived from hit_dice); persisted to DB
+FR89: Stat-to-combat mapping — STR→physical damage bonus, DEX→flat damage reduction (min 1 dmg), CON→max_hp scaling (100+CON×5), INT→magical damage bonus (fire/ice/arcane), WIS→heal bonus; formula: floor(stat × 1.0)
+FR90: NPC hit_dice system — all NPC abilities = hit_dice value, max_hp = hit_dice × hp_multiplier; replaces flat hp/attack stats in NPC data
+FR91: Configurable XP curve — XP_CURVE_TYPE (quadratic/linear), XP_CURVE_MULTIPLIER (default 25), combat XP = f(hit_dice); CHA XP bonus via XP_CHA_BONUS_PER_POINT (default 0.03)
+FR92: Multiple XP sources — combat victory (hit_dice-based), exploration (first room visit), object interaction (first-time chest/lever); hooks for quest completion and party bonus
+FR93: Stats persistence — all 6 ability scores + level persisted to DB; stats whitelist expanded from {hp, max_hp, attack, xp} to include strength, dexterity, constitution, intelligence, wisdom, charisma, level
+FR82: Trade system — mutual exchange model; `/trade @player` sends trade session request to target; target must `/trade accept` to enter negotiation or `/trade reject` to decline (request times out at 30s if ignored); once in session, both players place items via `/trade offer item_name quantity` (accepts item keys and display names, case-insensitive, consistent with `/use` ISS-010); supports multi-item syntax: `/trade offer item1 qty1 item2 qty2`; each player can offer multiple items — `/trade offer` adds to or updates the player's offer list; `MAX_TRADE_ITEMS` config (default 10) — reject offer if total unique items exceeds limit; `/trade remove item_name` removes an item from the offer; `/trade offer` validates player currently has sufficient quantity (rejected if insufficient, final validation still at execution); `/trade ready` signals confirmation; trade executes atomically when both players ready; `/trade cancel` aborts at any point; adding/removing an offer resets both players' ready state (prevents bait-and-switch); state machine: `idle → request_pending → negotiating → one_ready → both_ready → executing → complete`; `ItemDef` gains a `tradeable: bool = True` field — non-tradeable items blocked from offers; one active trade session per player — auto-reject new `/trade @player` if either player already in a session; `TradeManager` must use async lock when assigning trades to prevent race conditions; configurable trade session timeout (`TRADE_SESSION_TIMEOUT_SECONDS`, default 60) — resets on any trade activity (offer/remove/ready), auto-cancel on inactivity; cooldown after cancel/reject/timeout (e.g., 5s) before player can initiate new trade; distinct message types (`trade_request`, `trade_update`, `trade_result`) for client rendering; `trade_request` message must include sender name; `trade_update` shows current offers from both sides; `/trade` uses subcommand pattern — handler parses first arg as subcommand (`@player`, `accept`, `reject`, `offer`, `remove`, `ready`, `cancel`, or no subcommand for status); `/trade` (no subcommand while in session) shows current offers from both sides and ready state; add name → entity_id index to ConnectionManager for player name resolution (shared by trade and party systems); disconnect cleanup order: cancel trades → remove from combat → handle party departure → save state → remove from room → notify
+FR83: Trade validation — both players must be in same room, online, not in combat; trade requires same-room regardless of party status — party membership has no effect on trade eligibility; items validated before transfer (sufficient quantity, item exists, `tradeable` flag checked); atomic two-player inventory swap in a single DB transaction to prevent duplication or loss; trade is immediately cancelled if either player disconnects, changes room, or enters combat; accept/execute requires both players connected with live entities; no item escrow — quantities validated from live inventory at execution time; self-trades rejected (same `player_db_id`); duplicate login kick cancels all pending trades for that `player_db_id`; trade fails entirely if any offered quantity exceeds current inventory at execution time — no partial trades
+FR84: Party system — `/party invite @player`, `/party accept`, `/party leave`, `/party disband`, `/party kick @player` (leader only), `/party` (no subcommand) shows current party members, leader, and member online/room status; `/party` uses subcommand pattern — handler parses first arg as subcommand; party leader is the player who created the party; leader succession: on leader disconnect, leadership passes to longest-standing member; party dissolved when last member leaves/disconnects; party invites allowed during combat but party combat (FR86) only applies to encounters starting after party formation; `/party leave` allowed during combat but does not affect current combat instance — player remains in combat, XP calculated based on combat participants at victory not current party state; `/party kick` and `/party disband` blocked while any party members share an active combat instance; one pending invite per inviter at a time — sending new invite cancels previous; cooldown before re-inviting same player (also applies after kick); `MAX_PARTY_SIZE` config (default 4) — invite rejected when party is full; invite target must be online (error: "Player not found" / "Player is not online"); invite rejected if target is already in a party (must `/party leave` first); no same-room requirement for invite; trades and parties are ephemeral (in-memory only) — all dissolved on server restart/shutdown with player notification; distinct message types (`party_invite`, `party_update`) for client rendering; disconnect cleanup order same as FR82
+FR85: Party chat — `/party message` translates to dedicated `party_chat` action (not overloading existing `chat` action); server validates sender is in a party and routes only to party members; sender name set server-side (no client impersonation); sends to party members only, regardless of room; `MAX_CHAT_MESSAGE_LENGTH` (default 500) applied to party chat messages; distinct message type (`party_chat`) for client rendering
+FR86: Party combat — party members in same room enter combat together when any member encounters a mob; only the moving player's party joins — other parties/players on same tile unaffected; mob marked `in_combat` prevents duplicate encounters; only non-`in_combat` same-room party members join new encounter; mob HP scales with party size at encounter time (e.g., HP × party_size) to maintain challenge; `XP_PARTY_BONUS_PERCENT` (default 10) applied to combat XP only when 2+ party members are in the combat instance at victory; turn order: round-robin in party join order, mob attacks one random party member at end of cycle (random target for prototype; future: threat/aggro system); death during party combat: dead member removed from combat instance (like flee), no XP awarded, mob HP does not rescale down, party membership persists across respawn; remaining members notified when a party member flees combat; HIGHEST-RISK STORY: must audit and extend `CombatInstance` for multi-player support — verify players is a list, turn cycling handles N players, victory/defeat conditions work with N players
+FR87: World map — `/map` shows discovered rooms and connections; reuses existing `visited_rooms` field on Player model — no new DB schema needed; server reads `visited_rooms` and cross-references room exit data to build connections; server sends `map_data` message with only discovered rooms — undiscovered rooms omitted entirely from response (client cannot infer total count or names); format: `{rooms: [{room_key, name}], connections: [{from_room, to_room, direction}]}`; connections to undiscovered rooms show destination as `???` (preserves exploration mystery while revealing exit exists); connections derived from room exit data at render time — no separate connection storage; web client renders as text-based node list in dedicated panel
+FR94: Server `xp_gained` message must include `new_total_xp` (absolute value), not just `amount` (delta) — prevents client-side XP accumulation drift on missed messages
+FR95: Server `login_success` message must include `entity_id` — client should not construct `player_{id}` format internally
+FR96: Server `respawn` message must include new `hp` value — client should not assume `hp = max_hp` game rule
+FR97: Server `level_up_complete` message must include `new_hp` — client should not assume full heal on level-up
+FR98: Server `combat_end` message must include defeated NPC `entity_id` — client should not use proximity heuristic to guess which NPC died
+FR99: Server `stats` and `level_up_available` messages must include `xp_for_next_level` and `xp_for_current_level` — client should not compute XP curve formula
+FR100: Server `level_up_available` message must include stat effect descriptions derived from config values — client should not hardcode `+5 HP per CON`, `+3% XP per CHA` etc.
+FR101: Default player stats centralized in config: `DEFAULT_BASE_HP=100`, `DEFAULT_ATTACK=10`, `DEFAULT_STAT_VALUE=1` — replacing 5+ hardcoded occurrences across auth.py, levelup.py, movement.py, query.py
+FR102: Game structure parameters centralized in config: `DEFAULT_SPAWN_ROOM="town_square"`, `STAT_CAP=10`, `LEVEL_UP_STAT_CHOICES=3` — each currently hardcoded in 2+ files
+FR103: Combat parameters centralized in config: `COMBAT_HAND_SIZE=5`, `COMBAT_MIN_DAMAGE=1` — currently hardcoded in card_hand.py and damage.py/instance.py
+FR104: NPC derivation parameters centralized in config: `NPC_DEFAULT_HP_MULTIPLIER=10`, `NPC_ATTACK_DICE_MULTIPLIER=2` — currently hardcoded in npc.py
+FR105: Auth validation parameters centralized in config: `MIN_USERNAME_LENGTH=3`, `MIN_PASSWORD_LENGTH=6` — currently hardcoded in auth.py
+FR106: Loot tables moved from hardcoded Python dict (server/items/loot.py) to JSON data file (data/loot/) — consistent with cards, items, NPCs data-driven pattern per architecture Section 2.4
+FR107: Fix app.py:259 mob respawn fallback to use `settings.MOB_RESPAWN_SECONDS` instead of hardcoded `60`; fix trade cooldown to use config `TRADE_COOLDOWN_SECONDS=5` instead of hardcoded value in trade/manager.py:64
+FR108: Replace untyped `player_entities: dict[str, dict]` with a `PlayerSession` dataclass (fields: entity, room_key, db_id, inventory, visited_rooms, pending_level_ups) — two-phase migration with `__getitem__` compat bridge, then call-site migration; eliminates fragile string-key access across all handlers
+FR109: Add read-only public accessors (`MappingProxyType`) to `RoomInstance` for `_entities`, `_npcs`, `_interactive_objects` — eliminate cross-module private attribute access from handlers and room objects
+FR110: Store `room_key` on `InteractiveObject` at creation time — eliminate the `_get_room_key()` anti-pattern where chest.py and lever.py do linear scan of `game.room_manager._rooms`; no `interact()` signature change needed
+FR111: Decompose `_check_combat_end` (133 lines) into testable module-level helper functions within `combat.py` — separates XP calc, loot gen, defeat handling, cleanup into independently testable units; bonus objective: decompose `game.respawn_player()` similarly within `app.py`
+FR112: Remove `_NPC_TEMPLATES` module-global import from `scheduler.py` — expose as `game.npc_templates` attribute on the composition root, following existing access pattern
+FR113: Set up Alembic for schema migrations — replace `Base.metadata.create_all` auto-create with versioned migration scripts for production readiness
+FR114: Add `asyncio.Lock` to trade execution (`_execute_trade` TOCTOU race between validation and DB write) and NPC encounter initiation (`_handle_mob_encounter` TOCTOU race between `in_combat` check and set)
+FR115: Add PostgreSQL-compatible connection pooling config to `create_async_engine` — `pool_size`, `max_overflow`, `pool_pre_ping` (conditional on whether driver is asyncpg vs aiosqlite)
+FR116: Fix `SpawnCheckpoint` DateTime handling — use timezone-aware datetimes consistently instead of `datetime.now(UTC).replace(tzinfo=None)` for PostgreSQL compatibility
+FR117: Consolidate transaction granularity in `_check_combat_end` — currently opens 3-4 separate transactions per participant in a loop; should be one transaction per combat resolution
+FR118: Make effect targeting data-driven — add `"target": "self"|"enemy"` field on card/item effects instead of hardcoded if/else in `CombatInstance.resolve_card_effects()`
 
 ### NonFunctional Requirements
 
@@ -117,6 +149,11 @@ NFR5: bcrypt password hashing for security
 NFR6: Pydantic message validation for all client-server communication
 NFR7: Room JSON schema versioned (schema_version field) for future migration support
 NFR8: Room entry payload optimized (~50KB for 100x100 grid with integer tile type IDs)
+NFR9: All game balance parameters must be configurable via environment variables (Pydantic BaseSettings pattern) — no game-affecting numeric constants hardcoded in Python source
+NFR10: Server messages must be self-contained — client should never need to compute, derive, or accumulate game state from deltas; enables engine-agnostic client replacement
+NFR11: No module should access private (`_`-prefixed) attributes of another module — all cross-module access through public APIs
+NFR12: Database layer must be compatible with PostgreSQL swap via `DATABASE_URL` env var without code changes beyond driver dependency
+NFR13: All concurrent state mutations must be protected by `asyncio.Lock` to prevent TOCTOU races at `await` yield points
 
 ### Additional Requirements
 
@@ -129,6 +166,10 @@ NFR8: Room entry payload optimized (~50KB for 100x100 grid with integer tile typ
 - Effect registry as shared core service extensible by adding new handler files
 - Item categories unified in single inventory system (consumables and materials together)
 - Loot table system for chests, reusable for future combat rewards
+- Architecture Section 2.4 mandates JSON-driven configuration: "JSON defines what (data, values, configurations)" — loot tables in Python code violate this
+- Architecture Section 3.1 specifies handlers should be "thin, delegate to domain logic" — `_check_combat_end` (133 lines) and `handle_login` (158 lines) violate this
+- Architecture's `RoomProvider` interface pattern demonstrates expected abstraction quality — other cross-module boundaries should follow similar patterns
+- Architecture documents `game.session_factory()` as the single DB access pattern — Alembic must integrate with this, not bypass it
 
 ### UX Design Requirements
 
@@ -214,17 +255,48 @@ Web demo client (`web-demo/`) implemented as a proof-of-concept test tool. Vanil
 | FR74 | Epic 10 | Mob loot drops on combat victory |
 | FR75 | Epic 10 | Loot table entries for all NPC types |
 | FR76 | Epic 10 | Increased NPC spawn density |
-| FR77 | Epic 11 | XP level thresholds |
-| FR78 | Epic 11 | Level-up mechanic with stat increases |
+| FR77 | Epic 11 | XP level thresholds (configurable linear scaling) |
+| FR78 | Epic 11 | Level-up mechanic (choose 3 stats, D&D-style) |
 | FR79 | Epic 11 | Level-up notification |
 | FR80 | Epic 11 | Level display in HUD and entity data |
-| FR81 | Epic 11 | `/stats` includes level and XP-to-next |
-| FR82 | Epic 12 | Trade system |
-| FR83 | Epic 12 | Trade validation |
-| FR84 | Epic 12 | Party system |
-| FR85 | Epic 12 | Party chat |
-| FR86 | Epic 12 | Party combat |
-| FR87 | Epic 12 | World map with room discovery |
+| FR81 | Epic 11 | `/stats` includes level, XP-to-next, and all 6 abilities |
+| FR88 | Epic 11 | D&D-style stat system (STR/DEX/CON/INT/WIS/CHA) for PC and NPC |
+| FR89 | Epic 11 | Stat-to-combat mapping (damage, reduction, HP, heal bonuses) |
+| FR90 | Epic 11 | NPC hit_dice system (all abilities from hit_dice) |
+| FR91 | Epic 11 | Configurable XP curve (quadratic/linear, CHA bonus) |
+| FR92 | Epic 11 | Multiple XP sources (combat, exploration, interaction, hooks) |
+| FR93 | Epic 11 | Stats persistence (6 abilities + level to DB) |
+| FR82 | Epic 12 (Story 12.1) | Trade system (mutual exchange, tradeable flag, state machine) |
+| FR83 | Epic 12 (Story 12.2) | Trade validation (atomic swap, disconnect cancellation, no escrow) |
+| FR84 | Epic 12 (Stories 12.3, 12.4) | Party system — infrastructure (12.3) + commands (12.4) |
+| FR85 | Epic 12 (Story 12.5) | Party chat |
+| FR86 | Epic 12 (Stories 12.6, 12.7) | Party combat — engine extension (12.6) + integration (12.7) |
+| FR87 | Epic 12 (Story 12.8) | World map with room discovery |
+| FR94 | Epic 14 (Story 14.3b) | xp_gained includes new_total_xp |
+| FR95 | Epic 14 (Story 14.3a) | login_success includes entity_id |
+| FR96 | Epic 14 (Story 14.3a) | respawn includes new hp |
+| FR97 | Epic 14 (Story 14.3a) | level_up_complete includes new_hp |
+| FR98 | Epic 14 (Story 14.3a) | combat_end includes defeated NPC entity_id |
+| FR99 | Epic 14 (Story 14.3b) | stats/level_up include XP thresholds |
+| FR100 | Epic 14 (Story 14.3b) | level_up includes stat effect descriptions from config |
+| FR101 | Epic 14 (Story 14.1) | DEFAULT_BASE_HP, DEFAULT_ATTACK, DEFAULT_STAT_VALUE in config |
+| FR102 | Epic 14 (Story 14.1) | DEFAULT_SPAWN_ROOM, STAT_CAP, LEVEL_UP_STAT_CHOICES in config |
+| FR103 | Epic 14 (Story 14.1) | COMBAT_HAND_SIZE, COMBAT_MIN_DAMAGE in config |
+| FR104 | Epic 14 (Story 14.1) | NPC_DEFAULT_HP_MULTIPLIER, NPC_ATTACK_DICE_MULTIPLIER in config |
+| FR105 | Epic 14 (Story 14.1) | MIN_USERNAME_LENGTH, MIN_PASSWORD_LENGTH in config |
+| FR106 | Epic 14 (Story 14.2) | Loot tables to JSON data files |
+| FR107 | Epic 14 (Story 14.1) | Fix hardcoded respawn 60s + trade cooldown 5s to use config |
+| FR108 | Epic 14 (Story 14.4a) | PlayerSession dataclass (two-phase migration) |
+| FR109 | Epic 14 (Story 14.4b) | Read-only public accessors on RoomInstance |
+| FR110 | Epic 14 (Story 14.4b) | room_key stored on InteractiveObject at creation |
+| FR111 | Epic 14 (Story 14.5) | Decompose _check_combat_end into testable helpers |
+| FR112 | Epic 14 (Story 14.5) | game.npc_templates replaces _NPC_TEMPLATES import |
+| FR113 | Epic 14 (Story 14.7) | Alembic scaffold + initial migration |
+| FR114 | Epic 14 (Story 14.6) | asyncio.Lock for trade + NPC encounter races |
+| FR115 | Epic 14 (Story 14.7) | PostgreSQL connection pooling config |
+| FR116 | Epic 14 (Story 14.7) | Timezone-aware datetimes |
+| FR117 | Epic 14 (Story 14.7) | Transaction consolidation in combat resolution |
+| FR118 | Backlog | Data-driven effect targeting (deferred from Epic 14) |
 
 ## Epic List
 
@@ -270,19 +342,556 @@ Players experience a polished, discoverable game world — interacting with obje
 **FRs covered:** FR62, FR63, FR64, FR65, FR66, FR67, FR68, FR69, FR70, FR71, FR72, FR73, FR74, FR75, FR76
 **Dependencies:** Builds on Epics 1-9 (all complete). Standalone.
 
-### Epic 11: Leveling System
-Players gain levels as they accumulate XP, receiving stat increases and visual feedback on their progression. Level is visible to other players, creating a sense of achievement and relative power.
-**FRs covered:** FR77, FR78, FR79, FR80, FR81
-**Dependencies:** Builds on Epic 10 (stats HUD, mob loot drops). Standalone.
+### Epic 11: Experience & Stat System
+Players have meaningful character stats (STR, DEX, CON, INT, WIS, CHA) that affect card combat outcomes. NPCs use a hit_dice system for simplified stat derivation. Players gain XP from combat, exploration, and object interaction, with hooks ready for future quest and party XP. A configurable XP curve (quadratic default) drives leveling, where players choose which stats to boost — creating meaningful progression with player agency.
+**FRs covered:** FR77, FR78, FR79, FR80, FR81, FR88, FR89, FR90, FR91, FR92, FR93
+**Dependencies:** Builds on Epics 1-10 (all complete). Standalone. Internal dependency chain: 11.1 (stats) → 11.2 (combat wiring) → 11.3 (XP curve + combat rewards) → 11.4 (exploration/interaction XP) → 11.5 (leveling) → 11.6 (notification/UI).
 
 ### Epic 12: Social Systems
-Players can trade items with each other, form parties for cooperative combat, and navigate the world using a discovered map — transforming the game from a solo experience into a social one.
+Players can trade items with each other, form parties for cooperative combat, and navigate the world using a discovered map — transforming the game from a solo experience into a social one. Trade is a mutual exchange model with session consent, multi-item offers, bait-and-switch prevention, and atomic DB swaps. Party system tracks leader/members with invite/accept/leave/disband/kick commands, leader succession, and combat integration.
 **FRs covered:** FR82, FR83, FR84, FR85, FR86, FR87
-**Dependencies:** Builds on Epics 10-11. Standalone.
+**Dependencies:** Builds on Epics 10-11. Standalone. Internal dependency chain: 12-1 (trade system) → 12-2 (trade validation); 12-3 (party infra) → 12-4 (party commands) → 12-5 (party chat) → 12-6 (party combat); 12-7 (world map) is independent.
+**Architecture Decisions:**
+- ADR-1: Trade state in-memory only (60s sessions; DB atomicity handles crashes)
+- ADR-2: Party state in-memory only (reform cost 3s < persistence complexity)
+- ADR-3: New `server/trade/` and `server/party/` packages (matches domain-driven structure alongside `combat/`, `items/`)
+- ADR-4: Name → entity_id index added to `ConnectionManager` (already owns "who is online" data)
+- ADR-5: Extend `CombatInstance` for multi-player, don't rewrite (audit first in Story 12-6; preserve 600+ tests)
+- ADR-6: Map data computed on request, no caching (trivial O(rooms × exits) cost)
+
+### Epic 14: Codebase Structure & Infrastructure Hardening
+The game server becomes production-ready for engine-agnostic client development and future PostgreSQL deployment. Game balance parameters are fully configurable, server messages are self-contained (enabling Godot client without replicating game logic), module boundaries are clean, and database infrastructure supports schema migrations and concurrent operations safely.
+**FRs covered:** FR94, FR95, FR96, FR97, FR98, FR99, FR100, FR101, FR102, FR103, FR104, FR105, FR106, FR107, FR108, FR109, FR110, FR111, FR112, FR113, FR114, FR115, FR116, FR117
+**NFRs addressed:** NFR9, NFR10, NFR11, NFR12, NFR13
+**Backlog (deferred):** FR118 (data-driven effect targeting — implement when needed)
+**Dependencies:** Epic 13 must complete before Epic 14 begins.
+**Decision gate:** After Phase 1, evaluate: continue cleanup or pivot to content/Godot?
+
+**Execution order:**
+```
+Phase 1 (Now):   14.1 → 14.3a → 14.3b     14.2 (anytime, independent)
+Phase 2 (Soon):  14.4b → 14.4a → 14.5
+Phase 3 (Later): 14.6, 14.7 (14.7 depends on 14.5)
+```
+
+**Dependency graph:**
+```
+14.1 ──→ 14.3a (messages reference config values)
+14.1 ──→ 14.3b (stat descriptions from config)
+14.4a ─→ 14.5 ─→ 14.7 (decomposition → transaction consolidation)
+14.2, 14.4b, 14.6 — independently implementable
+```
+
+**Cross-cutting rules:**
+- Refactoring stories (14.4a, 14.4b, 14.5): all existing tests pass, no assertion changes, no new behavior
+- Message enrichment stories (14.3a, 14.3b): additive-only changes (new fields, old fields preserved); server tests assert new fields
+- Test assertions use literal values (e.g., `assert hp == 100`), not `settings.*` references
+- Config values are for new characters only — not retroactive to existing DB records
+
+**Stories:**
+
+| Story | Title | FRs | Urgency |
+|-------|-------|-----|---------|
+| 14.1 | Centralize Game Parameters in Config | FR101-FR105, FR107 | Now |
+| 14.2 | Data-Driven Loot Tables | FR106 | Now |
+| 14.3a | Core Message Enrichment | FR95, FR96, FR97, FR98 | Now |
+| 14.3b | XP & Stats Display Enrichment | FR94, FR99, FR100 | Now |
+| 14.4b | Room Accessors & Interact Signature | FR109, FR110 | Soon |
+| 14.4a | PlayerSession Dataclass | FR108 | Soon |
+| 14.5 | Decompose Handler Business Logic | FR111, FR112 | Soon |
+| 14.6 | Concurrency Safety | FR114 | Later |
+| 14.7 | Database Migration & PostgreSQL Readiness | FR113, FR115, FR116, FR117 | Later |
+
+**Architecture Decisions (ADR-14-1 through ADR-14-21):**
+- ADR-14-1: PlayerSession two-phase migration with `__getitem__` compat bridge, both phases in 14.4a
+- ADR-14-2: Loot table loader in `item_repo.py` alongside `load_items()`
+- ADR-14-3: `MappingProxyType` for read-only room accessors
+- ADR-14-4: Decompose into module-level helpers within `combat.py` (not service extraction)
+- ADR-14-5: Sync Alembic with auto-derived `ALEMBIC_DATABASE_URL`
+- ADR-14-6: Section comments in flat `BaseSettings` (sufficient at current scale)
+- ADR-14-7: Trade locks on `TradeManager`, NPC lock on `NpcEntity` dataclass field
+- ADR-14-8: `game.npc_templates` attribute replaces `_NPC_TEMPLATES` import
+- ADR-14-9: Merge per-participant transactions (3→1), preserve per-participant isolation
+- ADR-14-10: Per-effect `"target"` with smart defaults (FR118, deferred to backlog)
+- ADR-14-11: DB pool settings in config (`DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_PRE_PING`), conditional on driver
+- ADR-14-12: UTC-aware datetimes throughout; Alembic initial migration includes timezone column change
+- ADR-14-13: `room_key` stored on `InteractiveObject` at creation (no `interact()` signature change)
+- ADR-14-14: Tests as message contract (no separate schema doc; Pydantic response models as future epic)
+- ADR-14-15: Direct 1:1 loot table JSON translation (no weighted drops in this story)
+- ADR-14-16: Both PlayerSession migration phases within single Story 14.4a
+- ADR-14-17: NFR verification via curated grep checklist + CLAUDE.md convention update
+- ADR-14-18: Auto-generate initial Alembic migration; delete dev DBs; `make db-migrate` target
+- ADR-14-19: Pydantic `field_validator` for 6 critical settings only (BASE_HP≥1, HAND_SIZE≥1, MIN_DAMAGE≥0, STAT_CAP≥1, STAT_CHOICES≥1, POOL_SIZE≥1)
+- ADR-14-20: Party module globals (`_pending_invites` etc.) deferred — within-module, not cross-module
+- ADR-14-21: Keep `create_all` alongside Alembic (don't force transition in scaffolding story)
+
+**Per-story design decisions:**
+
+**14.1 — Centralize Game Parameters in Config**
+- Settings organized with section comments (ADR-14-6)
+- Add `ALEMBIC_DATABASE_URL` auto-derived sync URL
+- `field_validator` for 6 critical settings (ADR-14-19)
+- Document: "config = new character defaults only, not retroactive"
+- Add comment to `_STATS_WHITELIST` explaining `attack` exclusion
+- Check `test_integration.py` coverage as prerequisite; expand if gaps
+- Update CLAUDE.md with config convention
+
+**14.2 — Data-Driven Loot Tables**
+- Direct 1:1 JSON translation to `data/loot/loot_tables.json` (ADR-14-15)
+- Loader function in `item_repo.py` (ADR-14-2)
+- Subtasks: JSON schema → loader → `Game.startup()` hook → call site updates → delete `loot.py` constant
+- Runtime data on `game.loot_tables`
+
+**14.3a — Core Message Enrichment**
+- FR95: `entity_id` in `login_success`
+- FR96: `hp` in `respawn`
+- FR97: `new_hp` in `level_up_complete`
+- FR98: `defeated_npc_id` in `combat_end`
+- Additive-only changes; code path audit per emission site
+- Add assertions to existing tests (not new test files) (ADR-14-14)
+- Minimal web client updates (don't rewrite client logic)
+
+**14.3b — XP & Stats Display Enrichment**
+- FR94: `new_total_xp` in `xp_gained`
+- FR99: `xp_for_next_level`, `xp_for_current_level` in stats
+- FR100: stat effect descriptions from config in `level_up_available`
+- Same additive-only and test rules as 14.3a
+
+**14.4b — Room Accessors & Interact Signature**
+- Read-only public accessors via `MappingProxyType` (ADR-14-3)
+- `room_key` stored on object at creation time (ADR-14-13); delete `_get_room_key()` from chest/lever
+- Pure refactor — all existing tests pass
+
+**14.4a — PlayerSession Dataclass**
+- Two-phase migration within single story (ADR-14-1, ADR-14-16)
+- Pre-implementation grep for dict-specific patterns (`**`, `.copy()`, `isinstance`, `dict()`, serialization)
+- Phase 2 scope conditional on grep results
+- Pure refactor — all existing tests pass
+
+**14.5 — Decompose Handler Business Logic**
+- `_check_combat_end` → 4 helpers: `_award_combat_xp`, `_distribute_combat_loot`, `_handle_player_defeat`, `_cleanup_combat_state` (suggested, non-binding)
+- `game.npc_templates` attribute replaces `_NPC_TEMPLATES` import (ADR-14-8)
+- Bonus objective: decompose `game.respawn_player()` → `_reset_player_stats`, `_transfer_to_spawn`, `_broadcast_respawn` (droppable if story gets complex)
+- Pure refactor — all existing tests pass
+
+**14.6 — Concurrency Safety**
+- Per-NPC lock via `_lock: asyncio.Lock` field on `NpcEntity` dataclass (ADR-14-7)
+- Per-trade lock dict on `TradeManager` keyed by sorted player IDs (ADR-14-7)
+- Short critical sections (protect check-and-set only)
+- Document `asyncio.gather` concurrent test pattern
+
+**14.7 — Database Migration & PostgreSQL Readiness**
+- Sync Alembic with derived URL (ADR-14-5); auto-generate initial migration (ADR-14-18)
+- Keep `create_all` alongside Alembic (ADR-14-21); delete dev DBs for fresh start
+- Pool settings conditional on driver (ADR-14-11)
+- UTC-aware datetimes on `SpawnCheckpoint` (ADR-14-12)
+- Per-participant loot transaction isolation intentional (ADR-14-9); stat saves consolidated
+- Migration roundtrip test: verify `alembic upgrade head` matches `create_all` schema
+- `make db-migrate` Makefile target
+- ADR-14-5 future debt noted: sync Alembic creates two connection paths in PostgreSQL production
+
+**Epic 14 — Definition of Done:**
+- All stories in shipped phases complete
+- All 800+ existing tests pass
+- `test_integration.py` covers full gameplay loop (register → login → move → fight → loot → disconnect → reconnect → verify state)
+- NFR verification scan passes (grep for hardcoded game values, `"town_square"`, cross-module `_` access)
+- Note: `party.py` module globals are known debt — within-module, tracked for future cleanup
+- E2E smoke test: full gameplay loop verified end-to-end after all refactoring
+- CLAUDE.md updated with new conventions (config for game values, no cross-module `_` access, server messages self-contained)
 
 ---
 
-## Epic 1: Player Registration & World Entry
+## Epic 14: Codebase Structure & Infrastructure Hardening
+
+The game server becomes production-ready for engine-agnostic client development and future PostgreSQL deployment. Game balance parameters are fully configurable, server messages are self-contained (enabling Godot client without replicating game logic), module boundaries are clean, and database infrastructure supports schema migrations and concurrent operations safely.
+
+### Story 14.1: Centralize Game Parameters in Config
+
+As a developer,
+I want all game balance parameters defined in a single config source (`Settings` class),
+So that changing a game value requires editing one place, and the codebase is consistent with the architecture's JSON-driven configuration principle.
+
+**Acceptance Criteria:**
+
+**Given** the `Settings` class in `server/core/config.py`
+**When** Story 14.1 is implemented
+**Then** the following settings are added with section comments organizing the file:
+- Player Defaults: `DEFAULT_BASE_HP=100`, `DEFAULT_ATTACK=10`, `DEFAULT_STAT_VALUE=1`
+- Game Structure: `DEFAULT_SPAWN_ROOM="town_square"`, `STAT_CAP=10`, `LEVEL_UP_STAT_CHOICES=3`
+- Combat: `COMBAT_HAND_SIZE=5`, `COMBAT_MIN_DAMAGE=1`
+- NPC: `NPC_DEFAULT_HP_MULTIPLIER=10`, `NPC_ATTACK_DICE_MULTIPLIER=2`
+- Auth: `MIN_USERNAME_LENGTH=3`, `MIN_PASSWORD_LENGTH=6`
+- Trade: `TRADE_COOLDOWN_SECONDS=5`
+- DB: `DB_POOL_SIZE=10`, `DB_MAX_OVERFLOW=20`, `DB_POOL_PRE_PING=True`
+- Migration: `ALEMBIC_DATABASE_URL` auto-derived from `DATABASE_URL` (strips async driver prefix)
+**And** `field_validator` guards exist for: `DEFAULT_BASE_HP >= 1`, `COMBAT_HAND_SIZE >= 1`, `COMBAT_MIN_DAMAGE >= 0`, `STAT_CAP >= 1`, `LEVEL_UP_STAT_CHOICES >= 1`, `DB_POOL_SIZE >= 1`
+
+**Given** hardcoded value `100` (base HP) in `auth.py`, `levelup.py`, `movement.py`, `query.py`
+**When** Story 14.1 is implemented
+**Then** all occurrences reference `settings.DEFAULT_BASE_HP` instead of literal `100`
+**And** the same replacement is applied for all other centralized values across their respective files
+
+**Given** `app.py:259` using hardcoded `60` for mob respawn fallback
+**When** Story 14.1 is implemented
+**Then** it uses `settings.MOB_RESPAWN_SECONDS` (which already exists in config)
+
+**Given** `trade/manager.py:64` using hardcoded `5` for trade cooldown
+**When** Story 14.1 is implemented
+**Then** it uses `settings.TRADE_COOLDOWN_SECONDS`
+
+**Given** `_STATS_WHITELIST` in `player/repo.py` excludes `attack`
+**When** Story 14.1 is implemented
+**Then** a comment explains: "attack excluded — derived from STR/INT at runtime, not independently persisted"
+
+**Given** all existing tests (800+)
+**When** Story 14.1 is implemented
+**Then** all tests pass with assertions unchanged (tests use literal values like `assert hp == 100`, not `settings.*`)
+
+**Given** `test_integration.py`
+**When** Story 14.1 begins
+**Then** verify it covers the full gameplay loop (register → login → move → fight → loot → disconnect → reconnect → verify state); expand coverage if gaps exist
+
+**Given** the config file after changes
+**When** reviewed
+**Then** a comment above player default settings states: "Player defaults: applied at registration only. Changing these does NOT retroactively update existing players in the database."
+
+**Implementation notes:**
+- ADR-14-6: Section comments in flat `BaseSettings` (no nested models)
+- ADR-14-19: Validators for 6 critical settings only
+- ~10-12 production files modified, 0 test assertion changes
+- Update CLAUDE.md: "Game balance values must reference `settings.*`"
+
+### Story 14.2: Data-Driven Loot Tables
+
+As a developer,
+I want loot tables defined in JSON data files instead of hardcoded Python dicts,
+So that game content follows the architecture's JSON-driven configuration principle and loot can be modified without code changes.
+
+**Acceptance Criteria:**
+
+**Given** the hardcoded `LOOT_TABLES` dict in `server/items/loot.py`
+**When** Story 14.2 is implemented
+**Then** a `data/loot/loot_tables.json` file contains the same data in direct 1:1 JSON translation (list of `{item_key, quantity}` per table key)
+
+**Given** the `item_repo.py` module
+**When** Story 14.2 is implemented
+**Then** a `load_loot_tables(data_dir: Path) -> dict` function loads and returns the JSON loot tables
+
+**Given** `Game.startup()` initialization sequence
+**When** Story 14.2 is implemented
+**Then** loot tables are loaded after items (loot references item keys) and stored as `game.loot_tables`
+
+**Given** all call sites that import or reference `LOOT_TABLES` from `server/items/loot.py`
+**When** Story 14.2 is implemented
+**Then** they reference `game.loot_tables` instead
+**And** the `LOOT_TABLES` constant and `loot.py` module are deleted
+
+**Given** all existing tests
+**When** Story 14.2 is implemented
+**Then** all tests pass; test fixtures that reference loot tables are updated to use the new data source
+
+**Implementation notes:**
+- ADR-14-2: Loader in `item_repo.py` (not a new repo file)
+- ADR-14-15: Direct 1:1 JSON translation (no weighted drops)
+- ~2-3 production files + 1 new JSON, 2-3 test files updated
+- Small, self-contained, independently shippable
+
+### Story 14.3a: Core Message Enrichment
+
+As a game client developer,
+I want server messages to include all data needed for display (entity IDs, HP values, NPC identifiers),
+So that the client is a pure display layer with no need to construct IDs, assume game rules, or guess which NPC died.
+
+**Acceptance Criteria:**
+
+**Given** a successful login
+**When** the server sends `login_success`
+**Then** the message includes `entity_id` (e.g., `"player_1"`) as a field
+**And** the existing `player_id` field is preserved (additive-only)
+
+**Given** a player dies and respawns
+**When** the server sends `respawn`
+**Then** the message includes `hp` with the player's actual post-respawn HP value
+**And** existing fields are preserved
+
+**Given** a player completes level-up stat selection
+**When** the server sends `level_up_complete`
+**Then** the message includes `new_hp` with the player's actual current HP after recalculation
+**And** existing fields (`level`, `new_max_hp`, `stat_changes`) are preserved
+
+**Given** a player wins combat against an NPC
+**When** the server sends `combat_end` with `result: "victory"`
+**Then** the message includes `defeated_npc_id` with the NPC's entity ID string
+**And** existing fields are preserved
+
+**Given** each enriched message type
+**When** the corresponding server code path executes
+**Then** an existing test (not a new test file) asserts the new field is present and has the correct value
+
+**Given** the web client
+**When** Story 14.3a is implemented
+**Then** the client is updated minimally to not break — uses new fields where trivial but does NOT require rewriting client logic
+
+**Given** all emission code paths for each message type
+**When** Story 14.3a is implemented
+**Then** ALL code paths that emit each message type include the new field (verified by code path audit)
+
+**Implementation notes:**
+- ADR-14-14: Tests as message contract (add assertions to existing tests)
+- 4 server files modified, 4-6 existing tests gain new assertions
+- Minimal web client updates (don't rewrite proximity heuristic or respawn logic)
+- Depends on 14.1 (no config references in this story, but must be sequenced after)
+
+### Story 14.3b: XP & Stats Display Enrichment
+
+As a game client developer,
+I want server messages to include absolute XP totals, level thresholds, and stat effect descriptions,
+So that the client displays XP progress and stat information without hardcoding the XP formula or stat bonus values.
+
+**Acceptance Criteria:**
+
+**Given** a player gains XP (combat, exploration, or interaction)
+**When** the server sends `xp_gained`
+**Then** the message includes `new_total_xp` (absolute XP total after gain)
+**And** the existing `amount` field is preserved (additive-only)
+
+**Given** a player requests stats or the server sends stat-related messages
+**When** the server sends `stats_result` or `level_up_available`
+**Then** the message includes `xp_for_next_level` and `xp_for_current_level` computed from the XP curve config
+
+**Given** a player receives `level_up_available`
+**When** the server sends the message
+**Then** it includes `stat_effects` — a dict mapping each stat name to its effect description derived from config values (e.g., `{"constitution": "+5 max HP per point"}` using `settings.CON_HP_PER_POINT`)
+
+**Given** each enriched message type
+**When** the corresponding server code path executes
+**Then** an existing test asserts the new fields are present with correct values
+
+**Given** the web client
+**When** Story 14.3b is implemented
+**Then** the client is updated minimally — uses `new_total_xp` if trivial, but does NOT require rewriting the XP bar formula or stat description rendering
+
+**Implementation notes:**
+- Depends on 14.1 (stat descriptions reference config values like `CON_HP_PER_POINT`)
+- 2-3 server files modified (`core/xp.py`, `handlers/query.py`)
+- Same additive-only and test rules as 14.3a
+
+### Story 14.4b: Room Accessors & Interact Signature
+
+As a developer,
+I want clean public APIs on `RoomInstance` and room objects knowing their own room,
+So that no module accesses another module's private attributes, and interactive objects don't scan all rooms to find themselves.
+
+**Acceptance Criteria:**
+
+**Given** `RoomInstance` with private attributes `_entities`, `_npcs`, `_interactive_objects`
+**When** Story 14.4b is implemented
+**Then** read-only public properties `entities`, `npcs`, `interactive_objects` exist returning `MappingProxyType` views
+**And** all handler code that accessed `room._entities`, `room._npcs`, `room._interactive_objects` uses the public properties instead
+
+**Given** `InteractiveObject` base class and its subclasses (`ChestObject`, `LeverObject`)
+**When** Story 14.4b is implemented
+**Then** each object stores `self.room_key` set at creation time (passed by `RoomInstance` during object construction)
+**And** `_get_room_key()` methods are deleted from `ChestObject` and `LeverObject`
+**And** code that called `_get_room_key()` uses `self.room_key` instead
+
+**Given** handlers in `movement.py` and `query.py` that access `room._interactive_objects` or `room._npcs`
+**When** Story 14.4b is implemented
+**Then** they use `room.interactive_objects` and `room.npcs` (public read-only accessors)
+
+**Given** all existing tests
+**When** Story 14.4b is implemented
+**Then** all tests pass without assertion changes (pure refactor)
+
+**Implementation notes:**
+- ADR-14-3: `MappingProxyType` for zero-copy read-only enforcement
+- ADR-14-13: `room_key` stored on object at creation (no `interact()` signature change)
+- ~5-6 production files modified, 3-4 test files
+- Independent — no dependencies on other Phase 2 stories
+
+### Story 14.4a: PlayerSession Dataclass
+
+As a developer,
+I want `game.player_entities` to use a typed `PlayerSession` dataclass instead of untyped dicts,
+So that IDE autocompletion works, typos in field names are caught at development time, and the most-accessed data structure in the codebase is type-safe.
+
+**Acceptance Criteria:**
+
+**Given** the need for a typed player session
+**When** Story 14.4a is implemented
+**Then** a `PlayerSession` dataclass exists with typed fields: `entity` (PlayerEntity), `room_key` (str), `db_id` (int), `inventory` (Inventory), `visited_rooms` (set[str]), `pending_level_ups` (int)
+**And** `game.player_entities` is typed as `dict[str, PlayerSession]`
+
+**Given** the two-phase migration approach
+**When** Phase 1 is implemented
+**Then** `PlayerSession` implements `__getitem__` mapping string keys to attributes
+**And** all existing code (`player_info["entity"]`, `player_info["room_key"]`, etc.) continues to work unchanged
+**And** all existing tests pass without modification
+
+**Given** pre-implementation grep results for dict-specific patterns
+**When** the grep is run before Phase 2
+**Then** patterns checked include: `**player_info` (spread), `.copy()`, `isinstance(*, dict)`, `dict(player_info)`, `json.dumps` (serialization)
+**And** Phase 2 scope is adjusted based on findings (implement full `Mapping` protocol if spread/copy patterns exist, or fix call sites)
+
+**Given** Phase 2 migration
+**When** all call sites are migrated to attribute access (`player_info.entity`, `player_info.room_key`)
+**Then** `__getitem__` is removed from `PlayerSession`
+**And** all tests pass (mock patterns updated to construct `PlayerSession(...)` instances)
+
+**Given** all existing tests
+**When** Story 14.4a is fully implemented (both phases)
+**Then** all tests pass without assertion value changes (pure refactor — expected values unchanged, only mock construction patterns updated)
+
+**Implementation notes:**
+- ADR-14-1: Two-phase `__getitem__` compat bridge
+- ADR-14-16: Both phases within single story (migration is mechanical)
+- ~15-20 production files, ~15-20 test files (mock pattern updates)
+- Largest story in the epic — budget accordingly
+
+### Story 14.5: Decompose Handler Business Logic
+
+As a developer,
+I want thick handler functions broken into independently testable helpers,
+So that combat resolution logic, NPC template access, and respawn orchestration are readable, testable, and maintainable.
+
+**Acceptance Criteria:**
+
+**Given** `_check_combat_end` in `server/net/handlers/combat.py` (133 lines)
+**When** Story 14.5 is implemented
+**Then** it is decomposed into module-level helper functions within `combat.py` (suggested: `_award_combat_xp`, `_distribute_combat_loot`, `_handle_player_defeat`, `_cleanup_combat_state`)
+**And** each helper receives `game` as a parameter and handles one responsibility
+**And** `_check_combat_end` becomes a thin orchestrator calling the helpers
+
+**Given** `scheduler.py` importing `_NPC_TEMPLATES` from `server.room.objects.npc`
+**When** Story 14.5 is implemented
+**Then** `Game` exposes `self.npc_templates` as a public attribute (set during startup)
+**And** `scheduler.py` accesses `self.game.npc_templates` instead of the module-level import
+**And** the cross-module `_NPC_TEMPLATES` import is removed
+
+**Given** `game.respawn_player()` in `app.py` (~80 lines) — bonus objective
+**When** time permits within Story 14.5
+**Then** it is decomposed into helpers within `app.py` (suggested: `_reset_player_stats`, `_transfer_to_spawn`, `_broadcast_respawn`)
+**And** if the story is already complex, this decomposition is deferred
+
+**Given** all existing tests
+**When** Story 14.5 is implemented
+**Then** all tests pass without assertion changes (pure refactor)
+
+**Implementation notes:**
+- ADR-14-4: Module-level functions in `combat.py` (no new files, no service class)
+- ADR-14-8: `game.npc_templates` attribute (follows existing composition root pattern)
+- `respawn_player` decomposition is explicitly droppable
+- Depends on 14.4a (helpers use `PlayerSession` type)
+
+### Story 14.6: Concurrency Safety
+
+As a developer,
+I want trade execution and NPC encounter initiation protected by async locks,
+So that concurrent WebSocket coroutines cannot cause TOCTOU race conditions at `await` yield points.
+
+**Acceptance Criteria:**
+
+**Given** `NpcEntity` dataclass
+**When** Story 14.6 is implemented
+**Then** it has a `_lock: asyncio.Lock` field (created via `field(default_factory=asyncio.Lock, repr=False, compare=False)`)
+**And** the NPC encounter handler acquires `npc._lock` before checking `in_combat` and releases after setting it
+**And** the critical section is short (protects only the check-and-set, not the full encounter setup)
+
+**Given** `TradeManager`
+**When** Story 14.6 is implemented
+**Then** it has a `_trade_locks: dict[tuple, asyncio.Lock]` keyed by sorted player ID pairs
+**And** `_execute_trade` acquires the lock before inventory validation and releases after the DB write
+**And** the critical section is short (protects validation-through-write, not the full trade session)
+
+**Given** two coroutines simultaneously moving onto the same NPC
+**When** both attempt to initiate combat
+**Then** only one enters combat; the other receives an appropriate response (NPC already in combat)
+
+**Given** two coroutines simultaneously executing a trade
+**When** both race through validation and DB write
+**Then** the lock serializes access — one completes first, the second sees updated inventory
+
+**Given** the `asyncio.gather` test pattern
+**When** concurrency tests are written
+**Then** at least 2 tests use `asyncio.gather` to verify lock behavior (one for NPC encounter, one for trade)
+
+**Implementation notes:**
+- ADR-14-7: NPC lock on dataclass, trade lock dict on TradeManager
+- Short critical sections only — don't lock entire encounter/trade flows
+- Independent — no dependencies on other stories
+- New test pattern for this codebase; document for future reference
+
+### Story 14.7: Database Migration & PostgreSQL Readiness
+
+As a developer,
+I want Alembic schema migrations, connection pooling config, and timezone-correct datetimes,
+So that the database layer supports schema evolution and is ready for a future PostgreSQL swap.
+
+**Acceptance Criteria:**
+
+**Given** the project has no Alembic setup
+**When** Story 14.7 is implemented
+**Then** `alembic/` directory, `alembic.ini`, and `env.py` exist configured for sync Alembic using `settings.ALEMBIC_DATABASE_URL`
+**And** an auto-generated initial migration represents the current schema
+**And** running `alembic upgrade head` on a fresh database produces a schema identical to `create_all`
+**And** a migration roundtrip test verifies this equivalence
+
+**Given** `Base.metadata.create_all` in `database.py`
+**When** Story 14.7 is implemented
+**Then** `create_all` is preserved alongside Alembic (not removed)
+
+**Given** `Makefile`
+**When** Story 14.7 is implemented
+**Then** a `make db-migrate` target exists for running Alembic migrations
+
+**Given** `create_async_engine` in `database.py` with no pool config
+**When** Story 14.7 is implemented
+**Then** pool settings (`pool_size`, `max_overflow`, `pool_pre_ping`) from config are applied conditionally — only when the URL is not SQLite
+
+**Given** `SpawnCheckpoint` with `DateTime` columns using `datetime.now(UTC).replace(tzinfo=None)`
+**When** Story 14.7 is implemented
+**Then** all datetime usage is timezone-aware (`datetime.now(UTC)` without stripping)
+**And** the `DateTime(timezone=True)` column type is used
+**And** the initial Alembic migration includes this column type
+
+**Given** the decomposed combat helpers from Story 14.5
+**When** Story 14.7 is implemented
+**Then** per-participant transactions in combat resolution are consolidated from 3-4 per participant to 1 per participant
+**And** per-participant isolation is preserved (participant A's failure does not roll back participant B)
+
+**Given** all existing tests
+**When** Story 14.7 is implemented
+**Then** all tests pass
+
+**Implementation notes:**
+- ADR-14-5: Sync Alembic with derived URL (no async quirks)
+- ADR-14-9: Merge transactions per participant (3→1), keep isolation
+- ADR-14-11: Pool settings conditional on driver
+- ADR-14-12: UTC-aware datetimes
+- ADR-14-18: Auto-generate initial migration; dev DBs deleted and recreated
+- ADR-14-21: Keep `create_all` alongside Alembic
+- Future debt noted: sync Alembic creates two connection paths in PostgreSQL production
+- Depends on 14.5 (transaction consolidation in decomposed helpers)
+
+---
+
+All 9 stories for Epic 14 are now written. Here's the summary:
+
+| Story | Title | ACs | Status |
+|-------|-------|-----|--------|
+| 14.1 | Centralize Game Parameters in Config | 8 | Written |
+| 14.2 | Data-Driven Loot Tables | 5 | Written |
+| 14.3a | Core Message Enrichment | 7 | Written |
+| 14.3b | XP & Stats Display Enrichment | 5 | Written |
+| 14.4b | Room Accessors & Interact Signature | 4 | Written |
+| 14.4a | PlayerSession Dataclass | 5 | Written |
+| 14.5 | Decompose Handler Business Logic | 4 | Written |
+| 14.6 | Concurrency Safety | 5 | Written |
+| 14.7 | Database Migration & PostgreSQL Readiness | 7 | Written |
+
+**FR coverage verified:** All 24 FRs (FR94-FR117) mapped to stories. FR118 in backlog.
+
+Does the complete set look good? Any stories need adjustment before I save them all?
 
 Players can register an account, login via WebSocket, and enter a room — seeing the full tile map, other players, and objects. This epic delivers the foundational systems: project scaffolding, database models, persistence layer, networking, authentication, and room loading.
 
@@ -1895,3 +2504,1053 @@ So that combat encounters happen at a reasonable rate while exploring.
 
 **And** the server starts successfully with the updated room data
 **And** `pytest tests/` passes
+
+---
+
+## Epic 11: Experience & Stat System
+
+Players have meaningful character stats (STR, DEX, CON, INT, WIS, CHA) that affect card combat outcomes. NPCs use a hit_dice system for simplified stat derivation. Players gain XP from combat, exploration, and object interaction, with hooks ready for future quest and party XP. A configurable XP curve (quadratic default) drives leveling, where players choose which stats to boost — creating meaningful progression with player agency.
+
+### Story 11.1: D&D Stat System & NPC Hit Dice
+
+As a player,
+I want my character to have meaningful ability scores (STR, DEX, CON, INT, WIS, CHA),
+So that my character feels unique and stats affect gameplay beyond flat HP and attack.
+
+**Acceptance Criteria:**
+
+**Given** a new player registers and logs in for the first time
+**When** the server creates their entity
+**Then** the player has 6 ability scores: `strength=1, dexterity=1, constitution=1, intelligence=1, wisdom=1, charisma=1`
+**And** `max_hp` is calculated as `100 + (constitution × 5)` = 105
+**And** `level=1, xp=0`
+**And** all 6 abilities + level are persisted to DB
+
+**Given** a returning player logs in
+**When** the server loads their entity
+**Then** all 6 ability scores and level are restored from DB (not reset to defaults)
+
+**Given** an existing player with pre-Epic-11 stats (hp, max_hp, attack, xp but no ability scores)
+**When** they log in after Epic 11 is deployed
+**Then** missing ability scores default to 1 and level defaults to 1
+**And** existing hp, max_hp, and xp are preserved (not reset)
+**And** max_hp is NOT recalculated from CON on this migration login (would change 100 to 110, healing the player unexpectedly)
+**And** max_hp recalculation from CON takes effect on the player's next level-up
+
+**Given** `player/repo.py` has a stats whitelist `{"hp", "max_hp", "attack", "xp"}`
+**When** the story is complete
+**Then** the whitelist is expanded to include `strength, dexterity, constitution, intelligence, wisdom, charisma, level`
+**And** `attack` is kept in the whitelist as a derived/computed value during the transition period (deprecated in Story 11.2)
+
+**Given** `_DEFAULT_STATS` in `auth.py` currently is `{"hp": 100, "max_hp": 100, "attack": 10, "xp": 0}`
+**When** the story is complete
+**Then** defaults become `{"hp": 105, "max_hp": 105, "attack": 10, "xp": 0, "level": 1, "strength": 1, "dexterity": 1, "constitution": 1, "intelligence": 1, "wisdom": 1, "charisma": 1}`
+**And** `attack` remains present as a transitional computed value (= `floor(STR × 0.5)` for players, = `hit_dice × 2` for NPCs)
+**And** `max_hp` is derived from CON for new players, not hardcoded
+
+**Given** the CON-to-HP scaling needs to be tunable
+**When** the story is complete
+**Then** `CON_HP_PER_POINT: int = 5` is added to server config (Pydantic BaseSettings)
+**And** `max_hp = 100 + (constitution × settings.CON_HP_PER_POINT)` — not hardcoded
+
+**Given** `data/npcs/base_npcs.json` defines NPCs with flat `hp, max_hp, attack, defense` stats
+**When** the story is complete
+**Then** NPC data is restructured to use `hit_dice` and `hp_multiplier`:
+- `cave_bat`: hit_dice=2, hp_multiplier=12 (HP=24)
+- `slime`: hit_dice=3, hp_multiplier=10 (HP=30)
+- `forest_goblin`: hit_dice=4, hp_multiplier=12 (HP=48)
+- `cave_troll`: hit_dice=7, hp_multiplier=28 (HP=196)
+- `forest_dragon`: hit_dice=10, hp_multiplier=50 (HP=500)
+
+**Given** an NPC is loaded from JSON with `hit_dice=4`
+**When** the NPC entity is created
+**Then** all 6 abilities = 4 (derived from hit_dice)
+**And** `max_hp = hit_dice × hp_multiplier`
+**And** mob `attack` value = `hit_dice × 2` (transitional — used by combat instance until Story 11.2 wires STR directly)
+
+**Given** the combat instance uses `mob_stats["attack"]` for mob damage
+**When** the story is complete
+**Then** mob `attack` is populated from `hit_dice × 2` at combat init (preserves existing combat flow until Story 11.2)
+
+**And** all existing tests are updated for the new stat structure
+**And** `pytest tests/` passes with no failures
+
+### Story 11.2: Stat-to-Combat Integration
+
+As a player,
+I want my ability scores to meaningfully affect combat outcomes,
+So that investing in different stats creates distinct playstyles and tactical choices.
+
+**Acceptance Criteria:**
+
+**Given** a player plays a card with `damage/physical` effect (e.g., Slash, base value 12)
+**When** the damage effect resolves
+**Then** the final damage = `base_value + floor(player_strength × 1.0)`
+**And** a player with STR=1 deals 13 damage, STR=6 deals 18, STR=10 deals 22
+
+**Given** a player plays a card with `damage/fire`, `damage/ice`, or `damage/arcane` effect
+**When** the damage effect resolves
+**Then** the final damage = `base_value + floor(player_intelligence × 1.0)`
+**And** `damage/physical` is NOT scaled by INT (only STR)
+
+**Given** a player plays a card with `heal` effect (e.g., Heal Light, base value 15)
+**When** the heal effect resolves
+**Then** the final heal = `base_value + floor(player_wisdom × 1.0)`
+**And** healing is still capped at `max_hp`
+
+**Given** a player takes damage from any source (card, mob attack)
+**When** the damage is applied (after shield absorption)
+**Then** damage is reduced by `floor(target_dexterity × 1.0)`
+**And** minimum damage is always 1 (cannot reduce to 0)
+**And** DEX reduction applies AFTER shield absorption: `actual = max(1, post_shield_damage - floor(DEX × 1.0))`
+
+**Given** a `dot` effect ticks each turn
+**When** DoT damage is applied
+**Then** DoT damage is NOT reduced by DEX (design decision: poison/bleed bypasses physical defenses — it's already in your system)
+**And** DoT damage is NOT modified by source stats (flat value from card)
+
+**Given** a player's CON changes (e.g., from future level-up)
+**When** max_hp is recalculated
+**Then** `max_hp = 100 + (new_constitution × 5)`
+**And** if current HP exceeds new max_hp, HP is capped at new max_hp
+
+**Given** the `shield` effect type
+**When** a shield card is played
+**Then** shield value is NOT modified by any stat (flat value from card)
+
+**Given** the stat-to-combat scaling needs to be tunable
+**When** the story is complete
+**Then** `STAT_SCALING_FACTOR: float = 1.0` is added to server config (Pydantic BaseSettings)
+**And** all stat bonus formulas use `floor(stat × settings.STAT_SCALING_FACTOR)` — not hardcoded
+**And** a code comment documents: "STAT_SCALING_FACTOR must be >= 1.0 for stat=1 to produce a non-zero bonus. Values below 1.0 are valid but mean new characters (all stats=1) have no stat bonuses until they invest 2+ points via level-up."
+
+**Given** the effect handlers in `server/core/effects/` currently use `effect["value"]` directly
+**When** the story is complete
+**Then** `handle_damage` reads `source["strength"]` or `source["intelligence"]` based on `effect["subtype"]`
+**And** `handle_heal` reads `source["wisdom"]`
+**And** damage application (in `handle_damage` and mob attack) reads `target["dexterity"]`
+**And** stat bonuses are sourced from the `source` and `target` dicts passed by `CombatInstance`
+
+**Given** NPC stats are derived from `hit_dice` (Story 11.1)
+**When** an NPC attacks or is attacked
+**Then** NPC STR/DEX/INT/WIS all equal `hit_dice`, so NPC damage bonus = `floor(hit_dice × 1.0)` and NPC damage reduction = `floor(hit_dice × 1.0)`
+
+**Given** the transitional `attack` field from Story 11.1
+**When** the story is complete
+**Then** mob attack damage is calculated as `(hit_dice × 2) + floor(mob_strength × 1.0)` with DEX reduction applied to the target
+**And** the `attack` key is removed from the stats whitelist (fully deprecated)
+**And** all references to `mob_stats["attack"]` in combat instance are replaced with STR-derived calculation
+
+**And** all existing combat tests are updated with stat-aware assertions
+**And** new tests verify each stat's combat effect independently
+**And** `pytest tests/` passes
+
+### Story 11.3: Configurable XP Curve & Combat Rewards
+
+As a player,
+I want to earn XP from defeating mobs scaled to their difficulty,
+So that fighting stronger enemies is more rewarding than grinding weak ones.
+
+**Acceptance Criteria:**
+
+**Given** `server/core/config.py` defines server settings
+**When** the story is complete
+**Then** the following config values are added:
+- `XP_CURVE_TYPE: str = "quadratic"` (supports "quadratic", "linear")
+- `XP_CURVE_MULTIPLIER: int = 25`
+- `XP_CHA_BONUS_PER_POINT: float = 0.03`
+- `XP_LEVEL_THRESHOLD_MULTIPLIER: int = 1000`
+
+**Given** an NPC with `hit_dice=4` is defeated in combat
+**When** XP is calculated with `XP_CURVE_TYPE="quadratic"` and `XP_CURVE_MULTIPLIER=25`
+**Then** `base_xp = 4² × 25 = 400`
+
+**Given** `XP_CURVE_TYPE="linear"` and `XP_CURVE_MULTIPLIER=25`
+**When** the same NPC (hit_dice=4) is defeated
+**Then** `base_xp = 4 × 25 = 100`
+
+**Given** a player with CHA=6 defeats an NPC with hit_dice=4 (base_xp=400, quadratic)
+**When** the CHA bonus is applied with `XP_CHA_BONUS_PER_POINT=0.03`
+**Then** `final_xp = floor(400 × (1 + 6 × 0.03)) = floor(400 × 1.18) = 472`
+
+**Given** combat ends with victory
+**When** XP is awarded to each participant
+**Then** each player receives XP independently (each player's CHA applies to their own reward)
+**And** the `combat_end` message includes `"rewards": {"xp": <player-specific-xp>}` per player
+**And** the flat 25 XP reward (current implementation) is replaced by the hit_dice-based formula
+
+**Given** the XP calculation logic
+**When** the story is complete
+**Then** XP calculation is a standalone function in `server/core/xp.py:calculate_combat_xp(hit_dice, cha)` reusable by future XP sources
+**And** the function reads config values from settings, not hardcoded
+
+**Given** the expected XP rewards per NPC (quadratic, multiplier=25, CHA=1):
+**When** XP is calculated
+**Then** the rewards are:
+- cave_bat (hd=2): `floor(100 × 1.03)` = 103
+- slime (hd=3): `floor(225 × 1.03)` = 231
+- forest_goblin (hd=4): `floor(400 × 1.03)` = 412
+- cave_troll (hd=7): `floor(1225 × 1.03)` = 1261
+- forest_dragon (hd=10): `floor(2500 × 1.03)` = 2575
+
+**Given** a fresh level-1 player with default stats
+**When** they play through typical content (kill ~10 mixed mobs, visit 4 rooms, interact with ~5 objects)
+**Then** they should reach level 2 in approximately 30-60 minutes of play
+**And** if tuning shows progression is too fast or slow, `XP_CURVE_MULTIPLIER` should be adjusted (this AC documents the design intent, not a hard test)
+
+**And** tests verify both curve types, CHA scaling, and edge cases (CHA=0, CHA=10)
+**And** `pytest tests/` passes
+
+### Story 11.4: Exploration & Interaction XP Sources
+
+As a player,
+I want to earn XP from discovering new rooms and interacting with objects for the first time,
+So that exploration and curiosity are rewarded beyond just combat.
+
+**Acceptance Criteria:**
+
+**Given** a player transitions to a room they have never visited before
+**When** the room transition completes
+**Then** the player receives exploration XP (configurable, default: `XP_EXPLORATION_REWARD = 50`)
+**And** the player receives a message: `{"type": "xp_gained", "amount": <xp>, "source": "exploration", "detail": "Discovered Town Square"}`
+**And** the CHA bonus multiplier applies to exploration XP
+**And** the room is marked as "visited" for this player (persisted to DB)
+
+**Given** a player transitions to a room they have already visited
+**When** the room transition completes
+**Then** no exploration XP is granted
+**And** no `xp_gained` message is sent for exploration
+
+**Given** a player interacts with a chest or lever for the first time
+**When** the interaction succeeds
+**Then** the player receives interaction XP (configurable, default: `XP_INTERACTION_REWARD = 25`)
+**And** the player receives a message: `{"type": "xp_gained", "amount": <xp>, "source": "interaction", "detail": "Opened Treasure Chest"}`
+**And** the CHA bonus multiplier applies
+
+**Given** a player interacts with a chest they have already opened
+**When** the interaction completes (returns "Already looted")
+**Then** no interaction XP is granted
+
+**Given** player visited-rooms tracking needs persistence
+**When** the story is complete
+**Then** a `visited_rooms` field is added to the player DB model (JSON list of room_keys)
+**And** visited rooms are saved on disconnect and restored on login
+**And** a code comment notes: "Consider PlayerRoomVisit table for production scale"
+
+**Given** the XP granting system
+**When** the story is complete
+**Then** a shared `grant_xp(player_entity, amount, source, detail)` function exists in `server/core/xp.py`
+**And** it applies CHA bonus, updates player stats, persists to DB, and sends `xp_gained` message
+**And** combat XP (Story 11.3), exploration XP, and interaction XP all use this shared function
+
+**Given** future XP sources (quests, party bonus) don't exist yet
+**When** the story is complete
+**Then** `grant_xp` accepts any `source` string — no hardcoded enum
+**And** config includes placeholder values: `XP_QUEST_REWARD = 100`, `XP_PARTY_BONUS_PERCENT = 10` (unused but documented)
+
+**And** tests verify first-visit XP, repeat-visit no XP, first-interact XP, repeat-interact no XP
+**And** `pytest tests/` passes
+
+### Story 11.5: XP Level Thresholds & Level-Up Mechanic
+
+As a player,
+I want to level up when I accumulate enough XP and choose which stats to improve,
+So that I have agency over my character's growth and build.
+
+**Acceptance Criteria:**
+
+**Given** a player is level 1 with `XP_LEVEL_THRESHOLD_MULTIPLIER=1000`
+**When** their XP reaches or exceeds 1000
+**Then** they are eligible to level up
+**And** the threshold formula is: `next_level_xp = level × XP_LEVEL_THRESHOLD_MULTIPLIER` (cumulative, not reset)
+
+**Given** a player's XP crosses the level threshold (e.g., XP goes from 950 to 1100 at level 1)
+**When** `grant_xp` detects threshold crossed
+**Then** the server sends `{"type": "level_up_available", "new_level": 2, "choose_stats": 3, "current_stats": {"strength": 1, ...}, "stat_cap": 10}`
+**And** the player's level is NOT incremented yet — they must choose stats first
+
+**Given** level-up choice is pending
+**When** the player continues playing (moving, fighting, chatting)
+**Then** gameplay is NOT blocked — level-up choice is non-blocking
+**And** the player can continue all normal actions while the choice is pending
+
+**Given** a player gains enough XP for another level while a previous level-up choice is pending
+**When** `grant_xp` detects another threshold crossed
+**Then** the additional level-up is queued (processed sequentially after the first choice is made)
+**And** the player is NOT sent a second `level_up_available` until the first is resolved
+
+**Given** the player receives `level_up_available`
+**When** they send `{"action": "level_up", "stats": ["strength", "dexterity", "constitution"]}`
+**Then** each chosen stat is incremented by 1 (up to 3 unique stats)
+**And** stats are capped at 10 — if a chosen stat is already 10, it is skipped with a warning
+**And** `level` is incremented by 1
+**And** `max_hp` is recalculated: `100 + (new_constitution × 10)`
+**And** `hp` is set to new `max_hp` (full heal on level-up)
+**And** all stat changes are persisted to DB
+**And** the server sends `{"type": "level_up_complete", "level": 2, "stat_changes": {"strength": 2, "dexterity": 2, "constitution": 2}, "new_max_hp": 110}`
+**And** if another level-up is queued, the server immediately sends a new `level_up_available`
+
+**Given** a player sends `level_up` action without a pending level-up
+**When** the server processes it
+**Then** the client receives an error: "No level-up available"
+
+**Given** a player sends `level_up` with duplicate stats (e.g., `["strength", "strength", "dexterity"]`)
+**When** the server processes it
+**Then** duplicates are deduplicated — only unique stats are boosted (max 3 unique)
+
+**Given** a player sends `level_up` with an invalid stat name (e.g., `"mana"`)
+**When** the server processes it
+**Then** the client receives an error: "Invalid stat: mana"
+
+**Given** a player gains enough XP to cross multiple thresholds at once (e.g., level 1 with 3000 XP)
+**When** the first level-up is processed
+**Then** only one level-up occurs at a time — after completing level 2, if XP still exceeds the next threshold (2000), another `level_up_available` is sent
+
+**Given** a player disconnects with a pending level-up
+**When** they log back in
+**Then** the server re-checks if XP >= threshold and re-sends `level_up_available` if needed
+
+**And** the `level_up` handler is registered in `Game._register_handlers()`
+**And** tests verify threshold math, stat choices, cap enforcement, multi-level, queuing, non-blocking behavior, and persistence
+**And** `pytest tests/` passes
+
+### Story 11.6: Level-Up Notification & UI
+
+As a player,
+I want to see my level, all stats, and XP progress in the UI, and have a clear level-up experience,
+So that progression feels visible and rewarding.
+
+**Acceptance Criteria:**
+
+**Given** the stats HUD (from Story 10.8) currently shows HP, XP, ATK
+**When** the story is complete
+**Then** the main HUD shows only: HP bar (with current/max), Level (e.g., "LVL: 3"), and XP progress to next level (e.g., "XP: 2500/3000")
+**And** the ATK display is removed (attack is deprecated, replaced by STR-derived bonuses)
+**And** the 6 ability scores (STR, DEX, CON, INT, WIS, CHA) are in a collapsible "Stats" panel, hidden by default
+**And** the Stats panel is toggled by clicking a "Stats" button in the HUD or typing `/stats`
+**And** the Stats panel shows each ability's numeric value and a brief effect description (e.g., "STR: 3 (+3 physical dmg)  DEX: 2 (-2 incoming dmg)  CON: 4 (+20 max HP)  INT: 1 (+1 magic dmg)  WIS: 1 (+1 healing)  CHA: 2 (+6% XP)")
+
+**Given** the XP display in the HUD
+**When** the story is complete
+**Then** XP is shown as a visual progress bar with text overlay (e.g., `████░░░░░░ 231/1000`), not just numbers
+**And** the XP bar briefly flashes/highlights with a CSS animation when XP changes (subtle, ~0.5s)
+
+**Given** a level-up is pending (player received `level_up_available` but hasn't chosen stats)
+**When** the game viewport is displayed
+**Then** a persistent "Level Up!" badge/indicator is visible on the HUD (e.g., flashing text or icon near the level display)
+**And** clicking the badge reopens the level-up modal
+**And** the badge disappears after the player completes their stat choice
+
+**Given** the player receives an `xp_gained` message with `source: "combat"`
+**When** the web client processes it
+**Then** the XP bar updates immediately but NO chat notification is shown (combat XP is already displayed in the `combat_end` rewards message — avoid double-notification)
+
+**Given** the player receives an `xp_gained` message with a non-combat source (e.g., `source: "exploration"` or `source: "interaction"`)
+**When** the web client processes it
+**Then** the XP bar updates immediately
+**And** a notification appears in the chat/log: "+52 XP (exploration: Discovered Dark Cave)"
+
+**Given** the player receives `level_up_available`
+**When** the web client processes it
+**Then** a level-up modal/panel appears showing:
+- "Level Up!" congratulation message
+- 6 stat buttons, each displaying: stat name, current value → new value (e.g., "STR: 1 → 2"), and a precise effect description (e.g., "STR: +1 damage added to each physical damage card per point")
+- Click a stat button to toggle selection (highlighted border/background)
+- Maximum 3 stats selectable — clicking a 4th shows "Max 3 selected" feedback
+- Stats at cap (10) are grayed out and unclickable
+- A "Confirm" button at the bottom (disabled until at least 1 stat is selected)
+- Clicking Confirm sends the `level_up` action with selected stats
+**And** the modal is dismissible — the player can close it and continue playing, then reopen via `/levelup` command or a UI button
+
+**Given** the player receives `level_up_complete`
+**When** the web client processes it
+**Then** the HUD updates with new level, stats, and max_hp
+**And** a celebration notification appears in chat: "You reached Level 2! STR+1, DEX+1, CON+1"
+
+**Given** the `/stats` server action (Story 10.4)
+**When** a player sends a stats query
+**Then** the response includes: `{"type": "stats_result", "stats": {"hp": 110, "max_hp": 110, "level": 2, "xp": 1100, "xp_next": 2000, "strength": 2, "dexterity": 2, "constitution": 2, "intelligence": 1, "wisdom": 1, "charisma": 1}}`
+
+**Given** the `room_state` and `entity_entered` messages include entity data
+**When** a player's entity data is broadcast
+**Then** `level` is included in the entity data visible to other players (e.g., `{"id": "player_1", "name": "hero", "level": 3, ...}`)
+
+**Given** the `/stats` slash command (Story 10.6)
+**When** the player types `/stats`
+**Then** the response displays all 6 abilities, level, XP, XP-to-next-level, HP
+
+**And** all existing web client functionality remains working
+**And** `pytest tests/` passes
+
+### Story 11.7: Session Factory Dependency Injection
+
+As a developer,
+I want the database session factory to be owned by the Game orchestrator and injected into all consumers,
+So that tests cannot accidentally connect to the production database and future database migration (e.g., PostgreSQL) requires changing only one line.
+
+**Acceptance Criteria:**
+
+**Given** `server/core/database.py` defines a module-level `async_session` that 11 modules import directly via `from server.core.database import async_session`
+**When** the story is complete
+**Then** `Game.__init__()` sets `self.session_factory = async_session` (defaulting to the module-level factory from `server.core.database`)
+**And** all 11 consumer modules replace `from server.core.database import async_session` with access through the `game` reference they already receive
+**And** all 26 usage sites of `async with async_session() as session:` are changed to `async with game.session_factory() as session:` (or equivalent via `self._game.session_factory()` for Scheduler, `self` for Game methods)
+
+**Given** the integration test fixture in `tests/test_integration.py` currently patches `async_session` in 6 individual modules (missing 5)
+**When** the story is complete
+**Then** the fixture sets `game.session_factory = test_session_factory` — one assignment, no per-module patches needed for `async_session`
+**And** all existing per-module `async_session` patches are removed from the fixture
+**And** `player_repo` patches remain as-is (separate concern — repo functions, not session factory)
+
+**Given** `server.core.xp.grant_xp()` currently imports `async_session` from `server.core.database` (unpatched in integration tests, causing hangs when zombie processes hold SQLite locks)
+**When** the story is complete
+**Then** `grant_xp()` uses `game.session_factory()` via the `game` parameter it already receives
+**And** no integration test can accidentally write to `data/game.db`
+
+**Given** `server/room/objects/chest.py` and `server/room/objects/lever.py` use `async_session` in their `interact()` methods
+**When** the story is complete
+**Then** both use `game.session_factory()` via the `game` parameter their `interact()` methods already receive
+
+**Given** `server/core/scheduler.py` uses `async_session` in spawn check methods
+**When** the story is complete
+**Then** Scheduler uses `self._game.session_factory()` via the `self._game` reference it already holds
+
+**Given** `Game.startup()` needs a session factory before handlers run
+**When** the story is complete
+**Then** `Game.__init__()` defaults `self.session_factory` from the module-level import
+**And** tests override it after construction but before handlers run (same pattern as `game.room_manager` swap)
+
+**Given** other WebSocket test files (`test_login.py`, `test_auth.py`, `test_stats_persistence.py`) also patch `async_session` per-module
+**When** the story is complete
+**Then** those fixtures are updated to use `game.session_factory = test_session_factory` where applicable
+**And** per-module `async_session` patches are removed
+
+**And** all existing tests pass (`pytest tests/` excluding known hanging tests `test_disconnect_notifies_others`, `test_register_returns_player_id`)
+**And** no test writes to `data/game.db` (verified by checking file mtime before/after test run)
+
+## Epic 12: Social Systems
+
+Players can trade items with each other, form parties for cooperative combat, and navigate the world using a discovered map — transforming the game from a solo experience into a social one. Trade is a mutual exchange model with session consent, multi-item offers, bait-and-switch prevention, and atomic DB swaps. Party system tracks leader/members with invite/accept/leave/disband/kick commands, leader succession, and combat integration.
+
+### Story 12.1: Trade System
+
+As a player,
+I want to initiate a mutual trade session with another player in my room,
+So that I can exchange items with other players through a fair, consent-based process.
+
+**Acceptance Criteria:**
+
+**Given** two players are in the same room
+**When** Player A sends `/trade @PlayerB`
+**Then** Player B receives a `trade_request` message containing Player A's name
+**And** Player B can `/trade accept` to enter negotiation or `/trade reject` to decline
+
+**Given** a trade request is pending
+**When** 30 seconds pass without a response
+**Then** the request auto-cancels and both players are notified
+
+**Given** both players are in a negotiating session
+**When** Player A sends `/trade offer healing_potion 2`
+**Then** the item is validated (exists in inventory, sufficient quantity, `tradeable` flag is true)
+**And** the offer is added to Player A's offer list
+**And** both players receive a `trade_update` message showing current offers from both sides
+
+**Given** both players are in a negotiating session
+**When** Player A sends `/trade offer healing_potion 2 fire_essence 1` (multi-item syntax)
+**Then** both items are validated and added to Player A's offer list
+
+**Given** a player's offer list contains items
+**When** the player sends `/trade remove healing_potion`
+**Then** the item is removed from their offer list
+**And** both players' ready state is reset
+
+**Given** a player tries to offer more items than `MAX_TRADE_ITEMS` (default 10)
+**When** the offer would exceed the limit
+**Then** the offer is rejected with an error message
+
+**Given** a player sends `/trade offer` with insufficient quantity
+**When** the player has fewer items than offered
+**Then** the offer is rejected with "You only have N of item_name"
+
+**Given** both players are in a session
+**When** either player sends `/trade ready`
+**Then** that player's ready flag is set
+**And** both players are notified of the ready state change
+
+**Given** both players have sent `/trade ready`
+**When** both ready flags are set
+**Then** the trade executes atomically (see Story 12.2 for validation)
+
+**Given** either player sends `/trade cancel`
+**Then** the session is cancelled and both players are notified
+
+**Given** a player adds or removes an offer
+**When** either player was previously marked ready
+**Then** both players' ready state is reset (bait-and-switch prevention)
+
+**Given** a trade session completes, is cancelled, rejected, or times out
+**When** a player tries to initiate a new trade
+**Then** a 5-second cooldown applies before a new `/trade @player` is allowed
+
+**Given** a player is not in an active trade session
+**When** they send `/trade` (no subcommand)
+**Then** they receive "You are not in a trade session"
+
+**Given** a player is in an active trade session
+**When** they send `/trade` (no subcommand)
+**Then** they see current offers from both sides and ready status
+
+**Given** the client sends a trade action with raw args string
+**When** the trade handler processes it
+**Then** the handler parses the first arg as subcommand and remaining args as parameters (server-side parsing)
+**And** invalid subcommands return an error: "Unknown trade command. Use /help for options"
+
+**Given** existing item JSON files don't include a `tradeable` field
+**When** items are loaded from JSON at startup
+**Then** `tradeable` defaults to `True` — all existing items are tradeable by default
+
+**Given** the existing `_cleanup_player` disconnect handler
+**When** Story 12.1 adds trade cancellation
+**Then** the full cleanup order is established: (1) cancel trades, (2) remove from combat [existing], (3) party cleanup [placeholder for 12.3], (4) save state [existing], (5) remove from room [existing], (6) notify [existing]
+
+**Given** the system needs player name resolution
+**When** any `/trade @player` or `/party invite @player` is processed
+**Then** `ConnectionManager` provides a name → entity_id index for lookup (maintained on connect/disconnect)
+
+**Implementation notes:**
+- Create `server/trade/` package with `manager.py` (TradeManager + Trade dataclass)
+- Create `server/net/handlers/trade.py` for trade action handling
+- Add `tradeable: bool = True` field to `ItemDef` and `Item` DB model
+- Add name → entity_id mapping to `ConnectionManager`
+- Add `TRADE_SESSION_TIMEOUT_SECONDS = 60`, `TRADE_REQUEST_TIMEOUT_SECONDS = 30`, `MAX_TRADE_ITEMS = 10` to config
+- Trade state machine: `idle → request_pending → negotiating → one_ready → both_ready → executing → complete`
+- Use `asyncio.call_later` for timeout scheduling
+- `TradeManager` uses asyncio.Lock for trade assignment
+- `/trade` accepts item display names (case-insensitive), consistent with `/use` (ISS-010)
+- Register trade handler in message router, update `/help` output
+- Disconnect cleanup order: cancel trades → remove from combat → handle party → save state → remove from room → notify
+
+### Story 12.2: Trade Validation
+
+As a player,
+I want my trades to be safe and atomic,
+So that items cannot be duplicated, lost, or stolen through exploits or edge cases.
+
+**Acceptance Criteria:**
+
+**Given** both players are ready and trade execution begins
+**When** the server validates the trade
+**Then** both players must still be in the same room, online, and not in combat
+**And** all offered items are re-validated from live inventory (sufficient quantity, item exists, `tradeable` flag)
+**And** if any offered quantity exceeds current inventory at execution time, the entire trade fails — no partial trades
+**And** both players are notified with a `trade_result` message (success or failure with reason)
+
+**Given** both players' offers are valid
+**When** the trade executes
+**Then** items are removed from both players' inventories and added to the other's in a single DB transaction
+**And** in-memory inventory state is updated only after DB commit succeeds
+**And** both players receive updated inventory data
+
+**Given** Player A sends `/trade @PlayerA` (self-trade attempt)
+**When** the server processes the request
+**Then** the trade is rejected with "Cannot trade with yourself"
+**And** validation checks `player_db_id` (not entity_id) to catch duplicate login edge cases
+
+**Given** a player disconnects during an active trade session
+**When** the disconnect is processed
+**Then** the trade session is immediately cancelled
+**And** the remaining player is notified: "Trade cancelled — player disconnected"
+
+**Given** a player changes room during an active trade session
+**When** the room transition is processed
+**Then** the trade session is immediately cancelled
+**And** both players are notified: "Trade cancelled — player left the room"
+**And** `TradeManager.cancel_trades_for(entity_id)` is called in the movement handler before the room transfer
+
+**Given** a player enters combat during an active trade session
+**When** combat begins
+**Then** the trade session is immediately cancelled
+**And** both players are notified: "Trade cancelled — player entered combat"
+**And** `TradeManager.cancel_trades_for(entity_id)` is called in the movement handler on combat entry
+
+**Given** a player is kicked via duplicate login protection
+**When** the kick is processed
+**Then** all pending trades for that `player_db_id` are cancelled
+**And** the other player in the session (if any) is notified
+
+**Given** a player is already in a trade session
+**When** another player sends `/trade @player` targeting them
+**Then** the request is auto-rejected: "Player is already in a trade session"
+
+**Given** trade requires same-room
+**When** a player is in a party with the trade target but in a different room
+**Then** the trade request is rejected — party membership has no effect on trade eligibility
+
+**Given** the server crashes during trade execution
+**When** the DB transaction did not commit
+**Then** both inventories are unchanged (ACID guarantee)
+**And** on restart, trade state is gone (ephemeral) — no stale sessions
+
+**Implementation notes:**
+- Trade cancellation hooks into: disconnect handler, room transition handler, combat entry handler, duplicate login handler
+- Atomic swap: single `async with session.begin()` block — remove from A, add to B, commit
+- In-memory `Inventory` objects updated only after successful DB commit
+- All cancellation triggers send `trade_result` with `{status: "cancelled", reason: "..."}`
+- Tests should cover: valid trade, insufficient items at execution, self-trade, disconnect mid-session, room change mid-session, combat entry mid-session, duplicate login, cross-room party trade attempt
+
+### Story 12.3: Party Infrastructure
+
+As a developer,
+I want the server to support party groups with leader/member tracking,
+So that the server can track cooperative groups for chat and combat features.
+
+**Acceptance Criteria:**
+
+**Given** the server starts up
+**When** all managers are initialized
+**Then** a `PartyManager` is created and owned by the `Game` class
+**And** `PartyManager` tracks all active parties in-memory
+
+**Given** a player creates a party (via invite acceptance — see Story 12.4)
+**When** the party is formed
+**Then** a `Party` dataclass is created with: `party_id`, `leader_entity_id`, `members` (ordered list of entity_ids), `created_at`
+**And** the inviting player is set as party leader
+**And** the accepting player is added as a member
+
+**Given** a party exists
+**When** `PartyManager.get_party(entity_id)` is called for any member
+**Then** the party instance is returned
+**And** `PartyManager.get_party(entity_id)` returns `None` for non-party players
+
+**Given** a party has `MAX_PARTY_SIZE` (default 4) members
+**When** another invite is attempted
+**Then** the invite is rejected with "Party is full"
+
+**Given** the party leader disconnects
+**When** disconnect cleanup runs
+**Then** leadership passes to the longest-standing member (earliest in members list)
+**And** all remaining party members are notified of the new leader via `party_update` message
+
+**Given** the last member leaves or disconnects
+**When** the party has no remaining members
+**Then** the party is dissolved and removed from `PartyManager`
+
+**Given** a player disconnects
+**When** they are a member (not leader) of a party
+**Then** they are removed from the party
+**And** remaining members are notified via `party_update`
+
+**Given** an admin triggers server shutdown or restart
+**When** shutdown cleanup runs
+**Then** all parties are dissolved
+**And** all connected players are notified: "Server restarting — all parties dissolved"
+
+**Given** a player's entity_id is known
+**When** any system needs to check party membership
+**Then** `PartyManager` provides: `is_in_party(entity_id)`, `get_party(entity_id)`, `is_leader(entity_id)`, `get_party_members(entity_id)`
+
+**Implementation notes:**
+- Create `server/party/` package with `manager.py` (PartyManager + Party dataclass)
+- `Party` dataclass: `party_id: str`, `leader: str` (entity_id), `members: list[str]` (entity_ids, ordered by join time), `pending_invites: dict[str, float]` (target_entity_id → invite_timestamp for cooldown tracking)
+- `PartyManager` methods: `create_party(leader, member)`, `add_member(party_id, entity_id)`, `remove_member(entity_id)`, `disband(party_id)`, `get_party(entity_id)`, `is_in_party(entity_id)`, `is_leader(entity_id)`, `get_party_members(entity_id)`, `handle_disconnect(entity_id)`
+- Leader succession: on leader disconnect, `members[0]` (after removing leader) becomes new leader
+- Party cleanup integrated into disconnect handler (fills placeholder from Story 12.1)
+- Shutdown handler dissolves all parties before saving state
+- `MAX_PARTY_SIZE` added to config (default 4)
+
+### Story 12.4: Party Commands
+
+As a player,
+I want to invite others to my party, accept invites, leave, and manage membership through slash commands,
+So that I can form and manage cooperative groups during gameplay.
+
+**Acceptance Criteria:**
+
+**Given** a player is not in a party
+**When** they send `/party invite @PlayerB`
+**Then** Player B must be online (error: "Player not found" if nonexistent, "Player is not online" if offline)
+**And** Player B must not already be in a party (error: "Player is already in a party")
+**And** Player B receives a `party_invite` message with the inviter's name
+**And** no same-room requirement for invites
+
+**Given** a player receives a party invite
+**When** they send `/party accept`
+**Then** if the inviter is not yet in a party, a new party is created with the inviter as leader and the accepter as member
+**And** if the inviter is already in a party, the accepter is added to that existing party
+**And** all party members are notified via `party_update`
+
+**Given** a player receives a party invite
+**When** they send `/party reject`
+**Then** the invite is declined and the inviter is notified
+
+**Given** a pending party invite
+**When** no response within 30 seconds
+**Then** the invite auto-expires and both players are notified
+
+**Given** a player has already sent a pending invite
+**When** they send `/party invite @AnotherPlayer`
+**Then** the previous invite is cancelled and the new invite is sent
+
+**Given** a player was just kicked, or their invite was rejected/expired
+**When** the inviter tries to re-invite the same player
+**Then** a cooldown applies (e.g., 10 seconds) — "Please wait before re-inviting this player"
+
+**Given** a player is in a party
+**When** they send `/party leave`
+**Then** they are removed from the party
+**And** remaining members are notified via `party_update`
+**And** if they were the leader, succession applies (Story 12.3)
+**And** if they were in active combat, they remain in the combat instance — party leave does not affect current combat; XP calculated based on combat participants at victory
+
+**Given** the party leader is not in shared combat with any members
+**When** the leader sends `/party disband`
+**Then** the party is dissolved and all members are notified via `party_update`
+
+**Given** the party leader is not in shared combat with the target
+**When** the leader sends `/party kick @PlayerC`
+**Then** Player C is removed from the party
+**And** Player C and remaining members are notified via `party_update`
+**And** the cooldown for re-inviting Player C begins
+
+**Given** the party leader sends `/party kick @PlayerC`
+**When** the leader and Player C share an active combat instance
+**Then** the kick is rejected: "Cannot kick a player during shared combat"
+
+**Given** the party leader sends `/party disband`
+**When** any party members share an active combat instance
+**Then** the disband is rejected: "Cannot disband during active party combat"
+
+**Given** a player is in a party
+**When** they send `/party` (no subcommand)
+**Then** they see: party members list, who is leader, each member's online/offline status and current room
+
+**Given** a player is not in a party
+**When** they send `/party` (no subcommand)
+**Then** they receive: "You are not in a party"
+
+**Given** the invite target is already in a party
+**When** `/party invite @target` is sent
+**Then** the invite is rejected: "Player is already in a party — they must /party leave first"
+
+**Given** a player in a party sends `/party <text>` where text is not a known subcommand
+**When** the handler processes it
+**Then** it falls through to party chat (Story 12.5 will implement the handler; until then, return "Unknown party command")
+
+**Implementation notes:**
+- Create `server/net/handlers/party.py` for party action handling
+- `/party` uses subcommand pattern: handler parses first arg as subcommand (`invite`, `accept`, `reject`, `leave`, `disband`, `kick`, or no subcommand for status)
+- Register party handler in message router
+- Update `/help` output to include party commands under "Social" category
+- Update client-side slash command parser (`web-demo/js/game.js`) to route `/party` commands
+- Invite timeout via `asyncio.call_later` (30s), cancelled on accept/reject
+- Per-target cooldown tracked in `Party.pending_invites` dict with timestamps
+- All responses use distinct `party_invite` and `party_update` message types
+
+### Story 12.5: Party Chat
+
+As a party member,
+I want to send messages that only my party members can see regardless of what room they're in,
+So that my party can coordinate across the game world.
+
+**Acceptance Criteria:**
+
+**Given** a player is in a party
+**When** they send `/party Hey everyone, meet at dark_cave`
+**Then** all party members receive a `party_chat` message with format `{type: "party_chat", from: "<sender_name>", message: "<text>"}`
+**And** the message is delivered regardless of which room each member is in
+**And** players NOT in the party do not receive the message
+
+**Given** a player is not in a party
+**When** they send `/party Some message`
+**Then** they receive an error: "You are not in a party"
+
+**Given** a player sends a party chat message
+**When** the server processes it
+**Then** the sender's name is set server-side from the entity (no client impersonation possible)
+**And** the action is `party_chat` (dedicated action, not overloading existing `chat` action)
+
+**Given** a party chat message exceeds `MAX_CHAT_MESSAGE_LENGTH` (default 500 characters)
+**When** the server processes it
+**Then** the message is rejected: "Message too long (max 500 characters)"
+
+**Given** a party has 4 members across 3 different rooms
+**When** one member sends a party chat message
+**Then** all 4 members (including sender) receive the message
+**And** no other players in any of those rooms see the message
+
+**Given** a party member disconnects between message send and delivery
+**When** the server iterates members to deliver
+**Then** the send failure for the disconnected member is handled gracefully (no exception)
+**And** the message is delivered to all remaining connected members
+
+**Given** the web client receives a `party_chat` message
+**When** the message is rendered in the chat log
+**Then** it is visually distinct from room chat (e.g., prefixed with `[Party]` or color-coded)
+
+**Given** Story 12.4's party handler receives an unrecognized subcommand from a player in a party
+**When** Story 12.5 is implemented
+**Then** the fallback routes to party chat instead of returning "Unknown party command"
+
+**Implementation notes:**
+- Party chat routing: handler receives `party_chat` action → validates sender is in party via `PartyManager` → iterates `get_party_members()` → sends to each via `ConnectionManager`
+- Use same broadcast pattern as existing room chat (graceful send failure handling)
+- Client-side slash command parser: `/party <message>` when the first word is NOT a subcommand routes as party chat
+- Disambiguation: `/party invite` is a command; `/party hello` is a chat message. Parser checks first arg against known subcommands.
+- Web client renders `party_chat` messages with `[Party]` prefix in a distinct color
+- `MAX_CHAT_MESSAGE_LENGTH = 500` added to config
+- Update 12.4's fallback handler to route to party chat
+
+### Story 12.6: CombatInstance Multi-Player Extension
+
+As a developer,
+I want the CombatInstance to support multiple players in a single combat,
+So that party combat can be built on a proven multi-player combat engine.
+
+**Acceptance Criteria:**
+
+**Given** the existing `CombatInstance` class
+**When** Story 12.6 implementation begins
+**Then** the developer audits `CombatInstance` internals: verify `players` supports a list, turn cycling handles N players, victory/defeat conditions work with N players
+
+**Given** the existing `CombatManager.start_combat()` accepts a single player
+**When** Story 12.6 extends it for multi-player
+**Then** the method accepts either a single entity_id or a list of entity_ids
+**And** solo combat (single player) continues to work identically to pre-12.6 behavior
+**And** all existing combat tests pass without modification
+
+**Given** a combat instance is created with N players
+**When** turns are processed
+**Then** turn order is round-robin through the player list (first player in list goes first)
+**And** each player gets one action per turn (play card, use item, pass, or flee)
+
+**Given** a combat instance has multiple players
+**When** end of cycle is reached (all players have acted)
+**Then** mob attacks one random player from the active player list
+**And** only players still in combat are eligible targets
+
+**Given** a player flees from multi-player combat
+**When** the flee is processed
+**Then** the player is removed from the combat instance's active player list
+**And** their `in_combat` flag is cleared
+**And** turn cycling continues with remaining players
+
+**Given** a player dies in multi-player combat
+**When** their HP reaches 0
+**Then** they are removed from the combat instance (same as flee)
+**And** death/respawn mechanic applies per existing FR53
+
+**Given** all players in a combat instance have fled or died
+**When** no active players remain
+**Then** combat ends in defeat
+**And** mob HP resets (existing behavior)
+
+**Given** the mob's HP reaches 0 in multi-player combat
+**When** combat ends in victory
+**Then** victory is detected correctly regardless of which player dealt the killing blow
+**And** all surviving players in the instance are eligible for rewards
+
+**Implementation notes:**
+- Audit `CombatInstance` first — check if `self.players` is already a list or single reference
+- If single reference: refactor to list, update all internal references
+- Turn cycling: maintain a `current_turn_index` that cycles through active players
+- Mob targeting: `random.choice(active_players)` at end of cycle
+- Flee/death: remove from active players list, adjust turn index if needed
+- Victory: `mob.stats["hp"] <= 0` — unchanged logic
+- Defeat: `len(active_players) == 0` — check after each player removal
+- All existing solo combat tests must pass — this is additive, not a rewrite
+
+### Story 12.7: Party Combat Integration
+
+As a party member,
+I want my nearby party members to join me in combat when I encounter a mob,
+So that we can fight together as a team with scaled challenge and shared rewards.
+
+**Acceptance Criteria:**
+
+**Given** a player in a party moves onto a tile with an alive, non-`in_combat` hostile mob
+**When** combat is triggered
+**Then** all party members in the same room who are NOT already `in_combat` are pulled into the combat instance
+**And** the triggering player and all joining members are set `in_combat = True`
+**And** only the triggering player's party joins — other players/parties on the same tile are unaffected
+**And** the mob is marked `in_combat` to prevent duplicate encounters
+
+**Given** a party combat encounter starts with N party members
+**When** the `CombatInstance` is created
+**Then** mob HP is scaled: `base_hp × N` (party_size at encounter time)
+**And** mob HP does not rescale if members leave mid-combat (flee/death)
+
+**Given** party members are pulled into combat
+**When** the combat instance is created
+**Then** ALL participating players (triggering player AND pulled-in party members) receive a `combat_start` message
+**And** each player's `combat_start` includes their hand, the mob info, and combat state
+
+**Given** a party member sends `/flee` during party combat
+**When** the flee is processed
+**Then** remaining members are notified: "PlayerA has fled the battle!"
+
+**Given** a party member dies during party combat
+**When** their HP reaches 0
+**Then** they respawn in `town_square` with full HP per existing death/respawn mechanic (FR53)
+**And** they do NOT receive combat XP
+**And** party membership persists across respawn
+
+**Given** the mob is defeated in party combat
+**When** combat ends in victory
+**Then** combat XP is calculated per existing formula (hit_dice-based)
+**And** `XP_PARTY_BONUS_PERCENT` (default 10) is applied ONLY if 2+ party members are in the combat instance at victory
+**And** XP (with bonus if applicable) is awarded to each surviving combat participant
+
+**Given** a mob is defeated in party combat
+**When** loot is generated
+**Then** each surviving combat participant receives an independent loot roll from the mob's loot table
+**And** each participant's loot is added to their inventory independently
+**And** each participant's `combat_end` message includes their own loot
+
+**Given** a player `/party leave`s during active party combat
+**When** the leave is processed
+**Then** the player remains in the combat instance — party leave does not affect current combat
+**And** XP is calculated based on combat participants at victory, not current party state
+
+**Given** a non-party player in the same room
+**When** a party member triggers combat
+**Then** the non-party player is NOT pulled into combat
+
+**Given** a party member in the same room is already `in_combat` (different combat instance)
+**When** another party member triggers a new encounter
+**Then** the already-in-combat member is NOT pulled into the new encounter
+
+**Implementation notes:**
+- Movement handler (`server/net/handlers/movement.py`): on mob encounter, check if player is in a party → gather eligible party members (same room, not in_combat) → pass list to `CombatManager.start_combat()`
+- HP scaling: `mob.stats["max_hp"] * len(players)`, set `mob.stats["hp"]` to scaled value
+- XP distribution: `base_xp = combat_xp_formula(hit_dice)`, if `len(surviving_players) >= 2`: `xp = base_xp * (1 + XP_PARTY_BONUS_PERCENT / 100)`, else `xp = base_xp`; each survivor gets full `xp` (not split)
+- Loot: independent rolls per surviving participant
+- `combat_start` message sent to ALL participants, not just triggering player
+- `XP_PARTY_BONUS_PERCENT` already exists in config (placeholder from Epic 11)
+
+### Story 12.8: World Map
+
+As a player,
+I want to see a map of rooms I've discovered and their connections,
+So that I can navigate the game world and plan my exploration.
+
+**Acceptance Criteria:**
+
+**Given** a player sends `/map`
+**When** the server processes the request
+**Then** the server reads the player's `visited_rooms` from the Player model
+**And** cross-references with room exit data from `RoomManager` using existing room exit definitions
+**And** sends a `map_data` message to the player
+
+**Given** a player has visited `town_square` and `dark_cave`
+**When** they send `/map`
+**Then** the `map_data` response includes only discovered rooms: `[{room_key: "town_square", name: "Town Square"}, {room_key: "dark_cave", name: "Dark Cave"}]`
+**And** undiscovered rooms are omitted entirely — player cannot infer total room count or names
+
+**Given** a discovered room has exits to both discovered and undiscovered rooms
+**When** connections are built
+**Then** connections to discovered rooms show the destination name: `{from: "town_square", to: "dark_cave", direction: "left"}`
+**And** connections to undiscovered rooms show `???` as destination: `{from: "town_square", to: "???", direction: "right"}`
+
+**Given** a player has visited all 4 rooms
+**When** they send `/map`
+**Then** all rooms and all connections are shown with full names (no `???`)
+
+**Given** a player has visited zero rooms (edge case — should not happen since login places in a room)
+**When** they send `/map`
+**Then** they receive an empty map or the current room only
+
+**Given** a room_key in `visited_rooms` is not found in `RoomManager` (stale data)
+**When** the map is built
+**Then** the stale room is skipped with a warning log (no error to player)
+
+**Given** the `visited_rooms` field already exists on the Player model
+**When** Story 12.8 is implemented
+**Then** no new DB schema changes are needed — reuse existing `visited_rooms` list
+
+**Given** the web client receives a `map_data` message
+**When** the message is rendered
+**Then** the client displays a text-based node list in a dedicated panel or chat section
+**And** rooms are listed with their names
+**And** connections show direction and destination (or `???` for undiscovered)
+**And** the display is visually distinct from chat messages
+
+**Given** a player discovers a new room (first visit via room transition)
+**When** they subsequently send `/map`
+**Then** the newly discovered room appears in the map data
+
+**Given** all Epic 12 commands are implemented
+**When** a player sends `/help`
+**Then** commands are grouped by category: Movement, Combat, Social, Info
+
+**Implementation notes:**
+- Add `map` action to existing query handler (`server/net/handlers/query.py`)
+- Map handler: `player.visited_rooms` → for each visited room, get room from `RoomManager` → extract exits → build connections list → filter undiscovered destinations to `???`
+- Response format: `{type: "map_data", rooms: [{room_key, name}], connections: [{from_room, to_room, direction}]}`
+- Register `map` action in message router
+- Update client-side slash command parser to route `/map` → `{action: "map"}`
+- Web client: render `map_data` as formatted text in chat or a collapsible panel
+- Update `/help` output to group all commands by category (Movement, Combat, Social, Info)
+- No new config values needed
+- `visited_rooms` is already populated by exploration XP logic (Epic 11, Story 11.4)
+
+## Epic 13: Database Infrastructure
+
+Harden the database access layer for production readiness. Replace the current "repos commit internally" pattern with a transaction context manager that provides atomic multi-write operations, automatic rollback on exceptions, and proper transaction boundaries for future PostgreSQL migration.
+
+### Story 13.1: Transaction Context Manager and Repo Refactor
+
+As a developer,
+I want all database writes within a single logical operation to be atomic (all-or-nothing),
+So that the server never persists partial state on crash or concurrent access, and the codebase is ready for PostgreSQL.
+
+**Acceptance Criteria:**
+
+**Given** the `Game` class owns the session factory
+**When** Story 13.1 is implemented
+**Then** `Game` gains a `transaction()` async context manager method that yields an `AsyncSession`, auto-commits on clean exit, and auto-rolls back on exception
+
+**Given** any repo write function (`update_position`, `update_stats`, `update_inventory`, `update_visited_rooms`, `create`, `save`, `upsert_room`, `load_cards_from_json`, `load_items_from_json`, `set_player_object_state`, `set_room_object_state`)
+**When** called inside a `transaction()` block
+**Then** the repo function executes the query but does NOT call `session.commit()` — the transaction context manager commits at block exit
+
+**Given** a handler that performs multiple DB writes in one logical operation (e.g., `_save_player_state` with position + stats + inventory + visited_rooms)
+**When** all writes are inside one `async with game.transaction() as session:` block
+**Then** all writes commit atomically — a crash between writes results in zero writes persisted (rollback), not partial state
+
+**Given** the trade swap in `_execute_trade` currently bypasses repos with raw `session.execute()` + direct `session.commit()`
+**When** Story 13.1 is implemented
+**Then** the trade swap uses `player_repo.update_inventory()` for both players inside one `transaction()` block — no more raw SQL bypass
+
+**Given** the loot distribution in `_check_combat_end` currently bypasses repos with direct model mutation + `session.commit()`
+**When** Story 13.1 is implemented
+**Then** loot distribution uses `player_repo.update_inventory()` inside a `transaction()` block — no more raw SQL bypass
+
+**Given** the chest interaction in `chest.py` currently uses direct model mutation + `session.commit()`
+**When** Story 13.1 is implemented
+**Then** chest interaction uses repo functions inside a `transaction()` block
+
+**Given** the scheduler spawn checkpoint code currently uses direct `session.add()` + `session.commit()`
+**When** Story 13.1 is implemented
+**Then** scheduler uses a `transaction()` block (repo functions or equivalent)
+
+**Given** all 26 `session_factory()` call sites in server code
+**When** Story 13.1 is implemented
+**Then** all are replaced with `game.transaction()` (or `self.transaction()` in `Game` methods)
+
+**Given** all existing tests (804 tests)
+**When** Story 13.1 is implemented
+**Then** all tests pass with updated mock patterns — mock `transaction()` replaces mock `session_factory()`
+
+**Given** a solo player triggers combat (not in a party)
+**When** combat runs through to victory with loot and XP
+**Then** behavior is identical to pre-13.1 — no gameplay changes
+
+**Implementation notes:**
+- `Game.transaction()` implementation: `@asynccontextmanager` wrapping `self.session_factory()`, yields session, commits on clean exit, rolls back + re-raises on exception
+- Remove `await session.commit()` from all 18 occurrences across 9 repo files
+- Replace `game.session_factory()` with `game.transaction()` in all 26 call sites across 12 server files
+- Replace 4 bypass patterns (trade.py, combat.py loot, chest.py, scheduler.py) with repo calls inside `transaction()` blocks
+- Test mock pattern: `game.transaction` returns same shape as `session_factory` — `MagicMock(return_value=mock_ctx)` where `mock_ctx` is an async context manager yielding a mock session. The key difference: mock session's `commit` is no longer called by repos, only by the context manager
+- 159 test references to `session_factory` across 27 test files need updating
+- No new dependencies, no schema changes, no config changes
+- Pure refactor — zero gameplay behavior changes

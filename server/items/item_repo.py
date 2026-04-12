@@ -38,6 +38,7 @@ async def load_items_from_json(session: AsyncSession, json_path: Path | str) -> 
             existing.usable_in_combat = data.get("usable_in_combat", False)
             existing.usable_outside_combat = data.get("usable_outside_combat", False)
             existing.description = data.get("description", "")
+            existing.tradeable = data.get("tradeable", True)
             items.append(existing)
         else:
             item = Item(
@@ -50,8 +51,8 @@ async def load_items_from_json(session: AsyncSession, json_path: Path | str) -> 
                 usable_in_combat=data.get("usable_in_combat", False),
                 usable_outside_combat=data.get("usable_outside_combat", False),
                 description=data.get("description", ""),
+                tradeable=data.get("tradeable", True),
             )
             session.add(item)
             items.append(item)
-    await session.commit()
     return items

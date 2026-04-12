@@ -1,7 +1,7 @@
 """Tests for room transitions via exit tiles (Story 2.3)."""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -15,9 +15,22 @@ from server.room.tile import TileType
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _mock_transaction():
+    """Create a mock async context manager for game.transaction."""
+    mock_session = AsyncMock()
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+    mock_factory = MagicMock(return_value=mock_ctx)
+    return mock_factory, mock_session
+
+
 def _make_game():
     from server.app import Game
-    return Game()
+    game = Game()
+    factory, _ = _mock_transaction()
+    game.transaction = factory
+    return game
 
 
 def _make_exit_room(room_key="room_a"):
@@ -67,12 +80,7 @@ async def test_exit_removes_from_old_room():
 
     ws, entity = _setup_player_in_room(game, room_a, x=3, y=2)
 
-    with patch("server.net.handlers.movement.async_session") as mock_session:
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        await handle_move(ws, {"action": "move", "direction": "right"}, game=game)
+    await handle_move(ws, {"action": "move", "direction": "right"}, game=game)
 
     # Entity removed from old room
     assert "player_1" not in room_a.get_player_ids()
@@ -89,12 +97,7 @@ async def test_exit_entity_at_entry_coordinates():
 
     ws, entity = _setup_player_in_room(game, room_a, x=3, y=2)
 
-    with patch("server.net.handlers.movement.async_session") as mock_session:
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        await handle_move(ws, {"action": "move", "direction": "right"}, game=game)
+    await handle_move(ws, {"action": "move", "direction": "right"}, game=game)
 
     # Entity should be at entry coordinates from exit info
     assert entity.x == 1
@@ -117,12 +120,7 @@ async def test_exit_uses_spawn_when_no_entry_coords():
 
     ws, entity = _setup_player_in_room(game, room_a, x=3, y=2)
 
-    with patch("server.net.handlers.movement.async_session") as mock_session:
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        await handle_move(ws, {"action": "move", "direction": "right"}, game=game)
+    await handle_move(ws, {"action": "move", "direction": "right"}, game=game)
 
     assert entity.x == 3
     assert entity.y == 3
@@ -137,12 +135,7 @@ async def test_exit_sends_room_state():
 
     ws, entity = _setup_player_in_room(game, room_a, x=3, y=2)
 
-    with patch("server.net.handlers.movement.async_session") as mock_session:
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        await handle_move(ws, {"action": "move", "direction": "right"}, game=game)
+    await handle_move(ws, {"action": "move", "direction": "right"}, game=game)
 
     # Player should receive room_state for new room
     calls = [c.args[0] for c in ws.send_json.call_args_list]
@@ -160,12 +153,7 @@ async def test_exit_updates_tracking():
 
     ws, entity = _setup_player_in_room(game, room_a, x=3, y=2)
 
-    with patch("server.net.handlers.movement.async_session") as mock_session:
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        await handle_move(ws, {"action": "move", "direction": "right"}, game=game)
+    await handle_move(ws, {"action": "move", "direction": "right"}, game=game)
 
     # player_entities should reflect new room
     assert game.player_entities["player_1"]["room_key"] == "room_b"
@@ -182,12 +170,13 @@ async def test_exit_saves_position_to_db():
 
     ws, entity = _setup_player_in_room(game, room_a, x=3, y=2)
 
-    with patch("server.net.handlers.movement.async_session") as mock_session, \
-         patch("server.net.handlers.movement.player_repo") as mock_repo:
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
+    factory, mock_sess = _mock_transaction()
+    game.transaction = factory
+
+    with patch("server.net.handlers.movement.player_repo") as mock_repo, \
+         patch("server.net.handlers.movement.grant_xp", new_callable=AsyncMock):
         mock_repo.update_position = AsyncMock()
+        mock_repo.update_visited_rooms = AsyncMock()
 
         await handle_move(ws, {"action": "move", "direction": "right"}, game=game)
 
@@ -216,12 +205,7 @@ async def test_exit_broadcasts_entity_left_to_old_room():
     game.connection_manager.connect("player_2", ws2, "room_a")
     game.player_entities["player_2"] = {"entity": other, "room_key": "room_a", "db_id": 2}
 
-    with patch("server.net.handlers.movement.async_session") as mock_session:
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        await handle_move(ws1, {"action": "move", "direction": "right"}, game=game)
+    await handle_move(ws1, {"action": "move", "direction": "right"}, game=game)
 
     # Player 2 should receive entity_left
     calls = [c.args[0] for c in ws2.send_json.call_args_list]
@@ -246,12 +230,7 @@ async def test_exit_broadcasts_entity_entered_to_new_room():
 
     ws1, _ = _setup_player_in_room(game, room_a, "player_1", x=3, y=2)
 
-    with patch("server.net.handlers.movement.async_session") as mock_session:
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        await handle_move(ws1, {"action": "move", "direction": "right"}, game=game)
+    await handle_move(ws1, {"action": "move", "direction": "right"}, game=game)
 
     # Player 2 (in room_b) should receive entity_entered
     calls = [c.args[0] for c in ws2.send_json.call_args_list]
@@ -284,14 +263,15 @@ async def test_exit_loads_target_room_from_db():
         objects = []
         spawn_points = [{"type": "player", "x": 2, "y": 2}]
 
-    with patch("server.net.handlers.movement.async_session") as mock_session, \
-         patch("server.net.handlers.movement.room_repo") as mock_room_repo, \
-         patch("server.net.handlers.movement.player_repo") as mock_player_repo:
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
+    factory, _ = _mock_transaction()
+    game.transaction = factory
+
+    with patch("server.net.handlers.movement.room_repo") as mock_room_repo, \
+         patch("server.net.handlers.movement.player_repo") as mock_player_repo, \
+         patch("server.net.handlers.movement.grant_xp", new_callable=AsyncMock):
         mock_room_repo.get_by_key = AsyncMock(return_value=FakeRoomDB())
         mock_player_repo.update_position = AsyncMock()
+        mock_player_repo.update_visited_rooms = AsyncMock()
 
         await handle_move(ws, {"action": "move", "direction": "right"}, game=game)
 
@@ -320,11 +300,10 @@ async def test_exit_leads_nowhere():
 
     ws, entity = _setup_player_in_room(game, room_a, x=3, y=2)
 
-    with patch("server.net.handlers.movement.async_session") as mock_session, \
-         patch("server.net.handlers.movement.room_repo") as mock_room_repo:
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
+    factory, _ = _mock_transaction()
+    game.transaction = factory
+
+    with patch("server.net.handlers.movement.room_repo") as mock_room_repo:
         mock_room_repo.get_by_key = AsyncMock(return_value=None)
 
         await handle_move(ws, {"action": "move", "direction": "right"}, game=game)

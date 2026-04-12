@@ -5,12 +5,13 @@ import random
 from copy import deepcopy
 
 from server.combat.cards.card_def import CardDef
+from server.core.config import settings
 
 
 class CardHand:
     """Manages a player's deck, hand, and discard pile during combat."""
 
-    def __init__(self, card_defs: list[CardDef], hand_size: int = 5) -> None:
+    def __init__(self, card_defs: list[CardDef], hand_size: int = settings.COMBAT_HAND_SIZE) -> None:
         self.hand_size = hand_size
         self.deck: list[CardDef] = [deepcopy(c) for c in card_defs]
         random.shuffle(self.deck)

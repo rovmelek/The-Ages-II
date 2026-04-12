@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from server.combat.instance import CombatInstance
 
 if TYPE_CHECKING:
+    from server.combat.cards.card_def import CardDef
     from server.core.effects.registry import EffectRegistry
 
 
@@ -24,6 +25,7 @@ class CombatManager:
         mob_stats: dict,
         npc_id: str | None = None,
         room_key: str | None = None,
+        mob_hit_dice: int = 0,
     ) -> CombatInstance:
         """Create a new combat instance and register it."""
         instance_id = str(uuid.uuid4())
@@ -34,8 +36,35 @@ class CombatManager:
             effect_registry=self._effect_registry,
             npc_id=npc_id,
             room_key=room_key,
+            mob_hit_dice=mob_hit_dice,
         )
         self._instances[instance_id] = instance
+        return instance
+
+    def start_combat(
+        self,
+        mob_name: str,
+        mob_stats: dict,
+        player_ids: str | list[str],
+        player_stats_map: dict[str, dict],
+        card_defs: list[CardDef],
+        npc_id: str | None = None,
+        room_key: str | None = None,
+        mob_hit_dice: int = 0,
+    ) -> CombatInstance:
+        """Create a combat instance and add all participants.
+
+        Accepts a single entity_id or a list. Solo combat (single player)
+        behaves identically to pre-12.6 manual create+add flow.
+        """
+        ids = [player_ids] if isinstance(player_ids, str) else list(player_ids)
+        instance = self.create_instance(
+            mob_name, mob_stats, npc_id=npc_id, room_key=room_key,
+            mob_hit_dice=mob_hit_dice,
+        )
+        for eid in ids:
+            instance.add_participant(eid, player_stats_map[eid], card_defs)
+            self.add_player_to_instance(eid, instance.instance_id)
         return instance
 
     def add_player_to_instance(self, entity_id: str, instance_id: str) -> None:

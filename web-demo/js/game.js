@@ -104,6 +104,12 @@ const gameState = {
   credentials: null,
   pendingAction: null,
   movePending: false,
+  /** @type {Object|null} */
+  pendingLevelUp: null,
+  /** @type {string[]} */
+  levelUpSelections: [],
+  /** @type {number|undefined} */
+  _lastXp: undefined,
 };
 
 let reconnectAttempts = 0;
@@ -181,13 +187,18 @@ const COMMANDS = {
   use: {
     handler: (args) => {
       if (!args.length) {
-        appendChat('Usage: /use <item_key>', 'system');
+        appendChat('Usage: /use <item_name>', 'system');
         return;
       }
-      sendAction('use_item', { item_key: args.join(' ') });
+      const input = args.join(' ');
+      // Match by item_key first, then by display name (case-insensitive)
+      const match = gameState.inventory.find(
+        (i) => i.item_key === input || i.name.toLowerCase() === input.toLowerCase()
+      );
+      sendAction('use_item', { item_key: match ? match.item_key : input });
     },
     description: 'Use an item',
-    usage: '/use <item_key>',
+    usage: '/use <item_name>',
   },
   flee: {
     handler: () => sendAction('flee'),
@@ -221,9 +232,38 @@ const COMMANDS = {
     usage: '/who',
   },
   stats: {
-    handler: () => sendAction('stats'),
+    handler: () => {
+      sendAction('stats');
+      toggleStatsPanel(true);
+    },
     description: 'Show your stats',
     usage: '/stats',
+  },
+  levelup: {
+    handler: () => {
+      if (gameState.pendingLevelUp) {
+        showLevelUpModal(gameState.pendingLevelUp);
+      } else {
+        appendChat('No level-up available.', 'system');
+      }
+    },
+    description: 'Open level-up stat selection',
+    usage: '/levelup',
+  },
+  map: {
+    handler: () => sendAction('map'),
+    description: 'Show world map',
+    usage: '/map',
+  },
+  trade: {
+    handler: (args) => sendAction('trade', { args: args.join(' ') }),
+    description: 'Trade items with another player',
+    usage: '/trade @player | accept | reject | offer <item> [qty] | remove <item> | ready | cancel',
+  },
+  party: {
+    handler: (args) => sendAction('party', { args: args.join(' ') }),
+    description: 'Party commands',
+    usage: '/party <message> | invite @player | accept | reject | leave | kick @player | disband',
   },
 };
 
@@ -354,11 +394,16 @@ function resetToLogin(statusMessage) {
   gameState.inventory = [];
   gameState.pendingAction = null;
   gameState.movePending = false;
+  gameState.pendingLevelUp = null;
+  gameState.levelUpSelections = [];
+  gameState._lastXp = undefined;
 
   // Clear UI
   $tileGrid.innerHTML = '';
   $chatLog.innerHTML = '';
   $combatOverlay.classList.add('hidden');
+  const $levelupOverlay = document.getElementById('levelup-overlay');
+  if ($levelupOverlay) $levelupOverlay.classList.add('hidden');
 
   // Switch to auth screen
   setMode('auth');
@@ -413,10 +458,22 @@ function dispatchMessage(data) {
     who_result: handleWhoResult,
     stats_result: handleStatsResult,
     help_result: handleHelpResult,
+    map_data: handleMapData,
+    xp_gained: handleXpGained,
+    level_up_available: handleLevelUpAvailable,
+    level_up_complete: handleLevelUpComplete,
     logged_out: handleLoggedOut,
     server_shutdown: handleServerShutdown,
     kicked: handleKicked,
     respawn: handleRespawn,
+    trade_request: handleTradeRequest,
+    trade_update: handleTradeUpdate,
+    trade_result: handleTradeResult,
+    party_invite: handlePartyInvite,
+    party_update: handlePartyUpdate,
+    party_status: handlePartyStatus,
+    party_invite_response: handlePartyInviteResponse,
+    party_chat: handlePartyChat,
     error: handleError,
   };
 
@@ -462,11 +519,78 @@ function handleLoginSuccess(data) {
     name: data.username,
     x: 0,
     y: 0,
-    stats: data.stats || { hp: 100, max_hp: 100, attack: 10, xp: 0 },
+    stats: data.stats || { hp: 105, max_hp: 105, attack: 10, xp: 0, level: 1,
+      strength: 1, dexterity: 1, constitution: 1, intelligence: 1, wisdom: 1, charisma: 1 },
   };
 }
 
 /** @param {Object} data */
+function handleTradeRequest(data) {
+  appendChat(`[Trade] ${data.from_player} wants to trade with you. /trade accept or /trade reject`, 'system');
+}
+
+function handleTradeUpdate(data) {
+  const formatOffers = (offers) => {
+    const entries = Object.entries(offers);
+    if (entries.length === 0) return '(nothing)';
+    return entries.map(([k, q]) => `${k} x${q}`).join(', ');
+  };
+  appendChat(`[Trade] ${data.player_a}: ${formatOffers(data.offers_a)} ${data.ready_a ? '✓' : ''}`, 'system');
+  appendChat(`[Trade] ${data.player_b}: ${formatOffers(data.offers_b)} ${data.ready_b ? '✓' : ''}`, 'system');
+}
+
+function handleTradeResult(data) {
+  appendChat(`[Trade] ${data.reason}`, 'system');
+}
+
+function handlePartyInvite(data) {
+  appendChat(`[Party] ${data.from_player} invited you to a party. /party accept or /party reject`, 'system');
+}
+
+function handlePartyUpdate(data) {
+  const action = data.action;
+  const who = data.entity_id || 'someone';
+  if (action === 'member_joined') {
+    appendChat(`[Party] ${who} joined the party.`, 'system');
+  } else if (action === 'member_left') {
+    appendChat(`[Party] ${who} left the party.`, 'system');
+    if (data.new_leader) {
+      appendChat(`[Party] ${data.new_leader} is now the party leader.`, 'system');
+    }
+  } else if (action === 'member_kicked') {
+    appendChat(`[Party] ${who} was kicked from the party.`, 'system');
+  } else if (action === 'disbanded') {
+    appendChat(`[Party] The party has been disbanded.`, 'system');
+  }
+}
+
+function handlePartyStatus(data) {
+  if (data.pending_invite) {
+    appendChat(`[Party] You have a pending invite from ${data.from_player}. /party accept or /party reject`, 'system');
+    return;
+  }
+  appendChat('[Party] Members:', 'system');
+  for (const m of data.members || []) {
+    const leader = m.is_leader ? ' (Leader)' : '';
+    const room = m.room || 'offline';
+    appendChat(`  ${m.name}${leader} — ${room}`, 'system');
+  }
+}
+
+function handlePartyInviteResponse(data) {
+  if (data.status === 'sent') {
+    appendChat(`[Party] Invite sent to ${data.target}.`, 'system');
+  } else if (data.status === 'rejected') {
+    appendChat('[Party] Invite was rejected.', 'system');
+  } else if (data.status === 'expired') {
+    appendChat('[Party] Invite expired.', 'system');
+  }
+}
+
+function handlePartyChat(data) {
+  appendChat(`[Party] ${data.from}: ${data.message}`, 'party');
+}
+
 function handleError(data) {
   if (gameState.mode === 'auth') {
     $authError.textContent = data.detail || 'Unknown error';
@@ -496,6 +620,9 @@ function handleLoggedOut(_data) {
   gameState.room = null;
   gameState.combat = null;
   gameState.inventory = [];
+  gameState.pendingLevelUp = null;
+  gameState.levelUpSelections = [];
+  gameState._lastXp = undefined;
   // Clear UI
   const $grid = document.getElementById('tile-grid');
   if ($grid) $grid.innerHTML = '';
@@ -849,14 +976,44 @@ function handleStatsResult(data) {
     gameState.player.stats = { ...s };
     updateStatsPanel();
   }
-  appendChat(`HP: ${s.hp}/${s.max_hp} | ATK: ${s.attack} | XP: ${s.xp}`, 'system');
+  toggleStatsPanel(true);
+  appendChat(`HP: ${s.hp}/${s.max_hp} | LVL: ${s.level ?? 1} | XP: ${s.xp} | STR: ${s.strength ?? 1} DEX: ${s.dexterity ?? 1} CON: ${s.constitution ?? 1} INT: ${s.intelligence ?? 1} WIS: ${s.wisdom ?? 1} CHA: ${s.charisma ?? 1}`, 'system');
 }
 
-/** @param {{type: string, actions: Array}} data */
+/** @param {{type: string, categories?: Object, actions?: Array}} data */
 function handleHelpResult(data) {
-  appendChat('Server actions:', 'system');
-  if (data.actions?.length) {
+  if (data.categories) {
+    appendChat('Server actions:', 'system');
+    for (const [category, actions] of Object.entries(data.categories)) {
+      appendChat(`  ${category}: ${actions.join(', ')}`, 'system');
+    }
+  } else if (data.actions?.length) {
+    appendChat('Server actions:', 'system');
     appendChat('  ' + data.actions.join(', '), 'system');
+  }
+}
+
+/** @param {{type: string, rooms: Array, connections: Array}} data */
+function handleMapData(data) {
+  appendChat('=== World Map ===', 'system');
+  if (!data.rooms?.length) {
+    appendChat('  No rooms discovered yet.', 'system');
+    return;
+  }
+  const nameMap = {};
+  for (const room of data.rooms) {
+    nameMap[room.room_key] = room.name;
+  }
+  appendChat('Rooms:', 'system');
+  for (const room of data.rooms) {
+    appendChat(`  \u2022 ${room.name}`, 'system');
+  }
+  if (data.connections?.length) {
+    appendChat('Connections:', 'system');
+    for (const conn of data.connections) {
+      const fromName = nameMap[conn.from_room] || conn.from_room;
+      appendChat(`  ${fromName} \u2192 ${conn.to_room} (${conn.direction})`, 'system');
+    }
   }
 }
 
@@ -1028,9 +1185,7 @@ function handleCombatEnd(data) {
 
   // Sync final combat stats to player stats
   syncCombatStatsToPlayer();
-  if (isVictory && gameState.player?.stats) {
-    gameState.player.stats.xp = (gameState.player.stats.xp || 0) + (data.rewards?.xp || 0);
-  }
+  // Note: XP increment is handled by xp_gained handler — do not add here to avoid double-count
 
   const $result = document.getElementById('combat-result');
   if ($result) $result.textContent = msg;
@@ -1237,6 +1392,15 @@ document.getElementById('btn-flee')?.addEventListener('click', () => {
 function handleInventory(data) {
   gameState.inventory = data.items || [];
   renderInventory();
+  // Show inventory in chat
+  if (gameState.inventory.length === 0) {
+    appendChat('Inventory is empty.', 'system');
+  } else {
+    const lines = gameState.inventory.map(
+      (i) => `  ${i.name} (${i.item_key}) x${i.quantity}`
+    );
+    appendChat('Inventory:\n' + lines.join('\n'), 'system');
+  }
 }
 
 function renderInventory() {
@@ -1256,6 +1420,7 @@ function renderInventory() {
     const nameSpan = document.createElement('span');
     nameSpan.className = 'inventory-item-name';
     nameSpan.textContent = item.name;
+    nameSpan.title = `/use ${item.item_key}`;
     div.appendChild(nameSpan);
 
     const qtySpan = document.createElement('span');
@@ -1413,11 +1578,207 @@ function updateStatsPanel() {
     $shieldSection?.classList.add('hidden');
   }
 
-  // XP and ATK (always visible)
+  // Level display
+  const $levelText = document.getElementById('level-text');
+  if ($levelText) $levelText.textContent = `${stats.level || 1}`;
+
+  // XP progress bar
+  const level = stats.level || 1;
+  const xpNext = level * 1000;
+  const xpPrev = (level - 1) * 1000;
+  const currentXp = stats.xp || 0;
+  const xpInLevel = currentXp - xpPrev;
+  const xpNeeded = xpNext - xpPrev;
+  const xpPct = Math.min(100, Math.max(0, (xpInLevel / xpNeeded) * 100));
+
+  const $xpBar = /** @type {HTMLElement} */ (document.getElementById('xp-bar'));
   const $xpText = document.getElementById('xp-text');
-  const $atkText = document.getElementById('atk-text');
-  if ($xpText) $xpText.textContent = `${stats.xp ?? 0}`;
-  if ($atkText) $atkText.textContent = `${stats.attack ?? 10}`;
+  const oldXp = gameState._lastXp;
+  if ($xpBar) {
+    $xpBar.style.width = `${xpPct}%`;
+    // Flash animation on XP change
+    if (oldXp !== undefined && oldXp !== currentXp) {
+      const $track = $xpBar.parentElement;
+      if ($track) {
+        $track.classList.remove('xp-flash-anim');
+        void $track.offsetWidth;
+        $track.classList.add('xp-flash-anim');
+      }
+    }
+  }
+  if ($xpText) $xpText.textContent = `${currentXp}/${xpNext}`;
+  gameState._lastXp = currentXp;
+
+  // Stats detail panel
+  updateStatsDetailPanel(stats);
+}
+
+/** @param {Object} stats */
+function updateStatsDetailPanel(stats) {
+  const descriptions = {
+    str: { label: 'STR', key: 'strength', desc: (v) => `+${v} physical dmg` },
+    dex: { label: 'DEX', key: 'dexterity', desc: (v) => `-${v} incoming dmg` },
+    con: { label: 'CON', key: 'constitution', desc: (v) => `+${v * 5} max HP` },
+    int: { label: 'INT', key: 'intelligence', desc: (v) => `+${v} magic dmg` },
+    wis: { label: 'WIS', key: 'wisdom', desc: (v) => `+${v} healing` },
+    cha: { label: 'CHA', key: 'charisma', desc: (v) => `+${Math.round(v * 3)}% XP` },
+  };
+  for (const [id, info] of Object.entries(descriptions)) {
+    const $row = document.getElementById(`stat-${id}`);
+    if ($row) {
+      const val = stats[info.key] ?? 1;
+      $row.textContent = `${info.label}: ${val} (${info.desc(val)})`;
+    }
+  }
+}
+
+/** @param {boolean} [forceOpen] */
+function toggleStatsPanel(forceOpen) {
+  const $panel = document.getElementById('stats-detail-panel');
+  if (!$panel) return;
+  if (forceOpen) {
+    $panel.classList.remove('hidden');
+  } else {
+    $panel.classList.toggle('hidden');
+  }
+}
+
+// =========================================================================
+// XP & Level-Up Handlers
+// =========================================================================
+
+/** @param {Object} data */
+function handleXpGained(data) {
+  if (!gameState.player?.stats) return;
+  gameState.player.stats.xp = (gameState.player.stats.xp || 0) + (data.amount || 0);
+  updateStatsPanel();
+  if (data.source !== 'combat') {
+    appendChat(`+${data.amount} XP (${data.source}: ${data.detail})`, 'system');
+  }
+}
+
+/** @param {Object} data */
+function handleLevelUpAvailable(data) {
+  gameState.pendingLevelUp = data;
+  // Show badge
+  const $badge = document.getElementById('levelup-badge');
+  if ($badge) $badge.classList.remove('hidden');
+  showLevelUpModal(data);
+}
+
+/** @param {Object} data */
+function handleLevelUpComplete(data) {
+  if (!gameState.player?.stats) return;
+  const stats = gameState.player.stats;
+  stats.level = data.level;
+  stats.max_hp = data.new_max_hp;
+  stats.hp = data.new_max_hp;
+  if (data.stat_changes) {
+    for (const [key, val] of Object.entries(data.stat_changes)) {
+      stats[key] = val;
+    }
+  }
+  updateStatsPanel();
+
+  // Celebration chat message
+  const changes = data.stat_changes
+    ? Object.entries(data.stat_changes)
+        .map(([k, _v]) => `${k.substring(0, 3).toUpperCase()}+1`)
+        .join(', ')
+    : '';
+  appendChat(`You reached Level ${data.level}! ${changes}`, 'system');
+
+  // Clear pending
+  gameState.pendingLevelUp = null;
+  gameState.levelUpSelections = [];
+  const $badge = document.getElementById('levelup-badge');
+  if ($badge) $badge.classList.add('hidden');
+  // Hide modal if open
+  const $overlay = document.getElementById('levelup-overlay');
+  if ($overlay) $overlay.classList.add('hidden');
+  // Note: if another level-up is queued, server sends a new level_up_available immediately
+}
+
+/** @param {Object} data */
+function showLevelUpModal(data) {
+  const $overlay = document.getElementById('levelup-overlay');
+  const $grid = document.getElementById('levelup-stats-grid');
+  const $feedback = document.getElementById('levelup-feedback');
+  const $confirm = /** @type {HTMLButtonElement} */ (document.getElementById('levelup-confirm-btn'));
+  if (!$overlay || !$grid || !$feedback || !$confirm) return;
+
+  gameState.levelUpSelections = [];
+  $feedback.textContent = '';
+  $confirm.disabled = true;
+  $grid.innerHTML = '';
+
+  const statInfo = {
+    strength: { label: 'STR', effect: 'physical dmg per point' },
+    dexterity: { label: 'DEX', effect: 'incoming dmg reduction per point' },
+    constitution: { label: 'CON', effect: '+5 max HP per point' },
+    intelligence: { label: 'INT', effect: 'magic dmg per point' },
+    wisdom: { label: 'WIS', effect: 'healing per point' },
+    charisma: { label: 'CHA', effect: '+3% XP per point' },
+  };
+
+  const currentStats = data.current_stats || {};
+  const cap = data.stat_cap || 10;
+
+  for (const [key, info] of Object.entries(statInfo)) {
+    const val = currentStats[key] ?? 1;
+    const atCap = val >= cap;
+
+    const btn = document.createElement('div');
+    btn.className = `levelup-stat-btn${atCap ? ' disabled' : ''}`;
+    btn.dataset.stat = key;
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'levelup-stat-name';
+    nameEl.textContent = info.label;
+    btn.appendChild(nameEl);
+
+    const changeEl = document.createElement('div');
+    changeEl.className = 'levelup-stat-change';
+    changeEl.textContent = atCap ? `${val} (MAX)` : `${val} \u2192 ${val + 1}`;
+    btn.appendChild(changeEl);
+
+    const effectEl = document.createElement('div');
+    effectEl.className = 'levelup-stat-effect';
+    effectEl.textContent = `+1 ${info.effect}`;
+    btn.appendChild(effectEl);
+
+    if (!atCap) {
+      btn.addEventListener('click', () => {
+        toggleLevelUpStat(key, btn, $feedback, $confirm);
+      });
+    }
+
+    $grid.appendChild(btn);
+  }
+
+  $overlay.classList.remove('hidden');
+}
+
+/**
+ * @param {string} stat
+ * @param {HTMLElement} btn
+ * @param {HTMLElement} $feedback
+ * @param {HTMLButtonElement} $confirm
+ */
+function toggleLevelUpStat(stat, btn, $feedback, $confirm) {
+  const idx = gameState.levelUpSelections.indexOf(stat);
+  if (idx >= 0) {
+    gameState.levelUpSelections.splice(idx, 1);
+    btn.classList.remove('selected');
+  } else if (gameState.levelUpSelections.length >= 3) {
+    $feedback.textContent = 'Max 3 selected';
+    return;
+  } else {
+    gameState.levelUpSelections.push(stat);
+    btn.classList.add('selected');
+  }
+  $feedback.textContent = '';
+  $confirm.disabled = gameState.levelUpSelections.length === 0;
 }
 
 // =========================================================================
@@ -1510,6 +1871,33 @@ document.getElementById('login-form')?.addEventListener('submit', (e) => {
   } else {
     sendAction('login', { username, password });
   }
+});
+
+// =========================================================================
+// Level-Up Modal Wiring
+// =========================================================================
+
+document.getElementById('levelup-confirm-btn')?.addEventListener('click', () => {
+  if (gameState.levelUpSelections.length > 0) {
+    sendAction('level_up', { stats: gameState.levelUpSelections });
+    const $overlay = document.getElementById('levelup-overlay');
+    if ($overlay) $overlay.classList.add('hidden');
+  }
+});
+
+document.getElementById('levelup-close-btn')?.addEventListener('click', () => {
+  const $overlay = document.getElementById('levelup-overlay');
+  if ($overlay) $overlay.classList.add('hidden');
+});
+
+document.getElementById('levelup-badge')?.addEventListener('click', () => {
+  if (gameState.pendingLevelUp) {
+    showLevelUpModal(gameState.pendingLevelUp);
+  }
+});
+
+document.getElementById('stats-toggle-btn')?.addEventListener('click', () => {
+  toggleStatsPanel();
 });
 
 // =========================================================================

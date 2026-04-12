@@ -70,14 +70,27 @@
             <div class="stat-label">Shield</div>
             <div id="shield-text" class="stat-value"></div>
           </div>
+          <div id="level-section">
+            <div class="stat-label">LVL</div>
+            <div id="level-text" class="stat-value">1</div>
+            <span id="levelup-badge" class="hidden">Level Up!</span>
+          </div>
           <div id="xp-section">
             <div class="stat-label">XP</div>
-            <div id="xp-text" class="stat-value">0</div>
+            <div class="xp-bar-track">
+              <div id="xp-bar" class="xp-bar-fill"></div>
+              <span id="xp-text" class="xp-bar-text">0/1000</span>
+            </div>
           </div>
-          <div id="atk-section">
-            <div class="stat-label">ATK</div>
-            <div id="atk-text" class="stat-value">10</div>
-          </div>
+        </div>
+        <button id="stats-toggle-btn">Stats</button>
+        <div id="stats-detail-panel" class="hidden">
+          <div class="stat-row" id="stat-str"></div>
+          <div class="stat-row" id="stat-dex"></div>
+          <div class="stat-row" id="stat-con"></div>
+          <div class="stat-row" id="stat-int"></div>
+          <div class="stat-row" id="stat-wis"></div>
+          <div class="stat-row" id="stat-cha"></div>
         </div>
       </div>
 
@@ -169,6 +182,18 @@
         <h4>Items</h4>
         <div id="combat-inventory-list"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- Level-Up Overlay -->
+  <div id="levelup-overlay" class="hidden">
+    <div id="levelup-panel">
+      <button id="levelup-close-btn">&times;</button>
+      <h2>Level Up!</h2>
+      <p id="levelup-subtitle">Choose up to 3 stats to improve:</p>
+      <div id="levelup-stats-grid"></div>
+      <div id="levelup-feedback"></div>
+      <button id="levelup-confirm-btn" disabled>Confirm</button>
     </div>
   </div>
 

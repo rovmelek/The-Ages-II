@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from server.core.database import async_session
 from server.room.objects.base import InteractiveObject
 from server.room.objects.state import get_room_object_state, set_room_object_state
 from server.room.tile import TileType
@@ -27,7 +26,7 @@ class LeverObject(InteractiveObject):
         if not (0 <= target_x < room.width and 0 <= target_y < room.height):
             return {"status": "error", "message": "Invalid lever target coordinates"}
 
-        async with async_session() as session:
+        async with game.transaction() as session:
             state = await get_room_object_state(session, room_key, self.id)
             active = state.get("active", False)
 

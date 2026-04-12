@@ -21,6 +21,7 @@ class ItemDef:
     usable_in_combat: bool = False
     usable_outside_combat: bool = False
     description: str = ""
+    tradeable: bool = True
 
     @classmethod
     def from_db(cls, item: Item) -> ItemDef:
@@ -35,6 +36,7 @@ class ItemDef:
             usable_in_combat=item.usable_in_combat,
             usable_outside_combat=item.usable_outside_combat,
             description=item.description or "",
+            tradeable=item.tradeable if item.tradeable is not None else True,
         )
 
     def to_dict(self) -> dict:
@@ -49,4 +51,5 @@ class ItemDef:
             "usable_in_combat": self.usable_in_combat,
             "usable_outside_combat": self.usable_outside_combat,
             "description": self.description,
+            "tradeable": self.tradeable,
         }

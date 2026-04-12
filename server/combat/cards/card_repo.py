@@ -45,5 +45,4 @@ async def load_cards_from_json(session: AsyncSession, json_path: Path | str) -> 
             )
             session.add(card)
             cards.append(card)
-    await session.commit()
     return cards

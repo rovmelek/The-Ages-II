@@ -12,10 +12,12 @@ def _make_instance(mob_hp=50, mob_attack=10):
     inst = CombatInstance(
         instance_id="test",
         mob_name="Slime",
-        mob_stats={"hp": mob_hp, "max_hp": mob_hp, "attack": mob_attack},
+        mob_stats={"hp": mob_hp, "max_hp": mob_hp, "attack": mob_attack,
+                   "strength": 0, "dexterity": 0, "intelligence": 0, "wisdom": 0},
     )
     card = CardDef(card_key="basic", name="Basic", cost=0, effects=[{"type": "damage", "value": 1}])
-    inst.add_participant("player_1", {"hp": 100, "max_hp": 100, "attack": 10, "xp": 0}, [card])
+    inst.add_participant("player_1", {"hp": 100, "max_hp": 100, "attack": 10, "xp": 0,
+                                      "strength": 0, "dexterity": 0, "intelligence": 0, "wisdom": 0}, [card])
     return inst
 
 

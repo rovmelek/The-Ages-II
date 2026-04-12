@@ -20,7 +20,7 @@ async def get_state(session: AsyncSession, room_key: str) -> RoomState | None:
 async def save_state(session: AsyncSession, room_state: RoomState) -> RoomState:
     """Merge and commit a room state."""
     merged = await session.merge(room_state)
-    await session.commit()
+    await session.flush()
     return merged
 
 
@@ -36,9 +36,8 @@ async def upsert_room(session: AsyncSession, room: Room) -> Room:
         existing.exits = room.exits
         existing.objects = room.objects
         existing.spawn_points = room.spawn_points
-        await session.commit()
         return existing
     session.add(room)
-    await session.commit()
+    await session.flush()
     await session.refresh(room)
     return room

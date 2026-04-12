@@ -63,16 +63,18 @@ def client(test_session_factory, room_manager, connection_manager):
 
     original_rm = game.room_manager
     original_cm = game.connection_manager
+    original_sf = game.session_factory
 
-    with patch("server.net.handlers.auth.async_session", test_session_factory):
-        with TestClient(app) as c:
-            # Swap managers AFTER startup to avoid real rooms overwriting test rooms
-            game.room_manager = room_manager
-            game.connection_manager = connection_manager
-            yield c
+    with TestClient(app) as c:
+        # Swap managers and session factory AFTER startup
+        game.room_manager = room_manager
+        game.connection_manager = connection_manager
+        game.session_factory = test_session_factory
+        yield c
 
     game.room_manager = original_rm
     game.connection_manager = original_cm
+    game.session_factory = original_sf
     game.player_entities.clear()
 
 

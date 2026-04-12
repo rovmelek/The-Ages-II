@@ -10,7 +10,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
 from server.core.config import settings
-from server.core.database import async_session, init_db
+from server.core.database import init_db
+from server.core import database as _database
 from server.net.connection_manager import ConnectionManager
 from server.net.message_router import MessageRouter
 from server.player import repo as player_repo
@@ -21,6 +22,8 @@ from server.core.scheduler import Scheduler
 from server.net.handlers.admin import admin_router
 from server.room.manager import RoomManager
 from server.room.provider import JsonRoomProvider
+from server.party.manager import PartyManager
+from server.trade.manager import TradeManager
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +39,23 @@ class Game:
         self.event_bus = EventBus()
         self.effect_registry = create_default_registry()
         self.combat_manager = CombatManager(effect_registry=self.effect_registry)
+        self.trade_manager = TradeManager()
+        self.trade_manager.set_connection_manager(self.connection_manager)
+        self.party_manager = PartyManager()
         self.player_entities: dict[str, dict] = {}
+        self.session_factory = _database.async_session
         self._shutting_down: bool = False
+
+    @asynccontextmanager
+    async def transaction(self):
+        """Yield an AsyncSession that auto-commits on success, rolls back on error."""
+        async with self.session_factory() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
 
     async def startup(self) -> None:
         """Initialize database, load data, register handlers."""
@@ -51,7 +69,7 @@ class Game:
             load_npc_templates(npcs_dir)
 
         # Load rooms from JSON into DB, then into memory
-        async with async_session() as session:
+        async with self.transaction() as session:
             provider = JsonRoomProvider()
             rooms = await provider.load_rooms(session)
             for room_db in rooms:
@@ -62,7 +80,7 @@ class Game:
         if cards_dir.exists():
             from server.combat.cards import card_repo
 
-            async with async_session() as session:
+            async with self.transaction() as session:
                 for json_file in sorted(cards_dir.glob("*.json")):
                     await card_repo.load_cards_from_json(session, json_file)
 
@@ -71,7 +89,7 @@ class Game:
         if items_dir.exists():
             from server.items import item_repo
 
-            async with async_session() as session:
+            async with self.transaction() as session:
                 for json_file in sorted(items_dir.glob("*.json")):
                     await item_repo.load_items_from_json(session, json_file)
 
@@ -85,7 +103,7 @@ class Game:
         """Gracefully shut down: save all player states, notify, and disconnect."""
         from server.net.handlers.auth import _cleanup_player
 
-        self.scheduler.stop()
+        await self.scheduler.stop()
 
         player_count = 0
         for entity_id in list(self.player_entities.keys()):
@@ -125,10 +143,14 @@ class Game:
         )
         from server.net.handlers.interact import handle_interact
         from server.net.handlers.inventory import handle_inventory, handle_use_item
+        from server.net.handlers.trade import handle_trade
+        from server.net.handlers.party import handle_party, handle_party_chat, set_game_ref as set_party_game_ref
+        from server.net.handlers.levelup import handle_level_up
         from server.net.handlers.movement import handle_move
         from server.net.handlers.query import (
             handle_help_actions,
             handle_look,
+            handle_map,
             handle_stats,
             handle_who,
         )
@@ -183,6 +205,24 @@ class Game:
             "help_actions",
             lambda ws, d: handle_help_actions(ws, d, game=self),
         )
+        self.router.register(
+            "map", lambda ws, d: handle_map(ws, d, game=self)
+        )
+        self.router.register(
+            "level_up",
+            lambda ws, d: handle_level_up(ws, d, game=self),
+        )
+        self.router.register(
+            "trade", lambda ws, d: handle_trade(ws, d, game=self)
+        )
+        self.router.register(
+            "party", lambda ws, d: handle_party(ws, d, game=self)
+        )
+        self.router.register(
+            "party_chat",
+            lambda ws, d: handle_party_chat(ws, d, game=self),
+        )
+        set_party_game_ref(self)
 
     def _register_events(self) -> None:
         """Register event bus subscribers."""
@@ -215,7 +255,7 @@ class Game:
 
         tmpl = get_npc_template(npc.npc_key)
         if tmpl and tmpl.get("spawn_type") == "persistent":
-            respawn_seconds = tmpl.get("spawn_config", {}).get("respawn_seconds", 60)
+            respawn_seconds = tmpl.get("spawn_config", {}).get("respawn_seconds", settings.MOB_RESPAWN_SECONDS)
             self.scheduler.schedule_respawn(room_key, npc_id, respawn_seconds)
 
     async def respawn_player(self, entity_id: str) -> None:
@@ -229,11 +269,11 @@ class Game:
 
         # Restore HP to max
         entity.in_combat = False
-        entity.stats["hp"] = entity.stats.get("max_hp", 100)
+        entity.stats["hp"] = entity.stats.get("max_hp", settings.DEFAULT_BASE_HP)
         entity.stats.pop("shield", None)
 
         # Determine spawn point in town_square
-        spawn_room_key = "town_square"
+        spawn_room_key = settings.DEFAULT_SPAWN_ROOM
         spawn_room = self.room_manager.get_room(spawn_room_key)
         if spawn_room is None:
             return  # Cannot respawn without town_square
@@ -249,7 +289,7 @@ class Game:
 
         # Save to DB FIRST (crash recovery: player placed correctly on re-login)
         try:
-            async with async_session() as session:
+            async with self.transaction() as session:
                 await player_repo.update_position(
                     session, entity.player_db_id, spawn_room_key, sx, sy
                 )

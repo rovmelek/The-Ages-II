@@ -1,7 +1,7 @@
 """Tests for non-walkable interactive objects (Story 10.2)."""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -133,9 +133,19 @@ async def test_interact_distance_zero_allowed():
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _mock_transaction():
+    mock_session = AsyncMock()
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+    return MagicMock(return_value=mock_ctx)
+
+
 def _make_game():
     from server.app import Game
-    return Game()
+    game = Game()
+    game.transaction = _mock_transaction()
+    return game
 
 
 def _setup_player(game, room, entity_id="player_1"):
@@ -162,12 +172,11 @@ def _chest_patches():
     def _patch():
         mock_player = AsyncMock()
         mock_player.inventory = {}
-        with patch("server.room.objects.chest.async_session") as mock_sf, \
-             patch("server.room.objects.chest.player_repo") as mock_repo, \
+        with patch("server.room.objects.chest.player_repo") as mock_repo, \
              patch("server.room.objects.chest.get_player_object_state", return_value={}), \
-             patch("server.room.objects.chest.set_player_object_state"):
-            mock_sf.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
-            mock_sf.return_value.__aexit__ = AsyncMock(return_value=False)
+             patch("server.room.objects.chest.set_player_object_state"), \
+             patch("server.net.handlers.interact.get_player_object_state", return_value={}), \
+             patch("server.net.handlers.interact.set_player_object_state"):
             mock_repo.get_by_id = AsyncMock(return_value=mock_player)
             mock_repo.update_inventory = AsyncMock()
             yield

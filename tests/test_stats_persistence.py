@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -66,14 +66,16 @@ def client(test_session_factory, room_manager, connection_manager):
     original_rm = game.room_manager
     original_cm = game.connection_manager
 
-    with patch("server.net.handlers.auth.async_session", test_session_factory):
-        with TestClient(app) as c:
-            game.room_manager = room_manager
-            game.connection_manager = connection_manager
-            yield c
+    original_sf = game.session_factory
+    with TestClient(app) as c:
+        game.room_manager = room_manager
+        game.connection_manager = connection_manager
+        game.session_factory = test_session_factory
+        yield c
 
     game.room_manager = original_rm
     game.connection_manager = original_cm
+    game.session_factory = original_sf
     game.player_entities.clear()
 
 
@@ -91,12 +93,14 @@ class TestUpdateStatsWhitelist:
             from server.player.auth import hash_password
             player = await player_repo.create(session, "testuser", hash_password("pass123"))
             pid = player.id
+            await session.commit()
 
         async with test_session_factory() as session:
             await player_repo.update_stats(session, pid, {
                 "hp": 80, "max_hp": 100, "attack": 10, "xp": 25,
                 "shield": 5, "some_garbage": True,
             })
+            await session.commit()
 
         async with test_session_factory() as session:
             result = await session.execute(select(Player).where(Player.id == pid))
@@ -113,9 +117,11 @@ class TestUpdateStatsWhitelist:
             from server.player.auth import hash_password
             player = await player_repo.create(session, "testuser2", hash_password("pass123"))
             pid = player.id
+            await session.commit()
 
         async with test_session_factory() as session:
             await player_repo.update_stats(session, pid, {"shield": 5, "temp": 99})
+            await session.commit()
 
         async with test_session_factory() as session:
             result = await session.execute(select(Player).where(Player.id == pid))
@@ -131,7 +137,7 @@ class TestFirstLoginDefaults:
     """Test that first-time players receive default stats."""
 
     def test_first_login_gets_default_stats(self, client):
-        """New player should get hp=100, max_hp=100, attack=10, xp=0."""
+        """New player should get CON-derived max_hp, ability scores, level."""
         from server.app import game
 
         with client.websocket_connect("/ws/game") as ws:
@@ -143,12 +149,15 @@ class TestFirstLoginDefaults:
             ws.receive_json()  # login_success
             ws.receive_json()  # room_state
 
-            # Check runtime entity has defaults
+            # Check runtime entity has defaults with CON-derived max_hp
             entity_stats = game.player_entities["player_1"]["entity"].stats
-            assert entity_stats["hp"] == 100
-            assert entity_stats["max_hp"] == 100
+            assert entity_stats["hp"] == 105  # 100 + CON(1) * 5
+            assert entity_stats["max_hp"] == 105
             assert entity_stats["attack"] == 10
             assert entity_stats["xp"] == 0
+            assert entity_stats["level"] == 1
+            assert entity_stats["strength"] == 1
+            assert entity_stats["constitution"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +262,7 @@ class TestCombatStatsSync:
             ws.receive_json()  # room_state
 
             entity = game.player_entities["player_1"]["entity"]
-            assert entity.stats["hp"] == 100  # default
+            assert entity.stats["hp"] == 105  # 100 + CON(1) * 5
 
             # Simulate combat: create instance, modify participant stats
             instance = CombatInstance(
@@ -270,16 +279,21 @@ class TestCombatStatsSync:
             # Simulate taking damage in combat (modify participant stats directly)
             instance.participant_stats["player_1"]["hp"] = 60
 
-            # Call sync
+            # Call sync — mock the session factory on game
             from server.net.handlers.combat import _sync_combat_stats
-            with patch("server.net.handlers.combat.async_session") as mock_session_cls:
-                mock_session = AsyncMock()
-                mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-                mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+            mock_session = AsyncMock()
+            mock_ctx = MagicMock()
+            mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_factory = MagicMock(return_value=mock_ctx)
+            old_sf = game.session_factory
+            game.transaction = mock_factory
+            try:
                 asyncio.get_event_loop().run_until_complete(
                     _sync_combat_stats(instance, game)
                 )
+            finally:
+                game.session_factory = old_sf
 
             # Entity stats should be updated
             assert entity.stats["hp"] == 60

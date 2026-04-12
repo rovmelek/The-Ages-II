@@ -44,14 +44,14 @@ def test_session_factory(async_engine):
 
 @pytest.fixture
 def client(test_session_factory):
-    """TestClient with async_session patched to use in-memory DB."""
-    with patch(
-        "server.net.handlers.auth.async_session", test_session_factory
-    ):
-        from server.app import app
+    """TestClient with session_factory set to use in-memory DB."""
+    from server.app import app, game
 
-        with TestClient(app) as c:
-            yield c
+    original_sf = game.session_factory
+    with TestClient(app) as c:
+        game.session_factory = test_session_factory
+        yield c
+    game.session_factory = original_sf
 
 
 # ---------------------------------------------------------------------------
@@ -165,34 +165,44 @@ def test_register_duplicate_username(client):
 # ---------------------------------------------------------------------------
 
 def test_register_login_success_includes_stats(client):
-    """Register login_success should include default stats."""
+    """Register login_success should include default stats with ability scores."""
     with client.websocket_connect("/ws/game") as ws:
         ws.send_json({"action": "register", "username": "statplayer", "password": "secret123"})
         resp = ws.receive_json()
         assert resp["type"] == "login_success"
         assert "stats" in resp
         stats = resp["stats"]
-        assert stats["hp"] == 100
-        assert stats["max_hp"] == 100
+        assert stats["hp"] == 105  # 100 + CON(1) * 5
+        assert stats["max_hp"] == 105
         assert stats["attack"] == 10
         assert stats["xp"] == 0
+        assert stats["level"] == 1
+        assert stats["strength"] == 1
+        assert stats["dexterity"] == 1
+        assert stats["constitution"] == 1
+        assert stats["intelligence"] == 1
+        assert stats["wisdom"] == 1
+        assert stats["charisma"] == 1
 
 
 def test_login_success_includes_stats(client):
-    """Login login_success should include persisted player stats."""
+    """Login login_success should include persisted player stats with ability scores."""
     # Register first
     with client.websocket_connect("/ws/game") as ws:
         ws.send_json({"action": "register", "username": "loginstats", "password": "secret123"})
         ws.receive_json()
 
-    # Login
+    # Login — first-time, so CON-derived max_hp applied
     with client.websocket_connect("/ws/game") as ws:
         ws.send_json({"action": "login", "username": "loginstats", "password": "secret123"})
         resp = ws.receive_json()
         assert resp["type"] == "login_success"
         assert "stats" in resp
         stats = resp["stats"]
-        assert stats["hp"] == 100
-        assert stats["max_hp"] == 100
+        assert stats["hp"] == 105  # 100 + CON(1) * 5
+        assert stats["max_hp"] == 105
         assert stats["attack"] == 10
         assert stats["xp"] == 0
+        assert stats["level"] == 1
+        assert stats["strength"] == 1
+        assert stats["constitution"] == 1

@@ -58,8 +58,8 @@ async def test_game_startup_initializes_db(test_session_factory):
     from server.app import Game
 
     game = Game()
+    game.session_factory = test_session_factory
     with patch("server.app.init_db") as mock_init, \
-         patch("server.app.async_session", test_session_factory), \
          patch("server.app.settings") as mock_settings:
         mock_init.return_value = None
         # Point DATA_DIR to a temp path so card/item loading is skipped
@@ -81,8 +81,8 @@ async def test_game_startup_registers_handlers(test_session_factory):
     from server.app import Game
 
     game = Game()
+    game.session_factory = test_session_factory
     with patch("server.app.init_db", return_value=None), \
-         patch("server.app.async_session", test_session_factory), \
          patch("server.app.settings") as mock_settings, \
          patch("server.app.JsonRoomProvider") as MockProvider:
         mock_settings.DATA_DIR = Path("/tmp/nonexistent_data_dir")
@@ -114,8 +114,8 @@ async def test_game_startup_loads_rooms_into_manager(test_session_factory):
     mock_room.spawn_points = []
 
     game = Game()
+    game.session_factory = test_session_factory
     with patch("server.app.init_db", return_value=None), \
-         patch("server.app.async_session", test_session_factory), \
          patch("server.app.settings") as mock_settings, \
          patch("server.app.JsonRoomProvider") as MockProvider:
         mock_settings.DATA_DIR = Path("/tmp/nonexistent_data_dir")
@@ -160,12 +160,13 @@ async def test_game_shutdown_saves_player_state():
         "db_id": 10,
     }
 
-    with patch("server.net.handlers.auth.async_session") as mock_session_factory, \
-         patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
-        mock_session = AsyncMock()
-        mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_session = AsyncMock()
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+    game.transaction = MagicMock(return_value=mock_ctx)
 
+    with patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
         await game.shutdown()
 
         # Position saved
@@ -212,12 +213,13 @@ async def test_handle_disconnect_removes_entity_from_room():
         "db_id": 1,
     }
 
-    with patch("server.net.handlers.auth.async_session") as mock_session_factory:
-        mock_session = AsyncMock()
-        mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_session = AsyncMock()
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+    game.transaction = MagicMock(return_value=mock_ctx)
 
-        await game.handle_disconnect(mock_ws)
+    await game.handle_disconnect(mock_ws)
 
     # Entity removed from room
     assert len(room._entities) == 0
@@ -247,12 +249,13 @@ async def test_handle_disconnect_saves_position():
         "db_id": 42,
     }
 
-    with patch("server.net.handlers.auth.async_session") as mock_session_factory, \
-         patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
-        mock_session = AsyncMock()
-        mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_session = AsyncMock()
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+    game.transaction = MagicMock(return_value=mock_ctx)
 
+    with patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
         await game.handle_disconnect(mock_ws)
 
         mock_repo.update_position.assert_called_once_with(
@@ -282,13 +285,14 @@ async def test_handle_disconnect_broadcasts_entity_left():
     game.player_entities["player_1"] = {"entity": entity1, "room_key": "test_room", "db_id": 1}
     game.player_entities["player_2"] = {"entity": entity2, "room_key": "test_room", "db_id": 2}
 
-    with patch("server.net.handlers.auth.async_session") as mock_session_factory:
-        mock_session = AsyncMock()
-        mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_session = AsyncMock()
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+    game.transaction = MagicMock(return_value=mock_ctx)
 
-        # Player 2 disconnects
-        await game.handle_disconnect(ws2)
+    # Player 2 disconnects
+    await game.handle_disconnect(ws2)
 
     # Player 1 should receive entity_left
     entity_left_calls = [

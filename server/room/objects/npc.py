@@ -5,6 +5,8 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from server.core.config import settings
+
 
 @dataclass
 class NpcEntity:
@@ -62,6 +64,30 @@ def get_npc_template(npc_key: str) -> dict | None:
     return _NPC_TEMPLATES.get(npc_key)
 
 
+def _derive_stats_from_hit_dice(tmpl: dict) -> dict:
+    """Derive full stat block from hit_dice + hp_multiplier template fields.
+
+    Falls back to legacy flat ``stats`` dict if ``hit_dice`` is absent.
+    """
+    hit_dice = tmpl.get("hit_dice")
+    if hit_dice is None:
+        # Legacy format — use flat stats dict
+        return dict(tmpl.get("stats", {}))
+    hp_multiplier = tmpl.get("hp_multiplier", settings.NPC_DEFAULT_HP_MULTIPLIER)
+    max_hp = hit_dice * hp_multiplier
+    return {
+        "hp": max_hp,
+        "max_hp": max_hp,
+        "attack": hit_dice * settings.NPC_ATTACK_DICE_MULTIPLIER,
+        "strength": hit_dice,
+        "dexterity": hit_dice,
+        "constitution": hit_dice,
+        "intelligence": hit_dice,
+        "wisdom": hit_dice,
+        "charisma": hit_dice,
+    }
+
+
 def create_npc_from_template(npc_key: str, npc_id: str, x: int, y: int) -> NpcEntity | None:
     """Create an NpcEntity from a template."""
     tmpl = get_npc_template(npc_key)
@@ -74,7 +100,7 @@ def create_npc_from_template(npc_key: str, npc_id: str, x: int, y: int) -> NpcEn
         x=x,
         y=y,
         behavior_type=tmpl.get("behavior_type", "hostile"),
-        stats=dict(tmpl.get("stats", {})),
+        stats=_derive_stats_from_hit_dice(tmpl),
         loot_table=tmpl.get("loot_table", ""),
         spawn_config=dict(tmpl.get("spawn_config", {})),
     )

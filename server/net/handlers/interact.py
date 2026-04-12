@@ -5,9 +5,12 @@ from typing import TYPE_CHECKING
 
 from fastapi import WebSocket
 
+from server.core.config import settings
+from server.core.xp import grant_xp
 import server.room.objects  # noqa: F401 — triggers type registration
 from server.room.objects.base import InteractiveObject
 from server.room.objects.registry import create_object
+from server.room.objects.state import get_player_object_state, set_player_object_state
 from server.room.room import DIRECTION_DELTAS
 
 if TYPE_CHECKING:
@@ -98,8 +101,31 @@ async def handle_interact(websocket: WebSocket, data: dict, *, game: Game) -> No
         await websocket.send_json({"type": "error", "detail": "Object not interactable"})
         return
 
+    # Check if this is first interaction (before interact modifies state)
+    first_interaction = False
+    async with game.transaction() as session:
+        prior_state = await get_player_object_state(
+            session, player_db_id, room_key, target_id,
+        )
+        if not prior_state:
+            first_interaction = True
+
     # Delegate to the object's interact method
     result = await obj.interact(player_db_id, game)
+
+    # Grant interaction XP on first successful interaction
+    if first_interaction and result.get("status") not in ("error", "already_looted"):
+        await grant_xp(
+            entity_id, entity, settings.XP_INTERACTION_REWARD,
+            "interaction", f"Interacted with {obj_dict.get('type', 'object')}", game,
+        )
+        # For levers (room-scoped state), record per-player interaction for XP tracking
+        if obj_dict.get("type") == "lever":
+            async with game.transaction() as session:
+                await set_player_object_state(
+                    session, player_db_id, room_key, target_id, {"interacted": True},
+                )
+
     await websocket.send_json({
         "type": "interact_result",
         "object_id": target_id,

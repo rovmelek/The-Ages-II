@@ -63,12 +63,16 @@ def _material():
     )
 
 
-def _make_player_stats(hp=80, max_hp=100):
-    return {"hp": hp, "max_hp": max_hp, "attack": 10, "defense": 5, "shield": 0}
+def _make_player_stats(hp=80, max_hp=100, strength=0, dexterity=0, intelligence=0, wisdom=0):
+    return {"hp": hp, "max_hp": max_hp, "attack": 10, "defense": 5, "shield": 0,
+            "strength": strength, "dexterity": dexterity,
+            "intelligence": intelligence, "wisdom": wisdom}
 
 
-def _make_mob_stats(hp=100, attack=10):
-    return {"hp": hp, "max_hp": hp, "attack": attack}
+def _make_mob_stats(hp=100, attack=10, strength=0, dexterity=0, intelligence=0, wisdom=0):
+    return {"hp": hp, "max_hp": hp, "attack": attack,
+            "strength": strength, "dexterity": dexterity,
+            "intelligence": intelligence, "wisdom": wisdom}
 
 
 def _basic_cards(n=5):

@@ -86,9 +86,22 @@ def test_all_npc_loot_tables_present():
 # Combat loot integration tests
 # ---------------------------------------------------------------------------
 
+def _mock_transaction():
+    """Create a mock async context manager for game.transaction."""
+    mock_session = AsyncMock()
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+    mock_factory = MagicMock(return_value=mock_ctx)
+    return mock_factory, mock_session
+
+
 def _make_game():
     from server.app import Game
-    return Game()
+    game = Game()
+    factory, _ = _mock_transaction()
+    game.transaction = factory
+    return game
 
 
 def _make_npc(npc_id="npc_1", loot_table="slime_loot"):
@@ -165,14 +178,11 @@ async def test_combat_victory_includes_loot():
     mock_item.usable_outside_combat = True
     mock_item.description = "Heals 25 HP"
 
-    with patch("server.net.handlers.combat.async_session") as mock_session, \
-         patch("server.net.handlers.combat.player_repo") as mock_repo, \
+    with patch("server.net.handlers.combat.player_repo") as mock_repo, \
          patch("server.net.handlers.combat.items_repo") as mock_items_repo:
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
         mock_repo.get_by_id = AsyncMock(return_value=mock_player)
         mock_repo.update_stats = AsyncMock()
+        mock_repo.update_inventory = AsyncMock()
         mock_items_repo.get_all = AsyncMock(return_value=[mock_item])
 
         game.kill_npc = AsyncMock()
@@ -225,12 +235,8 @@ async def test_combat_victory_no_loot_table():
     game.combat_manager._player_to_instance["player_1"] = "combat_1"
     game.combat_manager._instances["combat_1"] = instance
 
-    with patch("server.net.handlers.combat.async_session") as mock_session, \
-         patch("server.net.handlers.combat.player_repo") as mock_repo, \
+    with patch("server.net.handlers.combat.player_repo") as mock_repo, \
          patch("server.net.handlers.combat.items_repo"):
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
         mock_repo.update_stats = AsyncMock()
 
         game.kill_npc = AsyncMock()
@@ -292,14 +298,11 @@ async def test_combat_victory_loot_updates_inventory():
     mock_item.usable_outside_combat = False
     mock_item.description = "A shard of iron"
 
-    with patch("server.net.handlers.combat.async_session") as mock_session, \
-         patch("server.net.handlers.combat.player_repo") as mock_repo, \
+    with patch("server.net.handlers.combat.player_repo") as mock_repo, \
          patch("server.net.handlers.combat.items_repo") as mock_items_repo:
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
         mock_repo.get_by_id = AsyncMock(return_value=mock_player)
         mock_repo.update_stats = AsyncMock()
+        mock_repo.update_inventory = AsyncMock()
         mock_items_repo.get_all = AsyncMock(return_value=[mock_item])
 
         game.kill_npc = AsyncMock()
@@ -310,8 +313,9 @@ async def test_combat_victory_loot_updates_inventory():
     assert inventory.has_item("iron_shard")
     assert inventory.get_quantity("iron_shard") == 1
 
-    # DB inventory should have been updated
-    assert mock_player.inventory.get("iron_shard") == 1
+    # DB inventory should have been updated via repo
+    inv_arg = mock_repo.update_inventory.call_args.args[2]
+    assert inv_arg.get("iron_shard") == 1
 
 
 @pytest.mark.asyncio
@@ -378,14 +382,11 @@ async def test_combat_victory_multi_player_same_loot():
             return mock_player1
         return mock_player2
 
-    with patch("server.net.handlers.combat.async_session") as mock_session, \
-         patch("server.net.handlers.combat.player_repo") as mock_repo, \
+    with patch("server.net.handlers.combat.player_repo") as mock_repo, \
          patch("server.net.handlers.combat.items_repo") as mock_items_repo:
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
         mock_repo.get_by_id = AsyncMock(side_effect=mock_get_by_id)
         mock_repo.update_stats = AsyncMock()
+        mock_repo.update_inventory = AsyncMock()
         mock_items_repo.get_all = AsyncMock(return_value=[mock_item])
 
         game.kill_npc = AsyncMock()
@@ -449,14 +450,11 @@ async def test_combat_victory_disconnected_participant_skipped():
     mock_item.usable_outside_combat = True
     mock_item.description = "Heals 25 HP"
 
-    with patch("server.net.handlers.combat.async_session") as mock_session, \
-         patch("server.net.handlers.combat.player_repo") as mock_repo, \
+    with patch("server.net.handlers.combat.player_repo") as mock_repo, \
          patch("server.net.handlers.combat.items_repo") as mock_items_repo:
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
         mock_repo.get_by_id = AsyncMock(return_value=mock_player)
         mock_repo.update_stats = AsyncMock()
+        mock_repo.update_inventory = AsyncMock()
         mock_items_repo.get_all = AsyncMock(return_value=[mock_item])
 
         game.kill_npc = AsyncMock()
@@ -500,12 +498,8 @@ async def test_combat_defeat_no_loot():
     game.combat_manager._player_to_instance["player_1"] = "combat_1"
     game.combat_manager._instances["combat_1"] = instance
 
-    with patch("server.net.handlers.combat.async_session") as mock_session, \
-         patch("server.net.handlers.combat.player_repo") as mock_repo, \
+    with patch("server.net.handlers.combat.player_repo") as mock_repo, \
          patch("server.net.handlers.combat.items_repo"):
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
         mock_repo.update_stats = AsyncMock()
 
         game.respawn_player = AsyncMock()

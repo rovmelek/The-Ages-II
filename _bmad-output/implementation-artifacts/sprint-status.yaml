@@ -1,5 +1,5 @@
 # generated: 2026-03-21
-# last_updated: 2026-04-10 (story 10-9 created)
+# last_updated: 2026-04-11 (story 12.5 done, ISS-015/016 resolved)
 # project: The-Ages-II
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-21
-last_updated: 2026-04-10
+last_updated: 2026-04-11 (Story 14.1 done)
 project: The-Ages-II
 project_key: NOKEY
 tracking_system: file-system
@@ -124,6 +124,11 @@ development_status:
   # See: _bmad-output/implementation-artifacts/issues/ISS-009-*.md
   ISS-009-returning-player-stuck-on-wall: done  # High — Returning players on wall tiles relocated to spawn; fixed in all 3 placement paths
 
+  # UX issue found during live testing
+  # See: _bmad-output/implementation-artifacts/issues/ISS-010-*.md
+  ISS-010-use-command-requires-item-key: done  # Low (UX) — /use now accepts display names; tooltip added to inventory items
+  ISS-011-inventory-command-no-chat-output: done  # Low (UX) — /inventory now lists items with keys in chat
+
   # Epic 7: Server Hardening
   epic-7: done
   7-1-spawn-point-resolution: done
@@ -162,20 +167,53 @@ development_status:
   10-9-npc-spawn-density: done
   epic-10-retrospective: done
 
-  # Epic 11: Leveling System (deferred)
-  epic-11: backlog
-  11-1-xp-level-thresholds: backlog
-  11-2-level-up-mechanic: backlog
-  11-3-level-up-notification: backlog
-  11-4-level-display: backlog
-  epic-11-retrospective: optional
+  # Epic 11: Experience & Stat System
+  epic-11: done
+  11-1-dnd-stat-system-and-npc-hit-dice: done
+  11-2-stat-to-combat-integration: done
+  11-3-configurable-xp-curve-and-combat-rewards: done
+  11-4-exploration-and-interaction-xp-sources: done
+  11-5-xp-level-thresholds-and-level-up-mechanic: done
+  11-6-level-up-notification-and-ui: done
+  11-7-session-factory-dependency-injection: done
+  ISS-012-app-async-session-import-leaks-name: done  # Low — removed async_session from server.app namespace
+  ISS-013-add-makefile-test-runner: done  # Low — added Makefile with test/server/install targets
+  epic-11-retrospective: done
 
-  # Epic 12: Social Systems (deferred)
-  epic-12: backlog
-  12-1-trade-system: backlog
-  12-2-trade-validation: backlog
-  12-3-party-system: backlog
-  12-4-party-chat: backlog
-  12-5-party-combat: backlog
-  12-6-world-map: backlog
-  epic-12-retrospective: optional
+  # Epic 12: Social Systems
+  epic-12: done
+  12-1-trade-system: done
+  12-2-trade-validation: done
+  12-3-party-infrastructure: done
+  12-4-party-commands: done
+  12-5-party-chat: done
+  12-6-combatinstance-multi-player-extension: done
+  12-7-party-combat-integration: done
+  12-8-world-map: done
+  ISS-014-relogin-tests-unawaited-coroutine-warning: done  # Low — mock_player.visited_rooms not set, causing unawaited coroutine warning
+  ISS-015-utcnow-deprecation-warnings: done  # Low — replaced datetime.utcnow() with datetime.now(UTC).replace(tzinfo=None) in test_spawn.py and test_events.py
+  ISS-016-bcrypt-rounds-slow-tests: done  # Medium — session-scoped conftest.py reduces bcrypt rounds from 12 to 4 in tests; suite 22s → 3.5s
+  epic-12-retrospective: done
+
+  # Epic 13: Database Infrastructure
+  epic-13: done
+  13-1-transaction-context-manager-and-repo-refactor: done
+  ISS-017-scheduler-stop-not-awaited: done  # Medium — scheduler.stop() sync cancel caused flaky test_integration failures
+  epic-13-retrospective: done
+
+  # Epic 14: Codebase Structure & Infrastructure Hardening
+  # Phase 1 (Now): 14.1 → 14.3a → 14.3b, 14.2 anytime
+  # Phase 2 (Soon): 14.4b → 14.4a → 14.5
+  # Phase 3 (Later): 14.6, 14.7
+  # Decision gate after Phase 1: evaluate continue cleanup vs pivot to content/Godot
+  epic-14: in-progress
+  14-1-centralize-game-parameters-in-config: done
+  14-2-data-driven-loot-tables: backlog
+  14-3a-core-message-enrichment: backlog
+  14-3b-xp-and-stats-display-enrichment: backlog
+  14-4b-room-accessors-and-interact-signature: backlog
+  14-4a-playersession-dataclass: backlog
+  14-5-decompose-handler-business-logic: backlog
+  14-6-concurrency-safety: backlog
+  14-7-database-migration-and-postgresql-readiness: backlog
+  epic-14-retrospective: optional

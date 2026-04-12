@@ -1,4 +1,6 @@
 """Player database model."""
+from __future__ import annotations
+
 from sqlalchemy import JSON, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,3 +19,4 @@ class Player(Base):
     current_room_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     position_x: Mapped[int] = mapped_column(Integer, default=0)
     position_y: Mapped[int] = mapped_column(Integer, default=0)
+    visited_rooms: Mapped[list] = mapped_column(JSON, default=list)  # Consider PlayerRoomVisit table for production scale

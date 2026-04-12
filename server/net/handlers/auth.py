@@ -6,11 +6,12 @@ from typing import TYPE_CHECKING
 
 from fastapi import WebSocket
 
-from server.core.database import async_session
 from server.items import item_repo
 from server.items.inventory import Inventory
 from server.items.item_def import ItemDef
 from server.player import repo as player_repo
+from server.core.config import settings
+from server.core.xp import get_pending_level_ups, send_level_up_available
 from server.player.auth import hash_password, verify_password
 from server.player.entity import PlayerEntity
 from server.room import repo as room_repo
@@ -21,59 +22,95 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def _cleanup_player(entity_id: str, game: Game) -> None:
-    """Clean up a player session: combat removal, state save, room removal.
+async def _cleanup_trade(entity_id: str, game: Game) -> None:
+    """Cancel any active trade for a disconnecting player."""
+    cancelled_trade = game.trade_manager.cancel_trades_for(entity_id)
+    if cancelled_trade:
+        other_id = (
+            cancelled_trade.player_b
+            if cancelled_trade.player_a == entity_id
+            else cancelled_trade.player_a
+        )
+        await game.connection_manager.send_to_player(
+            other_id,
+            {
+                "type": "trade_result",
+                "status": "cancelled",
+                "reason": "Trade cancelled \u2014 player disconnected",
+            },
+        )
 
-    Used by both logout and same-socket re-login. Does NOT close the WebSocket
-    or send any messages to the player.
-    """
-    player_info = game.player_entities.get(entity_id)
-    if not player_info:
-        game.connection_manager.disconnect(entity_id)
+
+async def _cleanup_combat(entity_id: str, entity, game: Game) -> None:
+    """Sync combat stats, remove from instance, notify remaining participants."""
+    combat_instance = game.combat_manager.get_player_instance(entity_id)
+    if not combat_instance:
         return
 
+    # Sync combat stats back to entity (only whitelisted keys)
+    combat_stats = combat_instance.participant_stats.get(entity_id, {})
+    for key in ("hp", "max_hp"):
+        if key in combat_stats:
+            entity.stats[key] = combat_stats[key]
+    # Restore HP if dead in combat
+    if entity.stats.get("hp", 0) <= 0:
+        entity.stats["hp"] = entity.stats.get("max_hp", settings.DEFAULT_BASE_HP)
+    entity.in_combat = False
+
+    # Remove from combat instance (destroys participant_stats entry)
+    combat_instance.remove_participant(entity_id)
+    game.combat_manager.remove_player(entity_id)
+
+    if not combat_instance.participants:
+        # Last player — release NPC and clean up instance
+        if combat_instance.npc_id and combat_instance.room_key:
+            room = game.room_manager.get_room(combat_instance.room_key)
+            if room:
+                npc = room.get_npc(combat_instance.npc_id)
+                if npc:
+                    npc.in_combat = False
+        game.combat_manager.remove_instance(combat_instance.instance_id)
+    else:
+        # Notify remaining participants (best-effort per recipient)
+        state = combat_instance.get_state()
+        for eid in combat_instance.participants:
+            ws = game.connection_manager.get_websocket(eid)
+            if ws:
+                try:
+                    await ws.send_json({"type": "combat_update", **state})
+                except Exception:
+                    pass
+
+
+async def _cleanup_party(entity_id: str, game: Game) -> None:
+    """Remove from party, handle leader succession, clean up pending invites."""
+    party_result, new_leader_id = game.party_manager.handle_disconnect(entity_id)
+    if party_result and party_result.members:
+        update_msg = {
+            "type": "party_update",
+            "action": "member_left",
+            "entity_id": entity_id,
+            "members": party_result.members,
+            "leader": party_result.leader,
+        }
+        if new_leader_id:
+            update_msg["new_leader"] = new_leader_id
+        for mid in party_result.members:
+            await game.connection_manager.send_to_player(mid, update_msg)
+
+    from server.net.handlers.party import cleanup_pending_invites
+
+    cleanup_pending_invites(entity_id)
+
+
+async def _save_player_state(entity_id: str, player_info: dict, game: Game) -> None:
+    """Persist player position, stats, inventory, and visited rooms to DB."""
     entity = player_info["entity"]
     room_key = player_info["room_key"]
     inventory = player_info.get("inventory")
 
-    # 1. Combat cleanup (order matters — sync before remove)
-    combat_instance = game.combat_manager.get_player_instance(entity_id)
-    if combat_instance:
-        # Sync combat stats back to entity (only whitelisted keys)
-        combat_stats = combat_instance.participant_stats.get(entity_id, {})
-        for key in ("hp", "max_hp", "attack"):
-            if key in combat_stats:
-                entity.stats[key] = combat_stats[key]
-        # Restore HP if dead in combat
-        if entity.stats.get("hp", 0) <= 0:
-            entity.stats["hp"] = entity.stats.get("max_hp", 100)
-        entity.in_combat = False
-        # Remove from combat instance (destroys participant_stats entry)
-        combat_instance.remove_participant(entity_id)
-        game.combat_manager.remove_player(entity_id)
-        if not combat_instance.participants:
-            # Last player — release NPC and clean up instance
-            if combat_instance.npc_id and combat_instance.room_key:
-                room = game.room_manager.get_room(combat_instance.room_key)
-                if room:
-                    npc = room.get_npc(combat_instance.npc_id)
-                    if npc:
-                        npc.in_combat = False
-            game.combat_manager.remove_instance(combat_instance.instance_id)
-        else:
-            # Notify remaining participants (best-effort per recipient)
-            state = combat_instance.get_state()
-            for eid in combat_instance.participants:
-                ws = game.connection_manager.get_websocket(eid)
-                if ws:
-                    try:
-                        await ws.send_json({"type": "combat_update", **state})
-                    except Exception:
-                        pass
-
-    # 2. Save state to DB (best-effort)
     try:
-        async with async_session() as session:
+        async with game.transaction() as session:
             await player_repo.update_position(
                 session, entity.player_db_id, room_key, entity.x, entity.y
             )
@@ -84,10 +121,17 @@ async def _cleanup_player(entity_id: str, game: Game) -> None:
                 await player_repo.update_inventory(
                     session, entity.player_db_id, inventory.to_dict()
                 )
+            visited_rooms = player_info.get("visited_rooms", [])
+            if visited_rooms:
+                await player_repo.update_visited_rooms(
+                    session, entity.player_db_id, visited_rooms
+                )
     except Exception:
         logger.exception("Failed to save state during cleanup for %s", entity_id)
 
-    # 3. Remove from room + broadcast entity_left
+
+async def _remove_from_room(entity_id: str, room_key: str, game: Game) -> None:
+    """Remove entity from room and broadcast departure."""
     room = game.room_manager.get_room(room_key)
     if room:
         room.remove_entity(entity_id)
@@ -97,7 +141,29 @@ async def _cleanup_player(entity_id: str, game: Game) -> None:
             exclude=entity_id,
         )
 
-    # 4. Clean up connection_manager and player_entities
+
+async def _cleanup_player(entity_id: str, game: Game) -> None:
+    """Clean up a player session: combat removal, state save, room removal.
+
+    Used by both logout and same-socket re-login. Does NOT close the WebSocket
+    or send any messages to the player.
+
+    Cleanup order: trades → combat → party → save state → remove from room → disconnect
+    """
+    player_info = game.player_entities.get(entity_id)
+    if not player_info:
+        game.connection_manager.disconnect(entity_id)
+        return
+
+    entity = player_info["entity"]
+    room_key = player_info["room_key"]
+
+    await _cleanup_trade(entity_id, game)
+    await _cleanup_combat(entity_id, entity, game)
+    await _cleanup_party(entity_id, game)
+    await _save_player_state(entity_id, player_info, game)
+    await _remove_from_room(entity_id, room_key, game)
+
     game.connection_manager.disconnect(entity_id)
     game.player_entities.pop(entity_id, None)
 
@@ -125,18 +191,18 @@ async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> No
     username = data.get("username", "").strip()
     password = data.get("password", "")
 
-    if len(username) < 3:
+    if len(username) < settings.MIN_USERNAME_LENGTH:
         await websocket.send_json(
-            {"type": "error", "detail": "Username must be at least 3 characters"}
+            {"type": "error", "detail": f"Username must be at least {settings.MIN_USERNAME_LENGTH} characters"}
         )
         return
-    if len(password) < 6:
+    if len(password) < settings.MIN_PASSWORD_LENGTH:
         await websocket.send_json(
-            {"type": "error", "detail": "Password must be at least 6 characters"}
+            {"type": "error", "detail": f"Password must be at least {settings.MIN_PASSWORD_LENGTH} characters"}
         )
         return
 
-    async with async_session() as session:
+    async with game.transaction() as session:
         existing = await player_repo.get_by_username(session, username)
         if existing:
             await websocket.send_json(
@@ -147,16 +213,24 @@ async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> No
         hashed = hash_password(password)
         player = await player_repo.create(session, username, hashed)
 
+        default_max_hp = settings.DEFAULT_BASE_HP + settings.DEFAULT_STAT_VALUE * settings.CON_HP_PER_POINT
         await websocket.send_json(
             {
                 "type": "login_success",
                 "player_id": player.id,
                 "username": player.username,
                 "stats": {
-                    "hp": 100,
-                    "max_hp": 100,
-                    "attack": 10,
+                    "hp": default_max_hp,
+                    "max_hp": default_max_hp,
+                    "attack": settings.DEFAULT_ATTACK,
                     "xp": 0,
+                    "level": 1,
+                    "strength": settings.DEFAULT_STAT_VALUE,
+                    "dexterity": settings.DEFAULT_STAT_VALUE,
+                    "constitution": settings.DEFAULT_STAT_VALUE,
+                    "intelligence": settings.DEFAULT_STAT_VALUE,
+                    "wisdom": settings.DEFAULT_STAT_VALUE,
+                    "charisma": settings.DEFAULT_STAT_VALUE,
                 },
             }
         )
@@ -190,7 +264,7 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
         )
         return
 
-    async with async_session() as session:
+    async with game.transaction() as session:
         player = await player_repo.get_by_username(session, username)
         if player is None or not verify_password(password, player.password_hash):
             await websocket.send_json(
@@ -212,14 +286,23 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
                 await _kick_old_session(entity_id, old_ws, game)
 
         # Resolve stats: apply defaults for first-time players, restore for returning
-        _DEFAULT_STATS = {"hp": 100, "max_hp": 100, "attack": 10, "xp": 0}
+        _DEFAULT_STATS = {
+            "hp": settings.DEFAULT_BASE_HP, "max_hp": settings.DEFAULT_BASE_HP,
+            "attack": settings.DEFAULT_ATTACK, "xp": 0, "level": 1,
+            "strength": settings.DEFAULT_STAT_VALUE, "dexterity": settings.DEFAULT_STAT_VALUE,
+            "constitution": settings.DEFAULT_STAT_VALUE, "intelligence": settings.DEFAULT_STAT_VALUE,
+            "wisdom": settings.DEFAULT_STAT_VALUE, "charisma": settings.DEFAULT_STAT_VALUE,
+        }
         db_stats = player.stats or {}
         if not db_stats:
-            # First-time player — apply defaults and persist
+            # First-time player — apply defaults, compute max_hp from CON
             stats = dict(_DEFAULT_STATS)
+            stats["max_hp"] = settings.DEFAULT_BASE_HP + stats["constitution"] * settings.CON_HP_PER_POINT
+            stats["hp"] = stats["max_hp"]
             await player_repo.update_stats(session, player.id, stats)
         else:
             # Returning player — use saved stats, fill any missing keys
+            # max_hp is NOT recalculated from CON (preserves existing state)
             stats = {**_DEFAULT_STATS, **db_stats}
 
         entity = PlayerEntity(
@@ -232,7 +315,7 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
         )
 
         # Determine room (default to town_square for first login)
-        room_key = player.current_room_id or "town_square"
+        room_key = player.current_room_id or settings.DEFAULT_SPAWN_ROOM
 
         # Load room if not already in memory
         room = game.room_manager.get_room(room_key)
@@ -263,7 +346,7 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
 
         # Place entity in room and register WebSocket connection
         room.add_entity(entity)
-        game.connection_manager.connect(entity_id, websocket, room_key)
+        game.connection_manager.connect(entity_id, websocket, room_key, name=player.username)
 
         # Restore inventory from DB (hydrate with item definitions)
         db_inventory = player.inventory or {}
@@ -274,12 +357,19 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
         else:
             inventory = Inventory()
 
-        # Track player entity with inventory
+        # Restore visited rooms from DB; ensure current room is tracked
+        visited_rooms = player.visited_rooms or []
+        if room_key not in visited_rooms:
+            visited_rooms.append(room_key)
+
+        # Track player entity with inventory and visited rooms
         game.player_entities[entity_id] = {
             "entity": entity,
             "room_key": room_key,
             "db_id": player.id,
             "inventory": inventory,
+            "visited_rooms": visited_rooms,
+            "pending_level_ups": 0,
         }
 
         # Send login success and full room state
@@ -289,10 +379,17 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
                 "player_id": player.id,
                 "username": player.username,
                 "stats": {
-                    "hp": stats.get("hp", 100),
-                    "max_hp": stats.get("max_hp", 100),
-                    "attack": stats.get("attack", 10),
+                    "hp": stats.get("hp", settings.DEFAULT_BASE_HP),
+                    "max_hp": stats.get("max_hp", settings.DEFAULT_BASE_HP),
+                    "attack": stats.get("attack", settings.DEFAULT_ATTACK),
                     "xp": stats.get("xp", 0),
+                    "level": stats.get("level", 1),
+                    "strength": stats.get("strength", settings.DEFAULT_STAT_VALUE),
+                    "dexterity": stats.get("dexterity", settings.DEFAULT_STAT_VALUE),
+                    "constitution": stats.get("constitution", settings.DEFAULT_STAT_VALUE),
+                    "intelligence": stats.get("intelligence", settings.DEFAULT_STAT_VALUE),
+                    "wisdom": stats.get("wisdom", settings.DEFAULT_STAT_VALUE),
+                    "charisma": stats.get("charisma", settings.DEFAULT_STAT_VALUE),
                 },
             }
         )
@@ -304,9 +401,16 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
             "name": entity.name,
             "x": entity.x,
             "y": entity.y,
+            "level": stats.get("level", 1),
         }
         await game.connection_manager.broadcast_to_room(
             room_key,
             {"type": "entity_entered", "entity": entity_data},
             exclude=entity_id,
         )
+
+        # Re-check for pending level-ups (e.g., player disconnected before choosing)
+        pending = get_pending_level_ups(stats)
+        if pending > 0:
+            game.player_entities[entity_id]["pending_level_ups"] = pending
+            await send_level_up_available(entity_id, entity, game)

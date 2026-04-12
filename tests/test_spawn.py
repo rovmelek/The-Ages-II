@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import tempfile
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -175,17 +176,19 @@ class TestRareSpawnChecks:
         scheduler = Scheduler()
         scheduler._game = game
 
-        now = datetime.utcnow()
+        now = datetime.now(UTC).replace(tzinfo=None)
         mock_cp = MagicMock()
         mock_cp.npc_key = "test_dragon"
         mock_cp.room_key = "test"
         mock_cp.next_check_at = now - timedelta(hours=1)  # overdue
         mock_cp.currently_spawned = False
 
-        with patch("server.core.scheduler.async_session") as mock_session_ctx:
-            session = AsyncMock()
-            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=session)
-            mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+        session = AsyncMock()
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=session)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        game.transaction = MagicMock(return_value=mock_ctx)
+        with contextlib.nullcontext():
 
             # Return the checkpoint from query
             result_mock = MagicMock()
@@ -212,17 +215,19 @@ class TestRareSpawnChecks:
         scheduler = Scheduler()
         scheduler._game = game
 
-        now = datetime.utcnow()
+        now = datetime.now(UTC).replace(tzinfo=None)
         mock_cp = MagicMock()
         mock_cp.npc_key = "test_dragon"
         mock_cp.room_key = "test"
         mock_cp.next_check_at = now - timedelta(hours=1)
         mock_cp.currently_spawned = False
 
-        with patch("server.core.scheduler.async_session") as mock_session_ctx:
-            session = AsyncMock()
-            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=session)
-            mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+        session = AsyncMock()
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=session)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        game.transaction = MagicMock(return_value=mock_ctx)
+        with contextlib.nullcontext():
 
             result_mock = MagicMock()
             result_mock.scalar_one_or_none.return_value = mock_cp
@@ -246,17 +251,19 @@ class TestRareSpawnChecks:
         scheduler = Scheduler()
         scheduler._game = game
 
-        now = datetime.utcnow()
+        now = datetime.now(UTC).replace(tzinfo=None)
         mock_cp = MagicMock()
         mock_cp.npc_key = "test_dragon"
         mock_cp.room_key = "test"
         mock_cp.next_check_at = now - timedelta(hours=1)
         mock_cp.currently_spawned = True  # Already spawned
 
-        with patch("server.core.scheduler.async_session") as mock_session_ctx:
-            session = AsyncMock()
-            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=session)
-            mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+        session = AsyncMock()
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=session)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        game.transaction = MagicMock(return_value=mock_ctx)
+        with contextlib.nullcontext():
 
             result_mock = MagicMock()
             result_mock.scalar_one_or_none.return_value = mock_cp
@@ -281,13 +288,15 @@ class TestRareSpawnChecks:
         mock_cp = MagicMock()
         mock_cp.npc_key = "test_dragon"
         mock_cp.room_key = "test"
-        mock_cp.next_check_at = datetime.utcnow() + timedelta(hours=6)
+        mock_cp.next_check_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=6)
         mock_cp.currently_spawned = False
 
-        with patch("server.core.scheduler.async_session") as mock_session_ctx:
-            session = AsyncMock()
-            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=session)
-            mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+        session = AsyncMock()
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=session)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        game.transaction = MagicMock(return_value=mock_ctx)
+        with contextlib.nullcontext():
 
             result_mock = MagicMock()
             result_mock.scalar_one_or_none.return_value = mock_cp
@@ -320,7 +329,7 @@ class TestSchedulerLifecycle:
         assert scheduler._task is not None
         assert not scheduler._task.done()
 
-        scheduler.stop()
+        await scheduler.stop()
         assert scheduler._running is False
         assert scheduler._task is None
 
@@ -337,7 +346,7 @@ class TestSchedulerLifecycle:
         scheduler.schedule_respawn("test", "npc_1", 100)
         assert len(scheduler._respawn_tasks) == 1
 
-        scheduler.stop()
+        await scheduler.stop()
         assert len(scheduler._respawn_tasks) == 0
 
 
@@ -350,17 +359,21 @@ class TestCheckpointRecovery:
     async def test_recover_checkpoints_logs_overdue(self):
         """AC #3: Overdue checkpoints are detected on startup."""
         scheduler = Scheduler()
-        now = datetime.utcnow()
+        game = _make_game()
+        scheduler._game = game
+        now = datetime.now(UTC).replace(tzinfo=None)
 
         mock_cp = MagicMock()
         mock_cp.npc_key = "test_dragon"
         mock_cp.room_key = "test"
         mock_cp.next_check_at = now - timedelta(hours=2)  # overdue
 
-        with patch("server.core.scheduler.async_session") as mock_session_ctx:
-            session = AsyncMock()
-            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=session)
-            mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+        session = AsyncMock()
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=session)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        game.transaction = MagicMock(return_value=mock_ctx)
+        with contextlib.nullcontext():
 
             result_mock = MagicMock()
             scalars_mock = MagicMock()

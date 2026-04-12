@@ -18,3 +18,4 @@ class Item(Base):
     usable_in_combat: Mapped[bool] = mapped_column(Boolean, default=False)
     usable_outside_combat: Mapped[bool] = mapped_column(Boolean, default=False)
     description: Mapped[str] = mapped_column(String(500), default="")
+    tradeable: Mapped[bool] = mapped_column(Boolean, default=True)

@@ -97,16 +97,11 @@ def client(test_session_factory, room_manager, connection_manager):
 
     original_rm = game.room_manager
     original_cm = game.connection_manager
+    original_sf = game.session_factory
 
-    with patch("server.net.handlers.auth.async_session", test_session_factory), \
-         patch("server.net.handlers.movement.async_session", test_session_factory), \
-         patch("server.net.handlers.movement.player_repo") as mock_player_repo, \
-         patch("server.net.handlers.combat.async_session", test_session_factory), \
+    with patch("server.net.handlers.movement.player_repo") as mock_player_repo, \
          patch("server.net.handlers.combat.player_repo") as mock_combat_player_repo, \
-         patch("server.net.handlers.inventory.async_session", test_session_factory), \
          patch("server.net.handlers.inventory.player_repo") as mock_inv_player_repo, \
-         patch("server.room.objects.chest.async_session", test_session_factory), \
-         patch("server.app.async_session", test_session_factory), \
          patch("server.app.player_repo") as mock_app_player_repo:
         mock_player_repo.update_position = AsyncMock()
         mock_app_player_repo.update_position = AsyncMock()
@@ -117,13 +112,15 @@ def client(test_session_factory, room_manager, connection_manager):
         mock_inv_player_repo.update_stats = AsyncMock()
         mock_inv_player_repo.update_inventory = AsyncMock()
         with TestClient(app) as c:
-            # Swap managers AFTER startup to avoid real rooms overwriting test rooms
+            # Swap managers and session factory AFTER startup
             game.room_manager = room_manager
             game.connection_manager = connection_manager
+            game.session_factory = test_session_factory
             yield c
 
     game.room_manager = original_rm
     game.connection_manager = original_cm
+    game.session_factory = original_sf
     game.player_entities.clear()
 
 
@@ -234,14 +231,21 @@ class TestChestInteraction:
             ws.send_json({"action": "move", "direction": "down"})
             ws.receive_json()
 
+    def _drain_until(self, ws, msg_type):
+        """Consume messages until we find the expected type."""
+        for _ in range(10):
+            msg = ws.receive_json()
+            if msg.get("type") == msg_type:
+                return msg
+        raise AssertionError(f"Never received message type '{msg_type}'")
+
     def test_loot_chest(self, client):
         _register(client)
         with client.websocket_connect("/ws/game") as ws:
             _login(ws)
             self._move_to_chest(ws)
             ws.send_json({"action": "interact", "target_id": "chest_1"})
-            resp = ws.receive_json()
-            assert resp["type"] == "interact_result"
+            resp = self._drain_until(ws, "interact_result")
             assert resp["result"]["status"] == "looted"
             assert len(resp["result"]["items"]) > 0
 
@@ -251,10 +255,9 @@ class TestChestInteraction:
             _login(ws)
             self._move_to_chest(ws)
             ws.send_json({"action": "interact", "target_id": "chest_1"})
-            ws.receive_json()  # first loot
+            self._drain_until(ws, "interact_result")  # first loot (+ xp_gained)
             ws.send_json({"action": "interact", "target_id": "chest_1"})
-            resp = ws.receive_json()
-            assert resp["type"] == "interact_result"
+            resp = self._drain_until(ws, "interact_result")
             assert resp["result"]["status"] == "already_looted"
 
     def test_interact_nonexistent_object(self, client):
@@ -331,10 +334,16 @@ class TestCombatFlow:
             turn = ws.receive_json()
             assert turn["type"] == "combat_turn"
 
+            # grant_xp sends xp_gained before combat_end
+            xp_msg = ws.receive_json()
+            assert xp_msg["type"] == "xp_gained"
+            assert xp_msg["source"] == "combat"
+            assert xp_msg["amount"] > 0
+
             end = ws.receive_json()
             assert end["type"] == "combat_end"
             assert end["victory"] is True
-            assert end["rewards"]["xp"] == 25
+            assert end["rewards"]["xp"] > 0  # XP based on hit_dice formula
 
             # Victory triggers room_state rebroadcast (NPC death state)
             room_update = ws.receive_json()

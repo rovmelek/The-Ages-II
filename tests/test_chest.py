@@ -17,9 +17,23 @@ from server.room.room import RoomInstance
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _mock_transaction():
+    """Create a mock async context manager for game.transaction."""
+    from unittest.mock import MagicMock
+    mock_session = AsyncMock()
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+    mock_factory = MagicMock(return_value=mock_ctx)
+    return mock_factory, mock_session
+
+
 def _make_game():
     from server.app import Game
-    return Game()
+    game = Game()
+    factory, _ = _mock_transaction()
+    game.transaction = factory
+    return game
 
 
 def _chest_object_dict(obj_id="chest_01", loot_table="common_chest"):
@@ -95,14 +109,12 @@ async def test_open_chest_first_time():
     mock_player = AsyncMock()
     mock_player.inventory = {}
 
-    with patch("server.room.objects.chest.async_session") as mock_session, \
-         patch("server.room.objects.chest.player_repo") as mock_repo, \
+    with patch("server.room.objects.chest.player_repo") as mock_repo, \
          patch("server.room.objects.chest.get_player_object_state", return_value={}), \
-         patch("server.room.objects.chest.set_player_object_state") as mock_set_state:
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
+         patch("server.room.objects.chest.set_player_object_state") as mock_set_state, \
+         patch("server.net.handlers.interact.get_player_object_state", new_callable=AsyncMock, return_value={}):
         mock_repo.get_by_id = AsyncMock(return_value=mock_player)
+        mock_repo.update_inventory = AsyncMock()
 
         await handle_interact(
             ws, {"action": "interact", "target_id": "chest_01"}, game=game
@@ -127,12 +139,8 @@ async def test_open_chest_already_looted():
     room = _make_room_with_chest()
     ws, _ = _setup_player(game, room)
 
-    with patch("server.room.objects.chest.async_session") as mock_session, \
-         patch("server.room.objects.chest.get_player_object_state", return_value={"opened": True}):
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
+    with patch("server.room.objects.chest.get_player_object_state", return_value={"opened": True}), \
+         patch("server.net.handlers.interact.get_player_object_state", new_callable=AsyncMock, return_value={"opened": True}):
         await handle_interact(
             ws, {"action": "interact", "target_id": "chest_01"}, game=game
         )
@@ -163,14 +171,12 @@ async def test_two_players_open_chest_independently():
     async def mock_set_state(session, pid, rk, oid, data):
         player_states[(pid, oid)] = data
 
-    with patch("server.room.objects.chest.async_session") as mock_session, \
-         patch("server.room.objects.chest.player_repo") as mock_repo, \
+    with patch("server.room.objects.chest.player_repo") as mock_repo, \
          patch("server.room.objects.chest.get_player_object_state", side_effect=mock_get_state), \
-         patch("server.room.objects.chest.set_player_object_state", side_effect=mock_set_state):
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
+         patch("server.room.objects.chest.set_player_object_state", side_effect=mock_set_state), \
+         patch("server.net.handlers.interact.get_player_object_state", new_callable=AsyncMock, return_value={}):
         mock_repo.get_by_id = AsyncMock(return_value=mock_player)
+        mock_repo.update_inventory = AsyncMock()
 
         # Player 1 opens
         await handle_interact(
@@ -197,19 +203,18 @@ async def test_chest_loot_added_to_inventory():
     mock_player = AsyncMock()
     mock_player.inventory = {"healing_potion": 1}  # Already has 1
 
-    with patch("server.room.objects.chest.async_session") as mock_session, \
-         patch("server.room.objects.chest.player_repo") as mock_repo, \
+    with patch("server.room.objects.chest.player_repo") as mock_repo, \
          patch("server.room.objects.chest.get_player_object_state", return_value={}), \
-         patch("server.room.objects.chest.set_player_object_state"):
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
+         patch("server.room.objects.chest.set_player_object_state"), \
+         patch("server.net.handlers.interact.get_player_object_state", new_callable=AsyncMock, return_value={}):
         mock_repo.get_by_id = AsyncMock(return_value=mock_player)
+        mock_repo.update_inventory = AsyncMock()
 
         await handle_interact(
             ws, {"action": "interact", "target_id": "chest_01"}, game=game
         )
 
-    # Inventory should have been updated: existing 1 + 1 from loot = 2
-    assert mock_player.inventory["healing_potion"] == 2
-    assert mock_player.inventory["iron_shard"] == 2
+    # Inventory should have been updated via repo: existing 1 + 1 from loot = 2
+    inv_arg = mock_repo.update_inventory.call_args.args[2]
+    assert inv_arg["healing_potion"] == 2
+    assert inv_arg["iron_shard"] == 2

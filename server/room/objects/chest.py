@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from server.core.database import async_session
 from server.items.item_def import ItemDef
 from server.items import item_repo as items_repo
 from server.items.loot import generate_loot
@@ -25,7 +24,7 @@ class ChestObject(InteractiveObject):
     async def interact(self, player_id: int, game: Game) -> dict[str, Any]:
         room_key = self._get_room_key(game)
 
-        async with async_session() as session:
+        async with game.transaction() as session:
             # Check if already opened by this player
             state = await get_player_object_state(session, player_id, room_key, self.id)
             if state.get("opened"):
@@ -42,8 +41,7 @@ class ChestObject(InteractiveObject):
                 for item in items:
                     key = item["item_key"]
                     db_inventory[key] = db_inventory.get(key, 0) + item["quantity"]
-                player.inventory = db_inventory
-                await session.commit()
+                await player_repo.update_inventory(session, player_id, db_inventory)
 
             # Sync to runtime inventory (items immediately visible)
             entity_id = f"player_{player_id}"

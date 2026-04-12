@@ -14,12 +14,16 @@ def _registry():
     return create_default_registry()
 
 
-def _make_mob_stats(hp=50, attack=10):
-    return {"hp": hp, "max_hp": hp, "attack": attack}
+def _make_mob_stats(hp=50, attack=10, strength=0, dexterity=0, intelligence=0, wisdom=0):
+    return {"hp": hp, "max_hp": hp, "attack": attack,
+            "strength": strength, "dexterity": dexterity,
+            "intelligence": intelligence, "wisdom": wisdom}
 
 
-def _make_player_stats(hp=100):
-    return {"hp": hp, "max_hp": 100, "attack": 15, "defense": 5, "shield": 0}
+def _make_player_stats(hp=100, strength=0, dexterity=0, intelligence=0, wisdom=0):
+    return {"hp": hp, "max_hp": 100, "attack": 15, "defense": 5, "shield": 0,
+            "strength": strength, "dexterity": dexterity,
+            "intelligence": intelligence, "wisdom": wisdom}
 
 
 def _damage_cards(value=20, n=10):
@@ -49,7 +53,7 @@ def test_combat_end_result_victory():
     result = instance.get_combat_end_result()
     assert result is not None
     assert result["victory"] is True
-    assert result["rewards"]["xp"] == 25
+    assert result["rewards_per_player"]["p1"]["xp"] == 0  # mob_hit_dice defaults to 0
 
 
 def test_combat_end_result_defeat():
@@ -60,7 +64,7 @@ def test_combat_end_result_defeat():
     result = instance.get_combat_end_result()
     assert result is not None
     assert result["victory"] is False
-    assert result["rewards"] == {}
+    assert result["rewards_per_player"] == {}
 
 
 def test_combat_end_result_not_finished():
@@ -91,7 +95,7 @@ async def test_victory_by_killing_mob():
     assert instance.is_finished is True
     end = instance.get_combat_end_result()
     assert end["victory"] is True
-    assert end["rewards"]["xp"] == 25
+    assert end["rewards_per_player"]["p1"]["xp"] == 0  # mob_hit_dice defaults to 0
 
 
 # --- Defeat via mob attack ---

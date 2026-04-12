@@ -7,7 +7,8 @@
     "spawn_config": {
       "respawn_seconds": 60
     },
-    "stats": {"hp": 50, "max_hp": 50, "attack": 10, "defense": 5},
+    "hit_dice": 4,
+    "hp_multiplier": 12,
     "loot_table": "goblin_loot"
   },
   {
@@ -18,7 +19,8 @@
     "spawn_config": {
       "respawn_seconds": 30
     },
-    "stats": {"hp": 25, "max_hp": 25, "attack": 5, "defense": 2},
+    "hit_dice": 2,
+    "hp_multiplier": 12,
     "loot_table": "bat_loot"
   },
   {
@@ -35,7 +37,8 @@
       "x": 2,
       "y": 3
     },
-    "stats": {"hp": 500, "max_hp": 500, "attack": 25, "defense": 15},
+    "hit_dice": 10,
+    "hp_multiplier": 50,
     "loot_table": "dragon_loot"
   },
   {
@@ -46,7 +49,8 @@
     "spawn_config": {
       "respawn_seconds": 60
     },
-    "stats": {"hp": 30, "max_hp": 30, "attack": 6, "defense": 2},
+    "hit_dice": 3,
+    "hp_multiplier": 10,
     "loot_table": "slime_loot"
   },
   {
@@ -63,7 +67,8 @@
       "x": 50,
       "y": 50
     },
-    "stats": {"hp": 200, "max_hp": 200, "attack": 20, "defense": 10},
+    "hit_dice": 7,
+    "hp_multiplier": 28,
     "loot_table": "troll_loot"
   }
 ]

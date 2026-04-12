@@ -1,4 +1,6 @@
 """Player persistence repository."""
+from __future__ import annotations
+
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +32,7 @@ async def create(
         current_room_id=starting_room_id,
     )
     session.add(player)
-    await session.commit()
+    await session.flush()
     await session.refresh(player)
     return player
 
@@ -38,7 +40,6 @@ async def create(
 async def save(session: AsyncSession, player: Player) -> Player:
     """Merge and commit a player instance."""
     merged = await session.merge(player)
-    await session.commit()
     return merged
 
 
@@ -55,7 +56,6 @@ async def update_position(
         .where(Player.id == player_id)
         .values(current_room_id=room_key, position_x=x, position_y=y)
     )
-    await session.commit()
 
 
 async def update_inventory(
@@ -69,10 +69,24 @@ async def update_inventory(
         .where(Player.id == player_id)
         .values(inventory=inventory)
     )
-    await session.commit()
 
 
-_STATS_WHITELIST = {"hp", "max_hp", "attack", "xp"}
+async def update_visited_rooms(
+    session: AsyncSession, player_id: int, visited_rooms: list
+) -> None:
+    """Update a player's visited rooms list."""
+    await session.execute(
+        update(Player).where(Player.id == player_id)
+        .values(visited_rooms=visited_rooms)
+    )
+
+
+# attack excluded -- derived from STR/INT at runtime, not independently persisted
+_STATS_WHITELIST = {
+    "hp", "max_hp", "xp", "level",
+    "strength", "dexterity", "constitution",
+    "intelligence", "wisdom", "charisma",
+}
 
 
 async def update_stats(
@@ -87,4 +101,3 @@ async def update_stats(
         .where(Player.id == player_id)
         .values(stats=filtered)
     )
-    await session.commit()

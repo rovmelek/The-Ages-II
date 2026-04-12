@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
-from server.core.database import async_session
 from server.room.objects.npc import (
     _NPC_TEMPLATES,
     create_npc_from_template,
@@ -46,14 +45,23 @@ class Scheduler:
         await self._recover_checkpoints()
         self._task = asyncio.create_task(self._loop())
 
-    def stop(self) -> None:
-        """Cancel all scheduled tasks."""
+    async def stop(self) -> None:
+        """Cancel all scheduled tasks and wait for cleanup."""
         self._running = False
         if self._task:
             self._task.cancel()
+            try:
+                await self._task
+            except (asyncio.CancelledError, Exception):
+                pass
             self._task = None
-        for t in self._respawn_tasks.values():
+        for t in list(self._respawn_tasks.values()):
             t.cancel()
+        for t in list(self._respawn_tasks.values()):
+            try:
+                await t
+            except (asyncio.CancelledError, Exception):
+                pass
         self._respawn_tasks.clear()
 
     # ------------------------------------------------------------------
@@ -125,7 +133,7 @@ class Scheduler:
         if not rare_templates:
             return
 
-        async with async_session() as session:
+        async with self._game.transaction() as session:
             for tmpl in rare_templates:
                 npc_key = tmpl["npc_key"]
                 cfg = tmpl.get("spawn_config", {})
@@ -162,7 +170,6 @@ class Scheduler:
                     interval_hours = cfg.get("check_interval_hours", 12)
                     cp.last_check_at = now
                     cp.next_check_at = now + timedelta(hours=interval_hours)
-                    await session.commit()
                     continue
 
                 # Roll
@@ -194,7 +201,6 @@ class Scheduler:
                                 room_name=room.name,
                             )
 
-                await session.commit()
 
     # ------------------------------------------------------------------
     # Checkpoint recovery on startup
@@ -203,7 +209,7 @@ class Scheduler:
     async def _recover_checkpoints(self) -> None:
         """Load SpawnCheckpoints from DB and run any overdue checks."""
         now = datetime.now(UTC).replace(tzinfo=None)
-        async with async_session() as session:
+        async with self._game.transaction() as session:
             result = await session.execute(select(SpawnCheckpoint))
             checkpoints = result.scalars().all()
 

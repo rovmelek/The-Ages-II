@@ -23,12 +23,14 @@ class CombatInstance:
         effect_registry: EffectRegistry | None = None,
         npc_id: str | None = None,
         room_key: str | None = None,
+        mob_hit_dice: int = 0,
     ) -> None:
         self.instance_id = instance_id or str(uuid.uuid4())
         self.mob_name = mob_name
         self.mob_stats: dict = dict(mob_stats) if mob_stats else {"hp": 50, "max_hp": 50, "attack": 10}
         self.npc_id = npc_id
         self.room_key = room_key
+        self.mob_hit_dice = mob_hit_dice
         self.participants: list[str] = []  # entity_ids in turn order
         self.participant_stats: dict[str, dict] = {}  # entity_id -> stats dict
         self.hands: dict[str, CardHand] = {}  # entity_id -> CardHand
@@ -311,8 +313,9 @@ class CombatInstance:
         if self._actions_this_cycle >= len(self.participants):
             # Full cycle complete — mob attacks a random player
             self._actions_this_cycle = 0
-            if self.participants:
-                target = random.choice(self.participants)
+            alive = [eid for eid in self.participants if self.participant_stats[eid]["hp"] > 0]
+            if alive:
+                target = random.choice(alive)
                 mob_attack = self._mob_attack_target(target)
 
                 # Regenerate energy for all alive participants at cycle end
@@ -337,14 +340,32 @@ class CombatInstance:
         return mob_attack
 
     def _mob_attack_target(self, target_id: str) -> dict:
-        """Mob attacks a specific player. Returns attack result."""
-        attack = self.mob_stats.get("attack", 10)
+        """Mob attacks a specific player. Returns attack result.
+
+        Damage = base_attack + floor(mob STR × STAT_SCALING_FACTOR).
+        DEX reduction applied after shield absorption (min 1).
+        """
+        import math
+        from server.core.config import settings
+
+        base_attack = self.mob_stats.get("attack", 10)
+        str_bonus = math.floor(
+            self.mob_stats.get("strength", 0) * settings.STAT_SCALING_FACTOR
+        )
+        raw_damage = base_attack + str_bonus
         stats = self.participant_stats[target_id]
 
+        # Shield absorption
         shield = stats.get("shield", 0)
-        absorbed = min(shield, attack)
+        absorbed = min(shield, raw_damage)
         stats["shield"] = shield - absorbed
-        actual_damage = attack - absorbed
+        post_shield = raw_damage - absorbed
+
+        # DEX reduction (after shield, min 1 — but 0 if fully absorbed)
+        dex_reduction = math.floor(
+            stats.get("dexterity", 0) * settings.STAT_SCALING_FACTOR
+        )
+        actual_damage = max(settings.COMBAT_MIN_DAMAGE, post_shield - dex_reduction) if post_shield > 0 else 0
         stats["hp"] = max(0, stats["hp"] - actual_damage)
 
         return {
@@ -397,8 +418,17 @@ class CombatInstance:
 
     def get_combat_end_result(self) -> dict | None:
         """Return combat end result if combat is finished, else None."""
+        from server.core.xp import calculate_combat_xp
+
         if not self.is_finished:
             return None
         victory = self.mob_stats["hp"] <= 0
-        rewards = {"xp": 25} if victory else {}
-        return {"victory": victory, "rewards": rewards}
+        if victory:
+            rewards_per_player = {}
+            for eid in self.participants:
+                cha = self.participant_stats[eid].get("charisma", 0)
+                rewards_per_player[eid] = {
+                    "xp": calculate_combat_xp(self.mob_hit_dice, cha)
+                }
+            return {"victory": True, "rewards_per_player": rewards_per_player}
+        return {"victory": False, "rewards_per_player": {}}

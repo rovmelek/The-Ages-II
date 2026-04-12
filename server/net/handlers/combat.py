@@ -1,11 +1,13 @@
 """Combat action handlers for WebSocket clients."""
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 from fastapi import WebSocket
 
-from server.core.database import async_session
+from server.core.config import settings
+from server.core.xp import grant_xp
 from server.items.item_def import ItemDef
 from server.items import item_repo as items_repo
 from server.items.loot import generate_loot
@@ -26,11 +28,11 @@ async def _sync_combat_stats(instance, game: Game) -> None:
             continue
         entity = player_info["entity"]
         # Update entity stats from combat (exclude shield — combat-only)
-        for key in ("hp", "max_hp", "attack", "xp"):
+        for key in ("hp", "max_hp"):
             if key in combat_stats:
                 entity.stats[key] = combat_stats[key]
         # Persist to DB
-        async with async_session() as session:
+        async with game.transaction() as session:
             await player_repo.update_stats(session, entity.player_db_id, entity.stats)
 
 
@@ -54,45 +56,31 @@ async def _check_combat_end(instance, game: Game) -> None:
 
     # Broadcast combat_end to all participants before cleanup
     participant_ids = list(instance.participants)
-    xp_reward = end_result.get("rewards", {}).get("xp", 0)
+    rewards_per_player = end_result.get("rewards_per_player", {})
 
-    # Generate loot on victory (before kill_npc so NPC data is accessible)
-    loot_items: list[dict] = []
+    # Apply party XP bonus when 2+ participants at victory
+    if end_result.get("victory") and len(participant_ids) >= 2:
+        bonus_multiplier = 1 + settings.XP_PARTY_BONUS_PERCENT / 100
+        for eid in rewards_per_player:
+            base_xp = rewards_per_player[eid].get("xp", 0)
+            rewards_per_player[eid]["xp"] = math.floor(base_xp * bonus_multiplier)
+
+    # Resolve loot table key before kill_npc (NPC data still accessible)
+    loot_table_key = ""
     if end_result.get("victory") and instance.npc_id and instance.room_key:
         room = game.room_manager.get_room(instance.room_key)
         npc = room.get_npc(instance.npc_id) if room else None
         loot_table_key = npc.loot_table if npc else ""
-        if loot_table_key:
-            loot_items = generate_loot(loot_table_key)
-        if loot_items:
-            end_result["loot"] = loot_items
-            # Batch-load item defs for runtime inventory sync
-            async with async_session() as session:
-                all_items = await items_repo.get_all(session)
-            item_defs = {i.item_key: ItemDef.from_db(i) for i in all_items}
 
-            for eid in participant_ids:
-                player_info = game.player_entities.get(eid)
-                if player_info is None:
-                    continue
-                # Update DB inventory
-                db_id = player_info["db_id"]
-                async with async_session() as session:
-                    player = await player_repo.get_by_id(session, db_id)
-                    if player is not None:
-                        db_inv = dict(player.inventory or {})
-                        for item in loot_items:
-                            key = item["item_key"]
-                            db_inv[key] = db_inv.get(key, 0) + item["quantity"]
-                        player.inventory = db_inv
-                        await session.commit()
-                # Sync runtime inventory
-                runtime_inv = player_info.get("inventory")
-                if runtime_inv:
-                    for item in loot_items:
-                        idef = item_defs.get(item["item_key"])
-                        if idef:
-                            runtime_inv.add_item(idef, item["quantity"])
+    # Batch-load item defs if any loot will be generated
+    item_defs: dict[str, ItemDef] = {}
+    if loot_table_key:
+        async with game.transaction() as session:
+            all_items = await items_repo.get_all(session)
+        item_defs = {i.item_key: ItemDef.from_db(i) for i in all_items}
+
+    # Per-player loot tracking for combat_end messages
+    player_loot: dict[str, list[dict]] = {}
 
     for eid in participant_ids:
         player_info = game.player_entities.get(eid)
@@ -104,26 +92,64 @@ async def _check_combat_end(instance, game: Game) -> None:
             entity.stats.pop("energy", None)
             entity.stats.pop("max_energy", None)
 
-            # Apply XP reward on victory (fixes ISS-006)
-            if end_result.get("victory") and xp_reward:
-                entity.stats["xp"] = entity.stats.get("xp", 0) + xp_reward
-
-            # Sync final combat stats (hp etc.) back from instance
+            # Sync final combat stats (hp etc.) back from instance FIRST
             combat_stats = instance.participant_stats.get(eid)
             if combat_stats:
-                for key in ("hp", "max_hp", "attack"):
+                for key in ("hp", "max_hp"):
                     if key in combat_stats:
                         entity.stats[key] = combat_stats[key]
 
+            is_alive = entity.stats.get("hp", 0) > 0
+
+            # Dead players get zero rewards in their combat_end message
+            if not is_alive:
+                rewards_per_player[eid] = {"xp": 0}
+
+            # Apply per-player XP reward on victory — skip dead players
+            if end_result.get("victory") and is_alive:
+                xp_reward = rewards_per_player.get(eid, {}).get("xp", 0)
+                if xp_reward:
+                    npc_name = end_result.get("mob_name", "enemy")
+                    await grant_xp(eid, entity, xp_reward, "combat", npc_name, game, apply_cha_bonus=False)
+
+            # Independent loot roll per surviving participant
+            if end_result.get("victory") and is_alive and loot_table_key:
+                loot_items = generate_loot(loot_table_key)
+                if loot_items:
+                    player_loot[eid] = loot_items
+                    db_id = player_info["db_id"]
+                    async with game.transaction() as session:
+                        player = await player_repo.get_by_id(session, db_id)
+                        if player is not None:
+                            db_inv = dict(player.inventory or {})
+                            for item in loot_items:
+                                key = item["item_key"]
+                                db_inv[key] = db_inv.get(key, 0) + item["quantity"]
+                            await player_repo.update_inventory(session, db_id, db_inv)
+                    runtime_inv = player_info.get("inventory")
+                    if runtime_inv:
+                        for item in loot_items:
+                            idef = item_defs.get(item["item_key"])
+                            if idef:
+                                runtime_inv.add_item(idef, item["quantity"])
+
             # Persist stats to DB
-            async with async_session() as session:
+            async with game.transaction() as session:
                 await player_repo.update_stats(
                     session, entity.player_db_id, entity.stats
                 )
 
         ws = game.connection_manager.get_websocket(eid)
         if ws:
-            await ws.send_json({"type": "combat_end", **end_result})
+            # Send per-player combat_end with individual rewards and loot
+            player_end_result = dict(end_result)
+            player_end_result["rewards"] = rewards_per_player.get(eid, {})
+            player_end_result.pop("rewards_per_player", None)
+            if eid in player_loot:
+                player_end_result["loot"] = player_loot[eid]
+            else:
+                player_end_result.pop("loot", None)
+            await ws.send_json({"type": "combat_end", **player_end_result})
 
     # Update NPC state based on combat outcome
     if instance.npc_id and instance.room_key:
@@ -288,7 +314,7 @@ async def handle_use_item_combat(
     # Consume one charge from inventory and persist
     inventory.use_charge(item_key)
     db_id = player_info["db_id"]
-    async with async_session() as session:
+    async with game.transaction() as session:
         await player_repo.update_inventory(session, db_id, inventory.to_dict())
 
     # Broadcast updated combat state with action result to all participants

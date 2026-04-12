@@ -1,7 +1,7 @@
 """Tests for lever interactive objects (Story 3.3)."""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -17,9 +17,19 @@ from server.room.tile import TileType
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _mock_transaction():
+    mock_session = AsyncMock()
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+    return MagicMock(return_value=mock_ctx)
+
+
 def _make_game():
     from server.app import Game
-    return Game()
+    game = Game()
+    game.transaction = _mock_transaction()
+    return game
 
 
 def _make_room_with_lever(room_key="test", target_x=3, target_y=2, initial_tile=TileType.WALL):
@@ -66,12 +76,10 @@ async def test_lever_toggles_wall_to_floor():
     room = _make_room_with_lever(target_x=3, target_y=2, initial_tile=TileType.WALL)
     ws, _ = _setup_player(game, room)
 
-    with patch("server.room.objects.lever.async_session") as mock_session, \
-         patch("server.room.objects.lever.get_room_object_state", return_value={}), \
-         patch("server.room.objects.lever.set_room_object_state") as mock_set:
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
+    with patch("server.room.objects.lever.get_room_object_state", return_value={}), \
+         patch("server.room.objects.lever.set_room_object_state") as mock_set, \
+         patch("server.net.handlers.interact.get_player_object_state", return_value={}), \
+         patch("server.net.handlers.interact.set_player_object_state"):
 
         await handle_interact(ws, {"action": "interact", "target_id": "lever_01"}, game=game)
 
@@ -101,12 +109,10 @@ async def test_lever_toggles_back_to_wall():
     room = _make_room_with_lever(target_x=3, target_y=2, initial_tile=TileType.FLOOR)
     ws, _ = _setup_player(game, room)
 
-    with patch("server.room.objects.lever.async_session") as mock_session, \
-         patch("server.room.objects.lever.get_room_object_state", return_value={"active": True}), \
-         patch("server.room.objects.lever.set_room_object_state") as mock_set:
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
+    with patch("server.room.objects.lever.get_room_object_state", return_value={"active": True}), \
+         patch("server.room.objects.lever.set_room_object_state") as mock_set, \
+         patch("server.net.handlers.interact.get_player_object_state", return_value={}), \
+         patch("server.net.handlers.interact.set_player_object_state"):
 
         await handle_interact(ws, {"action": "interact", "target_id": "lever_01"}, game=game)
 
@@ -135,12 +141,10 @@ async def test_lever_broadcasts_tile_changed():
     game.connection_manager.connect("player_2", ws2, "test")
     game.player_entities["player_2"] = {"entity": e2, "room_key": "test", "db_id": 2}
 
-    with patch("server.room.objects.lever.async_session") as mock_session, \
-         patch("server.room.objects.lever.get_room_object_state", return_value={}), \
-         patch("server.room.objects.lever.set_room_object_state"):
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
+    with patch("server.room.objects.lever.get_room_object_state", return_value={}), \
+         patch("server.room.objects.lever.set_room_object_state"), \
+         patch("server.net.handlers.interact.get_player_object_state", return_value={}), \
+         patch("server.net.handlers.interact.set_player_object_state"):
 
         await handle_interact(ws1, {"action": "interact", "target_id": "lever_01"}, game=game)
 
@@ -160,12 +164,10 @@ async def test_lever_interact_result_format():
     room = _make_room_with_lever()
     ws, _ = _setup_player(game, room)
 
-    with patch("server.room.objects.lever.async_session") as mock_session, \
-         patch("server.room.objects.lever.get_room_object_state", return_value={}), \
-         patch("server.room.objects.lever.set_room_object_state"):
-        mock_sess = AsyncMock()
-        mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_sess)
-        mock_session.return_value.__aexit__ = AsyncMock(return_value=False)
+    with patch("server.room.objects.lever.get_room_object_state", return_value={}), \
+         patch("server.room.objects.lever.set_room_object_state"), \
+         patch("server.net.handlers.interact.get_player_object_state", return_value={}), \
+         patch("server.net.handlers.interact.set_player_object_state"):
 
         await handle_interact(ws, {"action": "interact", "target_id": "lever_01"}, game=game)
 

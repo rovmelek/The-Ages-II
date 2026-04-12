@@ -33,7 +33,11 @@ def _make_room(width=10, height=10, objects=None):
     )
 
 
-_DEFAULT_STATS = {"hp": 85, "max_hp": 100, "attack": 12, "xp": 150}
+_DEFAULT_STATS = {
+    "hp": 85, "max_hp": 100, "attack": 12, "xp": 150, "level": 3,
+    "strength": 4, "dexterity": 2, "constitution": 3,
+    "intelligence": 1, "wisdom": 1, "charisma": 1,
+}
 
 
 def _setup_player(game, room, entity_id="player_1", name="alice", x=5, y=5, db_id=1, stats=None):
@@ -180,28 +184,41 @@ async def test_who_solo_player():
 async def test_stats_returns_player_stats():
     game = _make_game()
     room = _make_room()
-    ws, _ = _setup_player(game, room, stats={"hp": 85, "max_hp": 100, "attack": 12, "xp": 150})
+    stats = {"hp": 85, "max_hp": 100, "attack": 12, "xp": 150, "level": 3,
+             "strength": 4, "dexterity": 2, "constitution": 3,
+             "intelligence": 1, "wisdom": 1, "charisma": 1}
+    ws, _ = _setup_player(game, room, stats=stats)
 
     await handle_stats(ws, {"action": "stats"}, game=game)
 
     response = ws.send_json.call_args[0][0]
-    assert response == {
-        "type": "stats_result",
-        "stats": {"hp": 85, "max_hp": 100, "attack": 12, "xp": 150},
-    }
+    assert response["type"] == "stats_result"
+    s = response["stats"]
+    assert s["hp"] == 85
+    assert s["max_hp"] == 100
+    assert s["attack"] == 12
+    assert s["xp"] == 150
+    assert s["level"] == 3
+    assert s["strength"] == 4
+    assert s["constitution"] == 3
 
 
 @pytest.mark.asyncio
 async def test_stats_excludes_transient():
     game = _make_game()
     room = _make_room()
-    ws, _ = _setup_player(game, room, stats={"hp": 50, "max_hp": 100, "attack": 10, "xp": 0, "shield": 25})
+    ws, _ = _setup_player(game, room, stats={"hp": 50, "max_hp": 100, "attack": 10, "xp": 0, "shield": 25,
+                                              "level": 1, "strength": 1, "dexterity": 1, "constitution": 1,
+                                              "intelligence": 1, "wisdom": 1, "charisma": 1})
 
     await handle_stats(ws, {"action": "stats"}, game=game)
 
     response = ws.send_json.call_args[0][0]
     assert "shield" not in response["stats"]
-    assert set(response["stats"].keys()) == {"hp", "max_hp", "attack", "xp"}
+    expected_keys = {"hp", "max_hp", "attack", "xp", "xp_next", "level",
+                     "strength", "dexterity", "constitution",
+                     "intelligence", "wisdom", "charisma"}
+    assert set(response["stats"].keys()) == expected_keys
 
 
 @pytest.mark.asyncio
@@ -213,10 +230,13 @@ async def test_stats_defaults_for_missing_keys():
     await handle_stats(ws, {"action": "stats"}, game=game)
 
     response = ws.send_json.call_args[0][0]
-    assert response == {
-        "type": "stats_result",
-        "stats": {"hp": 100, "max_hp": 100, "attack": 10, "xp": 0},
-    }
+    s = response["stats"]
+    assert s["hp"] == 100
+    assert s["max_hp"] == 100
+    assert s["attack"] == 10
+    assert s["xp"] == 0
+    assert s["level"] == 1
+    assert s["strength"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +244,7 @@ async def test_stats_defaults_for_missing_keys():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_help_actions_returns_registered():
+async def test_help_actions_returns_categories():
     game = _make_game()
     game._register_handlers()  # handlers registered during startup(), not __init__
     room = _make_room()
@@ -234,11 +254,20 @@ async def test_help_actions_returns_registered():
 
     response = ws.send_json.call_args[0][0]
     assert response["type"] == "help_result"
-    actions = response["actions"]
-    assert isinstance(actions, list)
-    assert actions == sorted(actions)  # deterministic sorted order
-    for expected in ["move", "chat", "look", "who", "stats", "help_actions", "logout", "interact", "inventory"]:
-        assert expected in actions
+    categories = response["categories"]
+    assert isinstance(categories, dict)
+    assert "Movement" in categories
+    assert "Combat" in categories
+    assert "Items" in categories
+    assert "Social" in categories
+    assert "Info" in categories
+    assert "move" in categories["Movement"]
+    assert "play_card" in categories["Combat"]
+    assert "interact" in categories["Items"]
+    assert "chat" in categories["Social"]
+    assert "map" in categories["Info"]
+    assert "look" in categories["Info"]
+    assert "stats" in categories["Info"]
 
 
 # ---------------------------------------------------------------------------

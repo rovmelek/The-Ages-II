@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import tempfile
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -194,24 +194,25 @@ class TestRareSpawnAnnouncement:
         scheduler = Scheduler()
         scheduler._game = game
 
-        now = datetime.utcnow()
+        now = datetime.now(UTC).replace(tzinfo=None)
         mock_cp = MagicMock()
         mock_cp.npc_key = "evt_dragon"
         mock_cp.room_key = "evt_room"
         mock_cp.next_check_at = now - timedelta(hours=1)
         mock_cp.currently_spawned = False
 
-        with patch("server.core.scheduler.async_session") as mock_session_ctx:
-            session = AsyncMock()
-            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=session)
-            mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+        session = AsyncMock()
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=session)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        game.transaction = MagicMock(return_value=mock_ctx)
 
-            result_mock = MagicMock()
-            result_mock.scalar_one_or_none.return_value = mock_cp
-            session.execute = AsyncMock(return_value=result_mock)
-            session.commit = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = mock_cp
+        session.execute = AsyncMock(return_value=result_mock)
+        session.commit = AsyncMock()
 
-            await scheduler._run_rare_spawn_checks()
+        await scheduler._run_rare_spawn_checks()
 
         # event_bus.emit should have been called with rare_spawn
         game.event_bus.emit.assert_called_once_with(

@@ -164,6 +164,7 @@ web-demo/                       # Browser-based test/demo client (vanilla HTML/C
 
 ```
 Game (central orchestrator)
+├── session_factory      — DB session factory (default: async_session from database.py)
 ├── RoomManager          — owns active Room instances
 │   └── Room             — owns tile grid + RoomObjects + entities
 │       ├── StaticObject  (trees, rocks)
@@ -245,14 +246,15 @@ Three-tier spawn behavior, defined in NPC JSON config:
   "npc_key": "forest_dragon",
   "name": "Ancient Forest Dragon",
   "behavior_type": "hostile",
+  "hit_dice": 10,
+  "hp_multiplier": 50,
   "spawn_type": "rare",
   "spawn_config": {
     "check_interval_hours": 12,
     "spawn_chance": 0.15,
     "despawn_after_hours": 6,
     "max_active": 1
-  },
-  "stats": {"hp": 500, "max_hp": 500, "attack": 25, "defense": 15}
+  }
 }
 ```
 
@@ -494,9 +496,10 @@ No fog of war — players see the entire map on entry. Entity updates (movement,
 | id | Integer PK | Auto-increment |
 | username | String(50) | Unique, indexed |
 | password_hash | String(128) | bcrypt |
-| stats | JSON | `{hp, max_hp, attack, xp}` — persisted via `_STATS_WHITELIST`; `shield` and `active_effects` are combat-only transient |
+| stats | JSON | `{hp, max_hp, xp, level, strength, dexterity, constitution, intelligence, wisdom, charisma}` — persisted via `_STATS_WHITELIST`; `shield`, `active_effects`, `energy` are combat-only transient |
 | inventory | JSON | `{item_key: quantity, ...}` |
 | card_collection | JSON | List of card_key strings |
+| visited_rooms | JSON | List of room_key strings (exploration XP tracking) |
 | current_room_id | String(50) | FK to room_key |
 | position_x | Integer | Tile X coordinate |
 | position_y | Integer | Tile Y coordinate |
@@ -572,7 +575,9 @@ Player state is saved to the database at multiple trigger points:
 - **Server shutdown**: All connected players saved before disconnect
 - **Item use in combat**: Inventory persisted after consuming an item
 
-**Stats whitelist**: Only `{hp, max_hp, attack, xp}` are persisted. `shield` and `active_effects` are combat-only transient data, stripped by `_STATS_WHITELIST` in `player/repo.py`.
+**Stats whitelist**: Only `{hp, max_hp, xp, level, strength, dexterity, constitution, intelligence, wisdom, charisma}` are persisted. `shield`, `active_effects`, and `energy` are combat-only transient data, stripped by `_STATS_WHITELIST` in `player/repo.py`.
+
+**Database access pattern**: All DB access goes through `game.session_factory()` — the `Game` class owns the session factory (defaults to `async_session` from `server/core/database.py`). Consumer modules (handlers, xp, scheduler, interactive objects) receive `game` as a parameter and use `async with game.session_factory() as session:`. No module imports `async_session` directly. This enables test isolation (swap `game.session_factory = test_factory`) and future database migration (swap the factory in `Game.__init__()`).
 
 ### 10.2 Death & Respawn
 
@@ -617,6 +622,48 @@ Features explicitly out of scope for the prototype, with the architectural hook 
 | **Card respec** | Card upgrade data model includes cost tracking. Respec = reset nodes + refund |
 | **REST API (trades, filters, profiles)** | `web/` package exists. Endpoints added as needed |
 | **Range-based broadcasting** | Prototype broadcasts to all players in room. Future: filter by proximity |
+
+### Epic 12: Social Systems (Planned)
+
+The following systems are designed and story-specced but not yet implemented:
+
+**Trade System** (`server/trade/`)
+- `TradeManager` — manages mutual exchange trade sessions with async lock, timeouts
+- State machine: `idle → request_pending → negotiating → one_ready → both_ready → executing → complete`
+- `ItemDef` gains `tradeable: bool = True` field for trade eligibility
+- Atomic two-player inventory swap in single DB transaction
+- Auto-cancel on disconnect, room change, or combat entry
+- Config: `TRADE_SESSION_TIMEOUT_SECONDS=60`, `TRADE_REQUEST_TIMEOUT_SECONDS=30`, `MAX_TRADE_ITEMS=10`
+
+**Party System** (`server/party/`)
+- `PartyManager` — tracks in-memory party groups (ephemeral, lost on restart)
+- `Party` dataclass: `party_id`, `leader` (entity_id), `members` (ordered list), `pending_invites`
+- Leader succession on disconnect (longest-standing member)
+- Config: `MAX_PARTY_SIZE=4`
+- `/party kick` and `/party disband` blocked during shared combat
+
+**Party Combat** (extends `server/combat/`)
+- `CombatInstance` extended for N players (round-robin turns, random mob targeting)
+- Mob HP scales with party size at encounter time (HP × N)
+- `XP_PARTY_BONUS_PERCENT` (default 10) applied when 2+ members at victory
+- Independent loot rolls per surviving participant
+
+**World Map** (extends `server/net/handlers/query.py`)
+- `/map` reuses existing `visited_rooms` field — no new DB schema
+- Connections derived from room exit data; undiscovered destinations shown as `???`
+
+**Cross-Cutting Changes:**
+- `ConnectionManager` gains name → entity_id index for player name resolution
+- Disconnect cleanup order: cancel trades → remove from combat → handle party departure → save state → remove from room → notify
+- `/help` output grouped by category (Movement, Combat, Social, Info)
+
+**Architecture Decisions (ADRs):**
+- ADR-1: Trade state in-memory only (60s sessions; DB atomicity handles crashes)
+- ADR-2: Party state in-memory only (reform cost 3s < persistence complexity)
+- ADR-3: New `server/trade/` and `server/party/` packages (matches domain-driven structure)
+- ADR-4: Name → entity_id index in `ConnectionManager` (already owns "who is online" data)
+- ADR-5: Extend `CombatInstance` for multi-player, don't rewrite (preserve 600+ tests)
+- ADR-6: Map data computed on request, no caching (trivial cost)
 
 ---
 

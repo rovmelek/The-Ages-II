@@ -51,7 +51,6 @@ async def set_player_object_state(
             object_id=object_id,
             state_data=state_data,
         ))
-    await session.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -87,4 +86,3 @@ async def set_room_object_state(
     updated = dict(room_state.dynamic_state)
     updated[object_id] = state_data
     room_state.dynamic_state = updated
-    await session.commit()
