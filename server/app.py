@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -69,6 +70,7 @@ class Game:
 
     async def startup(self) -> None:
         """Initialize database, load data, register handlers."""
+        self._shutting_down = False
         await init_db()
 
         # Load NPC templates first (needed before room NPC spawning)
@@ -118,7 +120,13 @@ class Game:
 
     async def shutdown(self) -> None:
         """Gracefully shut down: save all player states, notify, and disconnect."""
+        self._shutting_down = True
         await self.scheduler.stop()
+
+        # Cancel all pending deferred cleanup timers
+        for handle in self._cleanup_handles.values():
+            handle.cancel()
+        self._cleanup_handles.clear()
 
         # Cancel all heartbeat tasks before session cleanup (AC #6)
         for entity_id in list(self._heartbeat_tasks):
@@ -370,15 +378,62 @@ class Game:
         )
 
     async def handle_disconnect(self, websocket: WebSocket) -> None:
-        """Handle a player disconnecting: save state, clean up, notify room."""
+        """Handle a player disconnecting: deferred cleanup with grace period."""
         entity_id = self.connection_manager.get_entity_id(websocket)
         if entity_id is None:
             return  # Unauthenticated connection, nothing to clean up
 
-        # Cancel heartbeat BEFORE any other cleanup (AC #5)
+        # During shutdown, shutdown() handles all cleanup
+        if self._shutting_down:
+            return
+
         self._cancel_heartbeat(entity_id)
 
-        await self.player_manager.cleanup_session(entity_id, self)
+        session = self.player_manager.get_session(entity_id)
+        if session is None:
+            self.connection_manager.disconnect(entity_id)
+            return
+
+        # Disconnect WebSocket mapping but keep session alive
+        self.connection_manager.disconnect(entity_id)
+
+        # Mark as disconnected
+        session.disconnected_at = time.time()
+        session.entity.connected = False
+
+        # Cancel trades immediately (can't block other players)
+        await self.player_manager.cancel_trade(entity_id, self)
+
+        # Cancel any existing deferred timer (defensive idempotency)
+        old_handle = self._cleanup_handles.pop(entity_id, None)
+        if old_handle is not None:
+            old_handle.cancel()
+
+        # Immediate cleanup if grace period is 0 (test mode)
+        if settings.DISCONNECT_GRACE_SECONDS <= 0:
+            await self.player_manager.deferred_cleanup(entity_id, self)
+            return
+
+        # Schedule deferred full cleanup
+        loop = asyncio.get_running_loop()
+
+        def _on_grace_expired():
+            loop.create_task(self._deferred_cleanup(entity_id))
+
+        handle = loop.call_later(settings.DISCONNECT_GRACE_SECONDS, _on_grace_expired)
+        self._cleanup_handles[entity_id] = handle
+
+    async def _deferred_cleanup(self, entity_id: str) -> None:
+        """Run full cleanup if player hasn't reconnected within grace period."""
+        self._cleanup_handles.pop(entity_id, None)
+
+        session = self.player_manager.get_session(entity_id)
+        if session is None:
+            return  # Already cleaned up
+        if session.disconnected_at is None:
+            return  # Player reconnected
+
+        await self.player_manager.deferred_cleanup(entity_id, self)
 
     def _start_heartbeat(self, entity_id: str) -> None:
         """Start a heartbeat task for a connected player."""

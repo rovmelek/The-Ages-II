@@ -246,7 +246,15 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
             await websocket.send_json(with_request_id({"type": "error", "detail": "Invalid username or password"}, data))
             return
         entity_id = f"player_{player.id}"
-        # Handle existing session for this account
+        # Check for grace-period session (WS gone, session still alive)
+        existing_session = game.player_manager.get_session(entity_id)
+        if existing_session is not None and game.connection_manager.get_websocket(entity_id) is None:
+            cleanup_handle = game._cleanup_handles.pop(entity_id, None)
+            if cleanup_handle is not None:
+                cleanup_handle.cancel()
+            game._cancel_heartbeat(entity_id)
+            await game.player_manager.cleanup_session(entity_id, game)
+        # Handle existing session for this account (active WebSocket)
         old_ws = game.connection_manager.get_websocket(entity_id)
         if old_ws is not None:
             if old_ws is websocket:

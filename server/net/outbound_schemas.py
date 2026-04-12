@@ -47,6 +47,7 @@ class EntityPayload(BaseModel):
     x: int
     y: int
     level: int | None = None  # present for players (login/transition), absent on respawn
+    connected: bool | None = None  # present for players during grace period
     npc_key: str | None = None  # present for NPCs only
     is_alive: bool | None = None  # present for NPCs only
 

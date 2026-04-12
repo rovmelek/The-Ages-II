@@ -181,9 +181,14 @@ class TestHandleDisconnectCancelsHeartbeat:
         game = Game.__new__(Game)
         game._heartbeat_tasks = {}
         game._pong_events = {}
+        game._shutting_down = False
+        game._cleanup_handles = {}
         game.connection_manager = MagicMock()
         game.player_manager = MagicMock()
-        game.player_manager.cleanup_session = AsyncMock()
+        game.player_manager.get_session.return_value = MagicMock(disconnected_at=None)
+        game.player_manager._cleanup_trade = AsyncMock()
+        game.player_manager.cancel_trade = AsyncMock()
+        game.player_manager.deferred_cleanup = AsyncMock()
 
         ws = MagicMock()
         game.connection_manager.get_entity_id.return_value = "player_1"
@@ -198,8 +203,8 @@ class TestHandleDisconnectCancelsHeartbeat:
         # Heartbeat cancelled
         mock_task.cancel.assert_called_once()
         assert "player_1" not in game._heartbeat_tasks
-        # Cleanup still happened
-        game.player_manager.cleanup_session.assert_called_once_with("player_1", game)
+        # Cleanup still happened (deferred_cleanup since DISCONNECT_GRACE_SECONDS=0)
+        game.player_manager.deferred_cleanup.assert_called_once_with("player_1", game)
 
 
 class TestShutdownCancelsHeartbeats:
@@ -210,6 +215,7 @@ class TestShutdownCancelsHeartbeats:
         game = Game.__new__(Game)
         game._heartbeat_tasks = {}
         game._pong_events = {}
+        game._cleanup_handles = {}
         game.connection_manager = MagicMock()
         game.player_manager = MagicMock()
         game.player_manager.all_entity_ids.return_value = []

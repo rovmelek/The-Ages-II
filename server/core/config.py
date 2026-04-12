@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     # --- Session Tokens ---
     SESSION_TOKEN_TTL_SECONDS: int = 300
 
+    # --- Disconnect Grace Period ---
+    DISCONNECT_GRACE_SECONDS: int = 120
+
     # --- Database ---
     DATABASE_URL: str = f"sqlite+aiosqlite:///{BASE_DIR / 'data' / 'game.db'}"
     DATA_DIR: Path = BASE_DIR / "data"

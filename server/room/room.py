@@ -186,7 +186,8 @@ class RoomInstance:
         """Return a serializable snapshot of the room."""
         entities = [
             {"id": e.id, "name": e.name, "x": e.x, "y": e.y,
-             "level": e.stats.get("level", 1) if hasattr(e, "stats") else 1}
+             "level": e.stats.get("level", 1) if hasattr(e, "stats") else 1,
+             "connected": getattr(e, "connected", True)}
             for e in self._entities.values()
         ]
         npcs = [npc.to_dict() for npc in self._npcs.values()]

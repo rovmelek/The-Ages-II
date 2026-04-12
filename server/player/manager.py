@@ -77,6 +77,27 @@ class PlayerManager:
         game.connection_manager.disconnect(entity_id)
         self.remove_session(entity_id)
 
+    async def deferred_cleanup(self, entity_id: str, game: Game) -> None:
+        """Deferred cleanup after grace period — skips trade + WS disconnect.
+
+        Trade was already cancelled immediately in handle_disconnect.
+        WebSocket mapping was already removed in handle_disconnect.
+        """
+        session = self.get_session(entity_id)
+        if session is None:
+            return
+        entity = session.entity
+        room_key = session.room_key
+        await self._cleanup_combat(entity_id, entity, game)
+        await self._cleanup_party(entity_id, game)
+        await self._save_player_state(entity_id, session, game)
+        await self._remove_from_room(entity_id, room_key, game)
+        self.remove_session(entity_id)
+
+    async def cancel_trade(self, entity_id: str, game: Game) -> None:
+        """Cancel any active trade for a player. Public API for handle_disconnect."""
+        await self._cleanup_trade(entity_id, game)
+
     async def _cleanup_trade(self, entity_id: str, game: Game) -> None:
         """Cancel any active trade for a disconnecting player."""
         cancelled_trade = game.trade_manager.cancel_trades_for(entity_id)
