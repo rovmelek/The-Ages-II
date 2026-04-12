@@ -152,6 +152,13 @@ class PartyMessage(InboundMessage):
     args: str = ""
 
 
+# --- Heartbeat ---
+
+
+class PongMessage(InboundMessage):
+    action: str = "pong"
+
+
 # --- Utility ---
 
 
@@ -187,4 +194,5 @@ ACTION_SCHEMAS: dict[str, type[InboundMessage]] = {
     "level_up": LevelUpMessage,
     "trade": TradeMessage,
     "party": PartyMessage,
+    "pong": PongMessage,
 }

@@ -35,8 +35,8 @@ from server.net.schemas import (
 # ---------------------------------------------------------------------------
 
 
-def test_action_schemas_has_21_entries():
-    assert len(ACTION_SCHEMAS) == 21
+def test_action_schemas_has_22_entries():
+    assert len(ACTION_SCHEMAS) == 22
 
 
 def test_action_schemas_keys():
@@ -44,7 +44,7 @@ def test_action_schemas_keys():
         "login", "register", "logout", "move", "chat", "party_chat",
         "play_card", "pass_turn", "flee", "use_item_combat",
         "inventory", "use_item", "interact", "look", "who", "stats",
-        "help_actions", "map", "level_up", "trade", "party",
+        "help_actions", "map", "level_up", "trade", "party", "pong",
     }
     assert set(ACTION_SCHEMAS.keys()) == expected
 

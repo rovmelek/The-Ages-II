@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     # --- Admin ---
     ADMIN_SECRET: str = ""
 
+    # --- Heartbeat ---
+    HEARTBEAT_INTERVAL_SECONDS: int = 30
+    HEARTBEAT_TIMEOUT_SECONDS: int = 10
+
     # --- Database ---
     DATABASE_URL: str = f"sqlite+aiosqlite:///{BASE_DIR / 'data' / 'game.db'}"
     DATA_DIR: Path = BASE_DIR / "data"

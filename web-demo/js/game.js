@@ -474,6 +474,7 @@ function dispatchMessage(data) {
     party_status: handlePartyStatus,
     party_invite_response: handlePartyInviteResponse,
     party_chat: handlePartyChat,
+    ping: () => sendAction('pong'),
     error: handleError,
   };
 

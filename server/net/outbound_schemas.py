@@ -184,6 +184,10 @@ class ErrorMessage(BaseModel):
     request_id: str | None = None
 
 
+class PingMessage(BaseModel):
+    type: str = "ping"
+
+
 class ServerShutdownMessage(BaseModel):
     type: str = "server_shutdown"
     reason: str

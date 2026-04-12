@@ -143,6 +143,7 @@ async def handle_logout(
     entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle the 'logout' action: save state, clean up, keep WebSocket open."""
+    game._cancel_heartbeat(entity_id)
     await game.player_manager.cleanup_session(entity_id, game)
 
     # Send confirmation via raw websocket (connection_manager already cleared)
@@ -150,6 +151,17 @@ async def handle_logout(
         await websocket.send_json(with_request_id({"type": "logged_out"}, data))
     except Exception:
         pass  # Network dropped — cleanup already done
+
+
+@requires_auth
+async def handle_pong(
+    websocket: WebSocket, data: dict, *, game: Game,
+    entity_id: str, player_info: PlayerSession,
+) -> None:
+    """Handle 'pong' — heartbeat response, signals the pong event."""
+    event = game._pong_events.get(entity_id)
+    if event:
+        event.set()
 
 
 async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> None:
@@ -207,6 +219,7 @@ async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> No
 
 async def _kick_old_session(entity_id: str, old_ws: WebSocket, game: Game) -> None:
     """Kick an existing session: save state, clean up, close old WebSocket."""
+    game._cancel_heartbeat(entity_id)
     await game.player_manager.cleanup_session(entity_id, game)
 
     # Notify and close old WebSocket (best-effort)
@@ -277,3 +290,5 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
             if player_session:
                 player_session.pending_level_ups = pending
             await send_level_up_available(entity_id, entity, game)
+        # Start heartbeat after successful login (AC #1, #11)
+        game._start_heartbeat(entity_id)

@@ -1,6 +1,7 @@
 """Game orchestrator and FastAPI application."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -49,6 +50,8 @@ class Game:
         self._shutting_down: bool = False
         self.loot_tables: dict = {}
         self.npc_templates: dict[str, dict] = {}
+        self._heartbeat_tasks: dict[str, asyncio.Task] = {}
+        self._pong_events: dict[str, asyncio.Event] = {}
 
     @asynccontextmanager
     async def transaction(self):
@@ -114,6 +117,10 @@ class Game:
         """Gracefully shut down: save all player states, notify, and disconnect."""
         await self.scheduler.stop()
 
+        # Cancel all heartbeat tasks before session cleanup (AC #6)
+        for entity_id in list(self._heartbeat_tasks):
+            self._cancel_heartbeat(entity_id)
+
         player_count = 0
         for entity_id in self.player_manager.all_entity_ids():
             # Notify before cleanup (WebSocket still mapped)
@@ -142,7 +149,7 @@ class Game:
 
     def _register_handlers(self) -> None:
         """Register all WebSocket action handlers."""
-        from server.net.handlers.auth import handle_login, handle_logout, handle_register
+        from server.net.handlers.auth import handle_login, handle_logout, handle_pong, handle_register
         from server.net.handlers.chat import handle_chat
         from server.net.handlers.combat import (
             handle_flee,
@@ -231,6 +238,10 @@ class Game:
             "party_chat",
             lambda ws, d: handle_party_chat(ws, d, game=self),
         )
+        self.router.register(
+            "pong", lambda ws, d: handle_pong(ws, d, game=self)
+        )
+
     def _register_events(self) -> None:
         """Register event bus subscribers."""
 
@@ -358,7 +369,56 @@ class Game:
         if entity_id is None:
             return  # Unauthenticated connection, nothing to clean up
 
+        # Cancel heartbeat BEFORE any other cleanup (AC #5)
+        self._cancel_heartbeat(entity_id)
+
         await self.player_manager.cleanup_session(entity_id, self)
+
+    def _start_heartbeat(self, entity_id: str) -> None:
+        """Start a heartbeat task for a connected player."""
+        self._cancel_heartbeat(entity_id)  # Cancel any existing task first
+        event = asyncio.Event()
+        self._pong_events[entity_id] = event
+        task = asyncio.create_task(self._heartbeat_loop(entity_id))
+        self._heartbeat_tasks[entity_id] = task
+
+    def _cancel_heartbeat(self, entity_id: str) -> None:
+        """Cancel and remove heartbeat task and pong event for an entity."""
+        task = self._heartbeat_tasks.pop(entity_id, None)
+        if task and not task.done():
+            task.cancel()
+        self._pong_events.pop(entity_id, None)
+
+    async def _heartbeat_loop(self, entity_id: str) -> None:
+        """Send periodic pings and close connection if pong not received."""
+        try:
+            while True:
+                await asyncio.sleep(settings.HEARTBEAT_INTERVAL_SECONDS)
+                ws = self.connection_manager.get_websocket(entity_id)
+                if ws is None:
+                    break
+                try:
+                    await ws.send_json({"type": "ping"})
+                except Exception:
+                    break
+                event = self._pong_events.get(entity_id)
+                if event is None:
+                    break
+                event.clear()
+                try:
+                    await asyncio.wait_for(
+                        event.wait(),
+                        timeout=settings.HEARTBEAT_TIMEOUT_SECONDS,
+                    )
+                except asyncio.TimeoutError:
+                    # No pong received — close WebSocket
+                    try:
+                        await ws.close(code=1001)
+                    except Exception:
+                        pass
+                    break
+        except asyncio.CancelledError:
+            pass
 
 
 # ---------------------------------------------------------------------------
