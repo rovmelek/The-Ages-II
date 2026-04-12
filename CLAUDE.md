@@ -100,12 +100,13 @@ open http://localhost:8000     # web demo client (requires server running)
 - **Centralized Config**: All game balance values must reference `settings.*` from `server/core/config.py` — never hardcode HP, attack, stat defaults, spawn room, auth lengths, etc.
 - **NPC Templates**: `game.npc_templates` is the single source of truth — no module-level global. Pass `templates` dict to `create_npc_from_template()`.
 - **Tile Modification**: Use `RoomInstance.set_tile(x, y, tile_type)` — never access `_grid` directly from outside `room.py`.
+- **Handler Auth Middleware**: All WebSocket handlers (except `handle_login`/`handle_register`) use `@requires_auth` decorator from `server/net/auth_middleware.py`. The decorator injects `entity_id: str` and `player_info: PlayerSession` as keyword arguments. Never duplicate the auth-check boilerplate manually.
 
 ### Directory Structure
 ```
 server/
 ├── core/          # Config, database, scheduler, event bus, shared effect registry
-├── net/           # WebSocket connection manager, message router
+├── net/           # WebSocket connection manager, message router, auth middleware
 │   └── handlers/  # auth, movement, chat, combat, inventory, interact, trade, party, admin
 ├── player/        # Player model, repo (stats whitelist), entity, auth (bcrypt)
 ├── room/          # Room model, repo, tile system, room instance, manager, provider

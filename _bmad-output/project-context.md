@@ -44,7 +44,9 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 
 **Handler Patterns:**
 - All gameplay communication uses WebSocket — REST endpoints are exclusively for admin operations
-- WebSocket: `async def handle_X(ws: WebSocket, data: dict, game: Game)` — `game` passed via lambda closure at registration
+- WebSocket handlers use `@requires_auth` decorator (`server/net/auth_middleware.py`) which injects `entity_id: str` and `player_info: PlayerSession` as keyword arguments. Only `handle_login` and `handle_register` are NOT decorated (pre-auth handlers).
+- Decorated handler signature: `async def handle_X(ws: WebSocket, data: dict, *, game: Game, entity_id: str, player_info: PlayerSession) -> None`
+- Outer (decorated) function retains `(websocket, data, *, game)` — lambda registration in `app.py` is unaffected
 - REST admin: `APIRouter` with `Depends(verify_admin_secret)` — must use deferred `from server.app import game` inside each function (avoids circular imports)
 - Access managers through `game.*` — never import managers directly
 - DB access: `async with game.transaction() as session:` — auto-commits on success, rolls back on exception
