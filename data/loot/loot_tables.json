@@ -1,0 +1,27 @@
+{
+  "common_chest": [
+    {"item_key": "healing_potion", "quantity": 1},
+    {"item_key": "iron_shard", "quantity": 2}
+  ],
+  "rare_chest": [
+    {"item_key": "healing_potion", "quantity": 3},
+    {"item_key": "fire_essence", "quantity": 1}
+  ],
+  "slime_loot": [
+    {"item_key": "healing_potion", "quantity": 1}
+  ],
+  "goblin_loot": [
+    {"item_key": "iron_shard", "quantity": 1}
+  ],
+  "bat_loot": [
+    {"item_key": "antidote", "quantity": 1}
+  ],
+  "troll_loot": [
+    {"item_key": "healing_potion", "quantity": 1},
+    {"item_key": "iron_shard", "quantity": 2}
+  ],
+  "dragon_loot": [
+    {"item_key": "fire_essence", "quantity": 2},
+    {"item_key": "healing_potion", "quantity": 2}
+  ]
+}

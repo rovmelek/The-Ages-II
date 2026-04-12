@@ -9,7 +9,6 @@ from server.core.config import settings
 from server.core.xp import grant_xp
 import server.room.objects  # noqa: F401 — triggers type registration
 from server.room.objects.base import InteractiveObject
-from server.room.objects.registry import create_object
 from server.room.objects.state import get_player_object_state, set_player_object_state
 from server.room.room import DIRECTION_DELTAS
 
@@ -24,14 +23,14 @@ async def handle_interact(websocket: WebSocket, data: dict, *, game: Game) -> No
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    player_info = game.player_entities.get(entity_id)
+    player_info = game.player_manager.get_session(entity_id)
     if player_info is None:
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    room_key = player_info["room_key"]
-    player_db_id = player_info["db_id"]
-    entity = player_info["entity"]
+    room_key = player_info.room_key
+    player_db_id = player_info.db_id
+    entity = player_info.entity
 
     # Get room
     room = game.room_manager.get_room(room_key)
@@ -51,7 +50,7 @@ async def handle_interact(websocket: WebSocket, data: dict, *, game: Game) -> No
             return
 
         # Adjacency check — player must be within Manhattan distance 1
-        obj_x, obj_y = obj_dict["x"], obj_dict["y"]
+        obj_x, obj_y = obj_dict.x, obj_dict.y
         if abs(entity.x - obj_x) + abs(entity.y - obj_y) > 1:
             await websocket.send_json({"type": "error", "detail": "Too far to interact"})
             return
@@ -75,8 +74,8 @@ async def handle_interact(websocket: WebSocket, data: dict, *, game: Game) -> No
 
         # Search interactive objects at (tx, ty)
         obj_dict = None
-        for obj in room._interactive_objects.values():
-            if obj["x"] == tx and obj["y"] == ty:
+        for obj in room.interactive_objects.values():
+            if obj.x == tx and obj.y == ty:
                 obj_dict = obj
                 break
 
@@ -86,7 +85,7 @@ async def handle_interact(websocket: WebSocket, data: dict, *, game: Game) -> No
             )
             return
 
-        target_id = obj_dict["id"]
+        target_id = obj_dict.id
         # No adjacency check needed — direction guarantees distance 1
 
     else:
@@ -95,9 +94,8 @@ async def handle_interact(websocket: WebSocket, data: dict, *, game: Game) -> No
         )
         return
 
-    # Build the typed object and check if it's interactive
-    obj = create_object(obj_dict)
-    if not isinstance(obj, InteractiveObject):
+    # Check if the pre-created object is interactive
+    if not isinstance(obj_dict, InteractiveObject):
         await websocket.send_json({"type": "error", "detail": "Object not interactable"})
         return
 
@@ -111,16 +109,16 @@ async def handle_interact(websocket: WebSocket, data: dict, *, game: Game) -> No
             first_interaction = True
 
     # Delegate to the object's interact method
-    result = await obj.interact(player_db_id, game)
+    result = await obj_dict.interact(player_db_id, game)
 
     # Grant interaction XP on first successful interaction
     if first_interaction and result.get("status") not in ("error", "already_looted"):
         await grant_xp(
             entity_id, entity, settings.XP_INTERACTION_REWARD,
-            "interaction", f"Interacted with {obj_dict.get('type', 'object')}", game,
+            "interaction", f"Interacted with {obj_dict.type}", game,
         )
         # For levers (room-scoped state), record per-player interaction for XP tracking
-        if obj_dict.get("type") == "lever":
+        if obj_dict.type == "lever":
             async with game.transaction() as session:
                 await set_player_object_state(
                     session, player_db_id, room_key, target_id, {"interacted": True},

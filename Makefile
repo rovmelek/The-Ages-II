@@ -1,4 +1,4 @@
-.PHONY: test test-verbose server install
+.PHONY: test test-verbose server install db-migrate
 
 test:
 	.venv/bin/python -m pytest tests/ -q --tb=short
@@ -11,3 +11,6 @@ server:
 
 install:
 	.venv/bin/pip install -e ".[dev]"
+
+db-migrate:
+	.venv/bin/alembic upgrade head

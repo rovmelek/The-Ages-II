@@ -17,7 +17,7 @@ class RoomManager:
         """Get a loaded room by key."""
         return self._rooms.get(room_key)
 
-    def load_room(self, room_db: RoomModel) -> RoomInstance:
+    def load_room(self, room_db: RoomModel, npc_templates: dict[str, dict] | None = None) -> RoomInstance:
         """Create a RoomInstance from a DB Room model and track it."""
         instance = RoomInstance(
             room_key=room_db.room_key,
@@ -34,7 +34,7 @@ class RoomManager:
             if sp.get("type") == "npc":
                 npc_key = sp.get("npc_key", "")
                 npc_id = f"{room_db.room_key}_{npc_key}_{sp['x']}_{sp['y']}"
-                npc = create_npc_from_template(npc_key, npc_id, sp["x"], sp["y"])
+                npc = create_npc_from_template(npc_key, npc_id, sp["x"], sp["y"], templates=npc_templates)
                 if npc:
                     instance.add_npc(npc)
 

@@ -9,17 +9,20 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
-from server.room.objects.npc import (
-    _NPC_TEMPLATES,
-    create_npc_from_template,
-    get_npc_template,
-)
+from server.room.objects.npc import create_npc_from_template
 from server.room.spawn_models import SpawnCheckpoint
 
 if TYPE_CHECKING:
     from server.app import Game
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_aware(dt: datetime | None) -> datetime | None:
+    """Ensure a datetime is timezone-aware (SQLite returns naive datetimes)."""
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt
 
 # How often the rare-spawn loop checks for due spawn rolls (seconds)
 _RARE_CHECK_INTERVAL = 60
@@ -99,7 +102,7 @@ class Scheduler:
             return
 
         # Restore from template
-        tmpl = get_npc_template(npc.npc_key)
+        tmpl = self._game.npc_templates.get(npc.npc_key) if self._game else None
         if tmpl:
             npc.stats = dict(tmpl.get("stats", {}))
         npc.is_alive = True
@@ -124,10 +127,10 @@ class Scheduler:
 
     async def _run_rare_spawn_checks(self) -> None:
         """Roll for each rare NPC template that is due for a check."""
-        now = datetime.now(UTC).replace(tzinfo=None)
+        now = datetime.now(UTC)
 
         rare_templates = [
-            t for t in _NPC_TEMPLATES.values()
+            t for t in self._game.npc_templates.values()
             if t.get("spawn_type") == "rare"
         ]
         if not rare_templates:
@@ -160,7 +163,7 @@ class Scheduler:
                     await session.flush()
 
                 # Not yet due
-                if cp.next_check_at and cp.next_check_at > now:
+                if cp.next_check_at and _ensure_aware(cp.next_check_at) > now:
                     continue
 
                 # Already at max active
@@ -184,7 +187,7 @@ class Scheduler:
                     x = cfg.get("x", 0)
                     y = cfg.get("y", 0)
                     npc_id = f"{room_key}_{npc_key}_{x}_{y}"
-                    npc = create_npc_from_template(npc_key, npc_id, x, y)
+                    npc = create_npc_from_template(npc_key, npc_id, x, y, templates=self._game.npc_templates)
                     if npc and self._game:
                         room = self._game.room_manager.get_room(room_key)
                         if room:
@@ -208,13 +211,13 @@ class Scheduler:
 
     async def _recover_checkpoints(self) -> None:
         """Load SpawnCheckpoints from DB and run any overdue checks."""
-        now = datetime.now(UTC).replace(tzinfo=None)
+        now = datetime.now(UTC)
         async with self._game.transaction() as session:
             result = await session.execute(select(SpawnCheckpoint))
             checkpoints = result.scalars().all()
 
         for cp in checkpoints:
-            if cp.next_check_at and cp.next_check_at <= now:
+            if cp.next_check_at and _ensure_aware(cp.next_check_at) <= now:
                 # Overdue — will be picked up on next loop iteration immediately
                 logger.info(
                     "Overdue spawn check for %s in %s, will run immediately",

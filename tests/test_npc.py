@@ -53,9 +53,9 @@ class TestNpcEntity:
         with tempfile.TemporaryDirectory() as tmpdir:
             p = Path(tmpdir) / "test.json"
             p.write_text(json.dumps(templates))
-            load_npc_templates(Path(tmpdir))
+            npc_templates = load_npc_templates(Path(tmpdir))
 
-        npc = create_npc_from_template("test_goblin", "npc_1", 3, 4)
+        npc = create_npc_from_template("test_goblin", "npc_1", 3, 4, templates=npc_templates)
         assert npc is not None
         assert npc.npc_key == "test_goblin"
         assert npc.name == "Test Goblin"
@@ -207,7 +207,7 @@ class TestRoomManagerNpcSpawn:
         with tempfile.TemporaryDirectory() as tmpdir:
             p = Path(tmpdir) / "test.json"
             p.write_text(json.dumps(templates))
-            load_npc_templates(Path(tmpdir))
+            npc_templates = load_npc_templates(Path(tmpdir))
 
         from server.room.manager import RoomManager
 
@@ -227,7 +227,7 @@ class TestRoomManagerNpcSpawn:
         )
 
         mgr = RoomManager()
-        instance = mgr.load_room(room_db)
+        instance = mgr.load_room(room_db, npc_templates=npc_templates)
         npc = instance.get_npc("spawn_test_spawn_goblin_3_3")
         assert npc is not None
         assert npc.name == "Spawn Goblin"

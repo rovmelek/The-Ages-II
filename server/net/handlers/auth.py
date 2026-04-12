@@ -13,6 +13,7 @@ from server.player import repo as player_repo
 from server.core.config import settings
 from server.core.xp import get_pending_level_ups, send_level_up_available
 from server.player.auth import hash_password, verify_password
+from server.player.session import PlayerSession
 from server.player.entity import PlayerEntity
 from server.room import repo as room_repo
 
@@ -103,11 +104,11 @@ async def _cleanup_party(entity_id: str, game: Game) -> None:
     cleanup_pending_invites(entity_id)
 
 
-async def _save_player_state(entity_id: str, player_info: dict, game: Game) -> None:
+async def _save_player_state(entity_id: str, player_info: PlayerSession, game: Game) -> None:
     """Persist player position, stats, inventory, and visited rooms to DB."""
-    entity = player_info["entity"]
-    room_key = player_info["room_key"]
-    inventory = player_info.get("inventory")
+    entity = player_info.entity
+    room_key = player_info.room_key
+    inventory = player_info.inventory
 
     try:
         async with game.transaction() as session:
@@ -121,10 +122,10 @@ async def _save_player_state(entity_id: str, player_info: dict, game: Game) -> N
                 await player_repo.update_inventory(
                     session, entity.player_db_id, inventory.to_dict()
                 )
-            visited_rooms = player_info.get("visited_rooms", [])
+            visited_rooms = player_info.visited_rooms
             if visited_rooms:
                 await player_repo.update_visited_rooms(
-                    session, entity.player_db_id, visited_rooms
+                    session, entity.player_db_id, list(visited_rooms)
                 )
     except Exception:
         logger.exception("Failed to save state during cleanup for %s", entity_id)
@@ -150,13 +151,13 @@ async def _cleanup_player(entity_id: str, game: Game) -> None:
 
     Cleanup order: trades → combat → party → save state → remove from room → disconnect
     """
-    player_info = game.player_entities.get(entity_id)
+    player_info = game.player_manager.get_session(entity_id)
     if not player_info:
         game.connection_manager.disconnect(entity_id)
         return
 
-    entity = player_info["entity"]
-    room_key = player_info["room_key"]
+    entity = player_info.entity
+    room_key = player_info.room_key
 
     await _cleanup_trade(entity_id, game)
     await _cleanup_combat(entity_id, entity, game)
@@ -165,7 +166,7 @@ async def _cleanup_player(entity_id: str, game: Game) -> None:
     await _remove_from_room(entity_id, room_key, game)
 
     game.connection_manager.disconnect(entity_id)
-    game.player_entities.pop(entity_id, None)
+    game.player_manager.remove_session(entity_id)
 
 
 async def handle_logout(websocket: WebSocket, data: dict, *, game: Game) -> None:
@@ -218,6 +219,7 @@ async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> No
             {
                 "type": "login_success",
                 "player_id": player.id,
+                "entity_id": f"player_{player.id}",
                 "username": player.username,
                 "stats": {
                     "hp": default_max_hp,
@@ -225,6 +227,8 @@ async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> No
                     "attack": settings.DEFAULT_ATTACK,
                     "xp": 0,
                     "level": 1,
+                    "xp_for_next_level": 1 * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
+                    "xp_for_current_level": 0,
                     "strength": settings.DEFAULT_STAT_VALUE,
                     "dexterity": settings.DEFAULT_STAT_VALUE,
                     "constitution": settings.DEFAULT_STAT_VALUE,
@@ -363,20 +367,21 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
             visited_rooms.append(room_key)
 
         # Track player entity with inventory and visited rooms
-        game.player_entities[entity_id] = {
-            "entity": entity,
-            "room_key": room_key,
-            "db_id": player.id,
-            "inventory": inventory,
-            "visited_rooms": visited_rooms,
-            "pending_level_ups": 0,
-        }
+        game.player_manager.set_session(entity_id, PlayerSession(
+            entity=entity,
+            room_key=room_key,
+            db_id=player.id,
+            inventory=inventory,
+            visited_rooms=set(visited_rooms),
+            pending_level_ups=0,
+        ))
 
         # Send login success and full room state
         await websocket.send_json(
             {
                 "type": "login_success",
                 "player_id": player.id,
+                "entity_id": entity_id,
                 "username": player.username,
                 "stats": {
                     "hp": stats.get("hp", settings.DEFAULT_BASE_HP),
@@ -384,6 +389,8 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
                     "attack": stats.get("attack", settings.DEFAULT_ATTACK),
                     "xp": stats.get("xp", 0),
                     "level": stats.get("level", 1),
+                    "xp_for_next_level": stats.get("level", 1) * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
+                    "xp_for_current_level": (stats.get("level", 1) - 1) * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
                     "strength": stats.get("strength", settings.DEFAULT_STAT_VALUE),
                     "dexterity": stats.get("dexterity", settings.DEFAULT_STAT_VALUE),
                     "constitution": stats.get("constitution", settings.DEFAULT_STAT_VALUE),
@@ -412,5 +419,7 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
         # Re-check for pending level-ups (e.g., player disconnected before choosing)
         pending = get_pending_level_ups(stats)
         if pending > 0:
-            game.player_entities[entity_id]["pending_level_ups"] = pending
+            session = game.player_manager.get_session(entity_id)
+            if session:
+                session.pending_level_ups = pending
             await send_level_up_available(entity_id, entity, game)

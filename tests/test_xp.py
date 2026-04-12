@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from server.player.manager import PlayerManager
+
 from server.core.xp import calculate_combat_xp, grant_xp
 from server.combat.instance import CombatInstance
 
@@ -202,7 +204,7 @@ class TestGrantXP:
         game.transaction = factory
         ws = AsyncMock()
         game.connection_manager.get_websocket.return_value = ws
-        game.player_entities = {}
+        game.player_manager = PlayerManager()
         return game
 
     async def test_grant_xp_applies_cha_bonus(self, monkeypatch, _mock_entity, _mock_game):

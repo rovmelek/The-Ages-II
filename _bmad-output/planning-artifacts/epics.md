@@ -499,6 +499,41 @@ Phase 3 (Later): 14.6, 14.7 (14.7 depends on 14.5)
 - E2E smoke test: full gameplay loop verified end-to-end after all refactoring
 - CLAUDE.md updated with new conventions (config for game values, no cross-module `_` access, server messages self-contained)
 
+### Epic 15: Server Architecture Refinement
+The server's internal structure is tightened — player session lifecycle gets a dedicated manager, handler boilerplate is eliminated via middleware, cross-module dependencies flow in the correct direction, and remaining domain model gaps are closed. Pure refactoring epic: zero gameplay behavior changes, all existing tests pass unchanged.
+**No new FRs** — internal refactoring driven by codebase review findings, not new functionality.
+**Dependencies:** Epic 14 complete.
+**Findings source:** Adversarial codebase review (2026-04-11), findings C/D/E/I/J/K/L/O/Q/R/U/W/X.
+**Deferred findings:** (A) `xp.py` mixing business logic with WebSocket sending — acknowledged trade-off; centralizing notification prevents forgotten sends, refactoring requires callback/event pattern design. (V) untyped stats dicts — requires TypedDict/dataclass design; scope for a future epic. (G) `TradeManager.set_connection_manager()` setter injection — low impact, defer unless touched by another story.
+
+**Execution order:**
+```
+Phase 1 (Core):  15.1 → 15.2 → 15.3
+Phase 2 (Clean): 15.4, 15.5a, 15.5b, 15.6, 15.7 (all independent)
+```
+
+**Dependency graph:**
+```
+15.1 (PlayerManager) ──→ 15.2 (_cleanup_player relocation — depends on PlayerManager)
+                         15.2 ──→ 15.3 (auth middleware — 15.3 AC for handle_logout assumes cleanup_session exists)
+15.4, 15.5a, 15.5b, 15.6, 15.7 — independently implementable
+```
+
+**Note on 15.2 → 15.4 ordering:** Story 15.2 moves `_cleanup_player` (which calls `cleanup_pending_invites` from party handler). If 15.4 is done first, the relocated cleanup calls `game.party_manager.cleanup_invites()`. If 15.2 is done first, the deferred import moves from `auth.py` to `PlayerManager` and is cleaned up when 15.4 lands. Either order works.
+
+**Stories:**
+
+| Story | Title | Findings | Phase |
+|-------|-------|----------|-------|
+| 15.1 | Player Session Manager | I, W | Core |
+| 15.2 | Relocate Player Cleanup to Game Layer | U | Core |
+| 15.3 | Handler Auth Middleware | D | Core |
+| 15.4 | Party Invite State → PartyManager | E | Clean |
+| 15.5a | Extract Effect Targeting | Q | Clean |
+| 15.5b | NpcEntity & Dataclass Relocation | C, X | Clean |
+| 15.6 | EventBus Resilience & Config Gaps | R, O, L | Clean |
+| 15.7 | Data Layer Consistency | J, K | Clean |
+
 ---
 
 ## Epic 14: Codebase Structure & Infrastructure Hardening
@@ -3554,3 +3589,344 @@ So that the server never persists partial state on crash or concurrent access, a
 - 159 test references to `session_factory` across 27 test files need updating
 - No new dependencies, no schema changes, no config changes
 - Pure refactor — zero gameplay behavior changes
+
+---
+
+## Epic 15: Server Architecture Refinement
+
+The server's internal structure is tightened — player session lifecycle gets a dedicated manager, handler boilerplate is eliminated via middleware, cross-module dependencies flow in the correct direction, and remaining domain model gaps are closed. This is a pure refactoring epic: zero gameplay behavior changes, all existing tests pass unchanged.
+
+**No new FRs** — internal refactoring driven by codebase review findings, not new functionality.
+**Findings source:** Adversarial codebase review (2026-04-11).
+**Deferred findings:** (A) `xp.py` mixing business logic with WebSocket sending — acknowledged trade-off; centralizing notification prevents forgotten sends, refactoring requires callback/event pattern design. (V) untyped stats dicts — requires TypedDict/dataclass design; scope for a future epic. (G) `TradeManager.set_connection_manager()` setter injection — low impact, defer unless touched by another story.
+
+### Story 15.1: Player Session Manager
+
+As a developer,
+I want player session lifecycle (create, lookup, remove, iterate) managed by a dedicated `PlayerManager` class,
+So that session operations are centralized instead of scattered across handlers and the `Game` class.
+
+**Acceptance Criteria:**
+
+**Given** `game.player_entities` / `self.player_entities` is a raw `dict[str, PlayerSession]` accessed directly from 13 server files (handlers + `chest.py`, `xp.py`, `app.py` via `self.`) with 7 distinct access patterns:
+- `.get(entity_id)` — safe lookup (30+ sites across handlers, `chest.py`, `xp.py`)
+- `[entity_id] = PlayerSession(...)` — direct assignment (`auth.py:370`)
+- `.pop(entity_id, None)` — removal (`auth.py:169`)
+- `[entity_id].attr = value` — attribute mutation through index (`auth.py:422`)
+- `[entity_id]` — direct index lookup, assumes key exists (`movement.py:209`) — replace with `get_session()` + None guard
+- `not in game.player_entities` — containment check (`party.py:190`)
+- `.clear()` — bulk removal after shutdown cleanup loop (`app.py:141`)
+**When** Story 15.1 is implemented
+**Then** a `PlayerManager` class exists (in `server/player/manager.py`) with methods covering all patterns:
+- `get_session(entity_id: str) -> PlayerSession | None` — replaces `.get()` and direct `[id]` lookups
+- `set_session(entity_id: str, session: PlayerSession) -> None` — replaces `[id] = session`
+- `remove_session(entity_id: str) -> PlayerSession | None` — replaces `.pop()`
+- `has_session(entity_id: str) -> bool` — replaces `in` / `not in` checks
+- `all_entity_ids() -> list[str]` — replaces `list(.keys())` for iterate-during-mutation (`app.py:119`)
+- `all_sessions() -> Iterator[tuple[str, PlayerSession]]` — replaces `.items()` iteration
+- `clear() -> None` — replaces `.clear()` (used in `shutdown()` after cleanup loop; may become unnecessary if loop already calls `remove_session` per entity)
+**And** `game.player_manager` replaces `game.player_entities`
+
+**Given** `PlayerSession` is constructed in `auth.py:370` with 6 keyword arguments (`entity`, `room_key`, `db_id`, `inventory`, `visited_rooms`, `pending_level_ups`)
+**When** Story 15.1 is implemented
+**Then** `set_session(entity_id, session)` takes a pre-constructed `PlayerSession` — construction remains at the call site in `auth.py` (no factory method needed)
+
+**Given** all server files that access `player_entities` (~39 occurrences across 13 files, including `app.py` via `self.`, `chest.py`, and `xp.py`)
+**When** Story 15.1 is implemented
+**Then** they use the appropriate `PlayerManager` method instead
+**And** the `player_entities` dict is no longer publicly accessible
+
+**Given** all existing tests (807+) — ~146 `player_entities` references across 26 test files
+**When** Story 15.1 is implemented
+**Then** all tests pass with no assertion value changes
+**And** test fixtures are updated to use `game.player_manager` methods
+
+**Implementation notes:**
+- Finding (I/W): most significant missing abstraction in the codebase
+- `PlayerManager` is a plain Python class (no inheritance), owns the `dict` internally
+- `Game.__init__` creates `self.player_manager = PlayerManager()`
+- **Test impact is the largest effort**: ~146 references across 26 test files need mechanical `player_entities` → `player_manager` updates
+- `all_entity_ids()` returns a snapshot list (not a view) so callers can safely iterate while sessions are removed (as in `app.py:119 shutdown()`)
+- Pure refactor — zero gameplay behavior changes
+
+### Story 15.2: Relocate Player Cleanup to Game Layer
+
+As a developer,
+I want the player cleanup orchestration function to live at the game layer rather than in a handler module,
+So that the dependency direction is correct (orchestrator → handlers, not handlers → orchestrator).
+
+**Acceptance Criteria:**
+
+**Given** `_cleanup_player` is defined in `server/net/handlers/auth.py` (line 146) with a `_` private prefix
+**And** it is imported by `server/app.py` via deferred imports at lines 114 and 359 — a reverse dependency
+**When** Story 15.2 is implemented
+**Then** the cleanup function is a method on `PlayerManager` (from Story 15.1): `player_manager.cleanup_session(entity_id, game)`
+**And** the private sub-functions (`_cleanup_trade`, `_cleanup_combat`, `_cleanup_party`, `_save_player_state`, `_remove_from_room`) are either moved alongside or remain in `auth.py` and are called by the manager
+
+**Given** `_cleanup_party` (auth.py:102-104) does a deferred import of `cleanup_pending_invites` from `party.py` handler
+**When** Story 15.2 is implemented (before Story 15.4)
+**Then** the deferred import moves to `PlayerManager.cleanup_session()` — this is temporary debt cleaned up by Story 15.4
+**Or** if Story 15.4 is done first, the call becomes `game.party_manager.cleanup_invites(entity_id)` with no deferred import needed
+
+**Given** `handle_logout` in `auth.py` calls `_cleanup_player`
+**When** Story 15.2 is implemented
+**Then** it calls `game.player_manager.cleanup_session(entity_id, game)` instead
+
+**Given** `Game.shutdown()` (line 114) and `Game.handle_disconnect()` (line 359) each do a deferred import of `_cleanup_player` from `auth.py`
+**When** Story 15.2 is implemented
+**Then** both call `self.player_manager.cleanup_session(...)` instead
+**And** the deferred imports in `app.py` are removed
+
+**Given** all existing tests
+**When** Story 15.2 is implemented
+**Then** all tests pass with no assertion value changes
+
+**Implementation notes:**
+- Finding (U): reverse dependency where orchestrator imports handler's private function
+- Depends on Story 15.1 (PlayerManager must exist)
+- **Trade-off acknowledged (ADR-15-2):** `cleanup_session(entity_id, game)` takes the full `Game` object because cleanup touches trade, combat, party, room, and DB managers. This is the same "pass the orchestrator" pattern used by handlers — acceptable since the alternative (injecting 5 managers individually) adds complexity without reducing coupling
+- The sub-cleanup functions can stay in auth.py as module-level helpers called by the manager, or move to the manager — developer's choice based on import complexity
+- Pure refactor — zero gameplay behavior changes
+
+### Story 15.3: Handler Auth Middleware
+
+As a developer,
+I want a `@requires_auth` decorator that injects `entity_id` and `player_info` into handler functions,
+So that the 8-12 line auth-check boilerplate is not duplicated across 15+ handlers.
+
+**Acceptance Criteria:**
+
+**Given** the repeated auth-check pattern across handlers (post-15.1 form):
+```python
+entity_id = game.connection_manager.get_entity_id(websocket)
+if entity_id is None:
+    await websocket.send_json({"type": "error", "detail": "Not logged in"})
+    return
+player_info = game.player_manager.get_session(entity_id)
+if player_info is None:
+    await websocket.send_json({"type": "error", "detail": "Not logged in"})
+    return
+```
+**When** Story 15.3 is implemented
+**Then** a `@requires_auth` decorator (in `server/net/auth_middleware.py` or similar) wraps handler functions
+**And** the **outer (decorated) function** retains the `(websocket, data, *, game)` signature — lambda registration in `app.py` is unaffected
+**And** the **inner function** receives additional `entity_id: str` and `player_info: PlayerSession` keyword arguments injected by the decorator
+**And** unauthenticated requests are rejected with the standard error before the inner handler body runs
+
+**Given** 15+ handler functions that begin with the auth-check boilerplate
+**When** Story 15.3 is implemented
+**Then** they are decorated with `@requires_auth` and the manual boilerplate is removed
+**And** handler signatures change to include `entity_id` and `player_info` keyword params
+
+**Given** `handle_login`, `handle_register` (do not require auth)
+**When** Story 15.3 is implemented
+**Then** they are NOT decorated — they keep their current behavior
+
+**Given** `handle_logout` performs the same auth-check boilerplate before calling cleanup
+**When** Story 15.3 is implemented
+**Then** `handle_logout` IS decorated with `@requires_auth` — it receives `entity_id` and `player_info`, then calls `game.player_manager.cleanup_session(entity_id, game)`
+
+**Given** all existing tests
+**When** Story 15.3 is implemented
+**Then** all tests pass with no assertion value changes
+
+**Implementation notes:**
+- Finding (D): auth boilerplate duplicated 20 times across 10 handler files
+- The decorator uses `functools.wraps` and has the same outer signature as current handlers
+- Depends on Story 15.1 (decorator calls `game.player_manager.get_session()`) and Story 15.2 (`handle_logout` AC assumes `cleanup_session` exists)
+- Pure refactor — zero gameplay behavior changes
+
+### Story 15.4: Party Invite State → PartyManager
+
+As a developer,
+I want party invite tracking state managed by `PartyManager` instead of module-level globals in the party handler,
+So that the handler is stateless and the unique `set_game_ref()` wiring pattern is eliminated.
+
+**Acceptance Criteria:**
+
+**Given** 4 module-level mutable dicts in `server/net/handlers/party.py`:
+- `_pending_invites: dict[str, str]` (line 19)
+- `_outgoing_invites: dict[str, str]` (line 20)
+- `_invite_timeouts: dict[str, asyncio.TimerHandle]` (line 21)
+- `_invite_cooldowns: dict[str, dict[str, float]]` (line 22)
+**And** `_game_ref: Game | None` global (line 25) with `set_game_ref()` setter (line 28)
+**When** Story 15.4 is implemented
+**Then** these dicts and the game ref are attributes on `PartyManager` (in `server/party/manager.py`)
+**And** the module-level globals and `set_game_ref()` function are removed
+
+**Given** `_invite_timeouts` stores `asyncio.TimerHandle` objects whose sync callbacks (`_handle_invite_timeout`) need:
+- `connection_manager` to send timeout notifications via `create_task(send_to_player(...))`
+- `_get_entity_name()` which accesses `game.player_entities` for display names
+**When** Story 15.4 is implemented
+**Then** `PartyManager.__init__` accepts `connection_manager` via constructor injection (consistent with how `CombatManager` takes `effect_registry`)
+**And** timer callbacks reference `self._connection_manager` instead of `_game_ref.connection_manager`
+**And** display names are stored at invite creation time (in the invite tracking dicts) so the timeout callback does not need player session lookup at fire time
+
+**Given** `app.py` line 235: `set_party_game_ref(self)` (aliased from `set_game_ref` at import on line 157)
+**When** Story 15.4 is implemented
+**Then** the `set_party_game_ref` call and its import are removed
+**And** `PartyManager` construction in `Game.__init__` passes `connection_manager`: `self.party_manager = PartyManager(connection_manager=self.connection_manager)`
+
+**Given** handler functions in `party.py` that access the module-level invite dicts
+**When** Story 15.4 is implemented
+**Then** they access `game.party_manager` methods/attributes instead
+
+**Given** all existing tests
+**When** Story 15.4 is implemented
+**Then** all tests pass with no assertion value changes
+
+**Implementation notes:**
+- Finding (E): only handler that maintains state outside a manager
+- `cleanup_pending_invites()` moves to `PartyManager.cleanup_invites(entity_id)`
+- Constructor injection of `connection_manager` matches `CombatManager(effect_registry=...)` pattern
+- Pure refactor — zero gameplay behavior changes
+
+### Story 15.5a: Extract Effect Targeting
+
+As a developer,
+I want the duplicated effect source/target resolution extracted into a shared method on `CombatInstance`,
+So that the effect targeting logic exists in exactly one place.
+
+**Acceptance Criteria:**
+
+**Given** `CombatInstance.resolve_card_effects()` (lines 96-107) and `CombatInstance.use_item()` (lines 199-206)
+both contain identical logic to determine source/target based on effect type:
+```python
+if effect_type in ("heal", "shield", "draw"):
+    source = player_stats; target = player_stats
+else:
+    source = player_stats; target = self.mob_stats
+```
+**When** Story 15.5a is implemented
+**Then** a private method `_resolve_effect_targets(entity_id, effect_type) -> tuple[dict, dict]` is extracted
+**And** both `resolve_card_effects()` and `use_item()` call it
+
+**Given** all existing tests
+**When** Story 15.5a is implemented
+**Then** all tests pass with no assertion value changes
+
+**Implementation notes:**
+- Finding (Q): duplicated effect logic
+- The `_resolve_effect_targets` method is ~5 lines, extracted from two near-identical blocks
+- Single-file change (`server/combat/instance.py`), minimal risk
+- Pure refactor — zero gameplay behavior changes
+
+### Story 15.5b: NpcEntity & Dataclass Relocation
+
+As a developer,
+I want `NpcEntity` relocated from `room/objects/` to `room/`, and Trade/Party dataclasses split into their own files,
+So that the domain model is accurately organized and consistent across modules.
+
+**Acceptance Criteria:**
+
+**Given** `NpcEntity` is a `@dataclass` in `server/room/objects/npc.py` alongside `InteractiveObject` subclasses (ChestObject, LeverObject) despite not extending `RoomObject` or `InteractiveObject`
+**When** Story 15.5b is implemented
+**Then** `NpcEntity` and all co-located functions (`create_npc_from_template`, `load_npc_templates`) are relocated to `server/room/npc.py` (at the room level, not inside `objects/`)
+**And** all imports are updated — **16 import sites**: 4 server files (`app.py`, `scheduler.py`, `room.py`, `room/manager.py`) + 12 test files (`test_integration.py`, `test_query.py`, `test_loot.py`, `test_logout.py`, `test_room_system.py`, `test_npc.py`, `test_combat_entry.py`, `test_spawn.py`, `test_concurrency.py`, `test_startup_wiring.py`, `test_sample_data.py`, `test_events.py`)
+**And** the old `server/room/objects/npc.py` file is deleted (no external consumers exist)
+
+**Given** `Trade` dataclass is co-located in `server/trade/manager.py` (line 13) and `Party` dataclass is co-located in `server/party/manager.py` (line 12)
+**When** Story 15.5b is implemented
+**Then** `Trade` is moved to `server/trade/session.py` and `Party` is moved to `server/party/party.py`
+**And** all imports are updated (including test files)
+
+**Given** all existing tests
+**When** Story 15.5b is implemented
+**Then** all tests pass with no assertion value changes
+
+**Implementation notes:**
+- Findings (C, X): NpcEntity misplaced, inconsistent dataclass locations
+- NPC relocation has the largest blast radius (16 import sites) — use find-and-replace
+- Trade/Party dataclass splits are low-risk (few imports)
+- Pure refactor — zero gameplay behavior changes
+
+### Story 15.6: EventBus Resilience & Config Gaps
+
+As a developer,
+I want the EventBus to isolate subscriber failures, and remaining unconfigurable constants to be in `Settings`,
+So that one broken subscriber cannot crash the emit loop and all operational constants are environment-overridable.
+
+**Acceptance Criteria:**
+
+**Given** `EventBus.emit()` in `server/core/events.py` (lines 20-21) iterates subscribers with no error isolation:
+```python
+for cb in self._subscribers.get(event_type, []):
+    await cb(**data)  # exception propagates, remaining callbacks skipped
+```
+**When** Story 15.6 is implemented
+**Then** each subscriber callback is wrapped in `try/except` with `logger.exception(...)` logging
+**And** remaining subscribers are still called even if one fails
+**And** a test verifies: subscriber A raises → subscriber B still executes
+
+**Given** `_RARE_CHECK_INTERVAL = 60` in `server/core/scheduler.py` (line 28) is a module-level constant
+**When** Story 15.6 is implemented
+**Then** it is moved to `Settings` as `RARE_CHECK_INTERVAL_SECONDS: int = 60`
+**And** `Scheduler` references `settings.RARE_CHECK_INTERVAL_SECONDS`
+
+**Given** `RoomState.mob_states` field in `server/room/models.py` (line 28) is never written with actual data
+**When** Story 15.6 is implemented
+**Then** the field is removed from the model
+**And** Alembic migration removes the column (using `op.batch_alter_table` for SQLite compatibility if SQLite < 3.35.0)
+**Or** if the field is planned for future use, a code comment documents the intent
+
+**Given** all existing tests
+**When** Story 15.6 is implemented
+**Then** all tests pass; new test added for EventBus error isolation
+
+**Implementation notes:**
+- Findings (R, O, L): EventBus fragility, unconfigurable constant, unused DB field
+- Alembic infrastructure exists (Story 14.7 complete). SQLite `DROP COLUMN` requires version ≥ 3.35.0 or `batch_alter_table` — check version at implementation time
+- If `mob_states` is intended for future NPC state persistence, add a `# Reserved for Story X` comment instead of removing
+- One new test for EventBus error isolation; otherwise pure refactor
+
+### Story 15.7: Data Layer Consistency
+
+As a developer,
+I want the SpawnCheckpoint data access to follow the repo pattern,
+So that the data layer is consistent across all persistable entities.
+
+**Acceptance Criteria:**
+
+**Given** `SpawnCheckpoint` queries are inlined directly in `Scheduler._run_rare_spawn_checks()` (lines 128-206) and `_recover_checkpoints()` (lines 212-227) in `server/core/scheduler.py`
+**When** Story 15.7 is implemented
+**Then** a `server/room/spawn_repo.py` module exists with functions:
+- `get_checkpoint(session, room_key, npc_template_key) -> SpawnCheckpoint | None`
+- `upsert_checkpoint(session, room_key, npc_template_key, last_check) -> None`
+- `get_all_checkpoints(session) -> list[SpawnCheckpoint]`
+**And** `Scheduler` uses these repo functions instead of inline queries
+
+**Given** all existing tests
+**When** Story 15.7 is implemented
+**Then** all tests pass with no assertion value changes
+
+**Implementation notes:**
+- Finding (J): SpawnCheckpoint breaks repo pattern
+- `spawn_repo.py` follows the same stateless-functions-with-AsyncSession pattern as other repos
+- `core/scheduler.py` already imports from `room/` (npc templates, spawn models) — the new `room/spawn_repo` import continues this existing dependency direction
+- **Upsert unification (finding K) deferred:** The three upsert-from-JSON patterns (`room/repo.py`, `items/item_repo.py`, `combat/cards/card_repo.py`) handle different models with different field mappings and nested JSON structures. A generic utility would be more complex than the 3 separate ~20-line implementations it replaces. This is a premature abstraction — defer unless a 4th upsert pattern emerges.
+- Pure refactor — zero gameplay behavior changes
+
+---
+
+### Epic 15 — Architecture Decisions
+
+- **ADR-15-1:** `PlayerManager` is a plain class, not a base class — mirrors `PartyManager`/`TradeManager` style
+- **ADR-15-2:** `cleanup_session(entity_id, game)` takes full `Game` object — cleanup touches 5 managers, injecting each individually adds complexity without reducing coupling. Acknowledged trade-off: same "pass the orchestrator" pattern handlers use
+- **ADR-15-3:** `@requires_auth` decorator in dedicated `auth_middleware.py` — outer function retains `(websocket, data, *, game)` signature; inner function receives additional `entity_id`, `player_info` kwargs
+- **ADR-15-4:** Party invite dicts become `PartyManager` attributes — `connection_manager` injected via constructor (matches `CombatManager(effect_registry=...)` pattern)
+- **ADR-15-5:** `NpcEntity` moves to `server/room/npc.py` — stays in `room/` package since NPCs are room-spatial, but not in `objects/` since they're not `InteractiveObject`
+- **ADR-15-6:** EventBus error isolation via try/except per callback — no retry, just log and continue
+- **ADR-15-7:** `mob_states` field disposition decided at implementation time — remove if truly unused (with Alembic migration), comment if planned
+- **ADR-15-8:** Upsert unification deferred — three upsert patterns differ enough in field mapping and nested JSON structure that a generic utility would be a premature abstraction
+
+### Epic 15 — Definition of Done
+
+- All stories complete
+- All 807+ existing tests pass with no assertion value changes
+- `grep -r "\.player_entities" server/ tests/` returns zero hits (catches both `game.` and `self.` access patterns)
+- No `_cleanup_player` import in `app.py` or test files
+- No module-level mutable state in `party.py` handler
+- Auth boilerplate (entity_id lookup + player_info lookup + error return) appears in at most 2 places (the decorator itself, and possibly login/register)
+- No duplicated effect source/target logic in `CombatInstance` — `_resolve_effect_targets` is the single call site
+- No direct `select(SpawnCheckpoint)` or `session.add(SpawnCheckpoint(...))` in `scheduler.py` — all access via `spawn_repo`
+- CLAUDE.md updated with: PlayerManager convention, `@requires_auth` usage, NpcEntity location

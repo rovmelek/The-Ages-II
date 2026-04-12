@@ -76,7 +76,7 @@ def client(test_session_factory, room_manager, connection_manager):
     game.room_manager = original_rm
     game.connection_manager = original_cm
     game.session_factory = original_sf
-    game.player_entities.clear()
+    game.player_manager.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -150,7 +150,7 @@ class TestFirstLoginDefaults:
             ws.receive_json()  # room_state
 
             # Check runtime entity has defaults with CON-derived max_hp
-            entity_stats = game.player_entities["player_1"]["entity"].stats
+            entity_stats = game.player_manager.get_session("player_1").entity.stats
             assert entity_stats["hp"] == 105  # 100 + CON(1) * 5
             assert entity_stats["max_hp"] == 105
             assert entity_stats["attack"] == 10
@@ -195,7 +195,7 @@ class TestReturningPlayerStats:
             ws.receive_json()  # login_success
             ws.receive_json()  # room_state
 
-            entity_stats = game.player_entities["player_1"]["entity"].stats
+            entity_stats = game.player_manager.get_session("player_1").entity.stats
             assert entity_stats["hp"] == 50
             assert entity_stats["max_hp"] == 100
             assert entity_stats["attack"] == 15
@@ -226,7 +226,7 @@ class TestDisconnectStatsSave:
                 ws.receive_json()  # room_state
 
                 # Modify entity stats in-memory (simulating combat damage)
-                entity = game.player_entities["player_1"]["entity"]
+                entity = game.player_manager.get_session("player_1").entity
                 entity.stats["hp"] = 42
                 entity.stats["xp"] = 75
 
@@ -261,7 +261,7 @@ class TestCombatStatsSync:
             ws.receive_json()  # login_success
             ws.receive_json()  # room_state
 
-            entity = game.player_entities["player_1"]["entity"]
+            entity = game.player_manager.get_session("player_1").entity
             assert entity.stats["hp"] == 105  # 100 + CON(1) * 5
 
             # Simulate combat: create instance, modify participant stats

@@ -9,6 +9,22 @@ from server.net.handlers.levelup import handle_level_up, _VALID_LEVEL_UP_STATS
 from server.player.entity import PlayerEntity
 
 
+from server.player.manager import PlayerManager
+from server.player.session import PlayerSession
+
+def _ps(d: dict) -> PlayerSession:
+    """Build a PlayerSession from a dict (test helper)."""
+    entity = d["entity"]
+    return PlayerSession(
+        entity=entity,
+        room_key=d["room_key"],
+        db_id=d.get("db_id") or getattr(entity, "player_db_id", 0),
+        inventory=d.get("inventory"),
+        visited_rooms=set(d.get("visited_rooms", [])),
+        pending_level_ups=d.get("pending_level_ups", 0),
+    )
+
+
 # ---------------------------------------------------------------------------
 # get_pending_level_ups
 # ---------------------------------------------------------------------------
@@ -103,16 +119,15 @@ def _make_game_with_entity(stats: dict, pending: int = 1) -> tuple:
     game.transaction = factory
     game.connection_manager.get_entity_id.return_value = "player_1"
     game.connection_manager.get_websocket.return_value = ws
-    game.player_entities = {
-        "player_1": {
-            "entity": entity,
-            "room_key": "town_square",
-            "db_id": 1,
-            "inventory": None,
-            "visited_rooms": [],
-            "pending_level_ups": pending,
-        }
-    }
+    game.player_manager = PlayerManager()
+    game.player_manager.set_session("player_1", _ps({
+        "entity": entity,
+        "room_key": "town_square",
+        "db_id": 1,
+        "inventory": None,
+        "visited_rooms": [],
+        "pending_level_ups": pending,
+    }))
     return game, ws, entity
 
 
@@ -272,7 +287,7 @@ async def test_handle_level_up_queued():
     assert calls[1][0][0]["new_level"] == 3
 
     # Remaining pending should be 2 (thresholds at 2000, 3000)
-    assert game.player_entities["player_1"]["pending_level_ups"] == 2
+    assert game.player_manager.get_session("player_1").pending_level_ups == 2
 
 
 # ---------------------------------------------------------------------------
@@ -293,14 +308,13 @@ async def test_grant_xp_triggers_level_up():
     factory, _ = _mock_transaction()
     game.transaction = factory
     game.connection_manager.get_websocket.return_value = ws
-    game.player_entities = {
-        "player_1": {
-            "entity": entity,
-            "room_key": "town_square",
-            "db_id": 1,
-            "pending_level_ups": 0,
-        }
-    }
+    game.player_manager = PlayerManager()
+    game.player_manager.set_session("player_1", _ps({
+        "entity": entity,
+        "room_key": "town_square",
+        "db_id": 1,
+        "pending_level_ups": 0,
+    }))
 
     await grant_xp("player_1", entity, 200, "combat", "goblin", game, apply_cha_bonus=False)
 
@@ -312,7 +326,7 @@ async def test_grant_xp_triggers_level_up():
     msg_types = [c[0][0]["type"] for c in calls]
     assert "xp_gained" in msg_types
     assert "level_up_available" in msg_types
-    assert game.player_entities["player_1"]["pending_level_ups"] == 1
+    assert game.player_manager.get_session("player_1").pending_level_ups == 1
 
 
 # ---------------------------------------------------------------------------
@@ -350,7 +364,8 @@ async def test_stats_result_includes_xp_next():
     ws = AsyncMock()
     game = MagicMock()
     game.connection_manager.get_entity_id.return_value = "player_1"
-    game.player_entities = {"player_1": {"entity": entity}}
+    game.player_manager = PlayerManager()
+    game.player_manager.set_session("player_1", _ps({"entity": entity, "room_key": "town_square"}))
 
     await handle_stats(ws, {}, game=game)
 

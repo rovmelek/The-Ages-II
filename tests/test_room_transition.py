@@ -11,6 +11,22 @@ from server.room.room import RoomInstance
 from server.room.tile import TileType
 
 
+from server.player.session import PlayerSession
+
+
+def _ps(d: dict) -> PlayerSession:
+    """Build a PlayerSession from a dict (test helper)."""
+    entity = d["entity"]
+    return PlayerSession(
+        entity=entity,
+        room_key=d["room_key"],
+        db_id=d.get("db_id") or getattr(entity, "player_db_id", 0),
+        inventory=d.get("inventory"),
+        visited_rooms=set(d.get("visited_rooms", [])),
+        pending_level_ups=d.get("pending_level_ups", 0),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -61,9 +77,9 @@ def _setup_player_in_room(game, room, entity_id="player_1", x=3, y=2):
 
     ws = AsyncMock()
     game.connection_manager.connect(entity_id, ws, room.room_key)
-    game.player_entities[entity_id] = {
+    game.player_manager.set_session(entity_id, _ps({
         "entity": entity, "room_key": room.room_key, "db_id": 1,
-    }
+    }))
     return ws, entity
 
 
@@ -155,8 +171,8 @@ async def test_exit_updates_tracking():
 
     await handle_move(ws, {"action": "move", "direction": "right"}, game=game)
 
-    # player_entities should reflect new room
-    assert game.player_entities["player_1"]["room_key"] == "room_b"
+    # player_manager should reflect new room
+    assert game.player_manager.get_session("player_1").room_key == "room_b"
     # connection_manager should reflect new room
     assert game.connection_manager.get_room("player_1") == "room_b"
 
@@ -203,7 +219,7 @@ async def test_exit_broadcasts_entity_left_to_old_room():
     room_a.add_entity(other)
     ws2 = AsyncMock()
     game.connection_manager.connect("player_2", ws2, "room_a")
-    game.player_entities["player_2"] = {"entity": other, "room_key": "room_a", "db_id": 2}
+    game.player_manager.set_session("player_2", _ps({"entity": other, "room_key": "room_a", "db_id": 2}))
 
     await handle_move(ws1, {"action": "move", "direction": "right"}, game=game)
 
@@ -226,7 +242,7 @@ async def test_exit_broadcasts_entity_entered_to_new_room():
     room_b.add_entity(other)
     ws2 = AsyncMock()
     game.connection_manager.connect("player_2", ws2, "room_b")
-    game.player_entities["player_2"] = {"entity": other, "room_key": "room_b", "db_id": 2}
+    game.player_manager.set_session("player_2", _ps({"entity": other, "room_key": "room_b", "db_id": 2}))
 
     ws1, _ = _setup_player_in_room(game, room_a, "player_1", x=3, y=2)
 

@@ -153,10 +153,9 @@ class TestRareSpawnAnnouncement:
     async def test_scheduler_emits_rare_spawn_event(self):
         """AC #1: Scheduler emits rare_spawn event after successful spawn."""
         from server.core.scheduler import Scheduler
-        from server.room.objects.npc import _NPC_TEMPLATES, load_npc_templates
+        from server.room.objects.npc import load_npc_templates
         from server.room.room import RoomInstance
 
-        _NPC_TEMPLATES.clear()
         templates = [
             {
                 "npc_key": "evt_dragon",
@@ -177,7 +176,7 @@ class TestRareSpawnAnnouncement:
         with tempfile.TemporaryDirectory() as tmpdir:
             p = Path(tmpdir) / "test.json"
             p.write_text(json.dumps(templates))
-            load_npc_templates(Path(tmpdir))
+            npc_templates = load_npc_templates(Path(tmpdir))
 
         tile_data = [[0] * 5 for _ in range(5)]
         room = RoomInstance(
@@ -190,11 +189,12 @@ class TestRareSpawnAnnouncement:
         game.connection_manager.broadcast_to_room = AsyncMock()
         game.event_bus = MagicMock()
         game.event_bus.emit = AsyncMock()
+        game.npc_templates = npc_templates
 
         scheduler = Scheduler()
         scheduler._game = game
 
-        now = datetime.now(UTC).replace(tzinfo=None)
+        now = datetime.now(UTC)
         mock_cp = MagicMock()
         mock_cp.npc_key = "evt_dragon"
         mock_cp.room_key = "evt_room"

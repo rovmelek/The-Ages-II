@@ -1,6 +1,7 @@
 """NPC entity and template loading."""
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,6 +24,7 @@ class NpcEntity:
     is_alive: bool = True
     in_combat: bool = False
     spawn_config: dict = field(default_factory=dict)
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
 
     def to_dict(self) -> dict:
         """Serialize for room_state broadcast."""
@@ -40,28 +42,25 @@ class NpcEntity:
 # Template loading
 # ---------------------------------------------------------------------------
 
-_NPC_TEMPLATES: dict[str, dict] = {}
-
 
 def load_npc_templates(npcs_dir: Path) -> dict[str, dict]:
-    """Load all NPC templates from JSON files in the given directory."""
-    global _NPC_TEMPLATES
+    """Load all NPC templates from JSON files in the given directory.
+
+    Returns a new dict keyed by npc_key. Caller owns the returned dict
+    (canonical location: ``game.npc_templates``).
+    """
+    templates: dict[str, dict] = {}
     if not npcs_dir.exists():
-        return _NPC_TEMPLATES
+        return templates
     for json_file in sorted(npcs_dir.glob("*.json")):
         with open(json_file) as f:
             data = json.load(f)
         if isinstance(data, list):
             for tmpl in data:
-                _NPC_TEMPLATES[tmpl["npc_key"]] = tmpl
+                templates[tmpl["npc_key"]] = tmpl
         elif isinstance(data, dict) and "npc_key" in data:
-            _NPC_TEMPLATES[data["npc_key"]] = data
-    return _NPC_TEMPLATES
-
-
-def get_npc_template(npc_key: str) -> dict | None:
-    """Look up an NPC template by key."""
-    return _NPC_TEMPLATES.get(npc_key)
+            templates[data["npc_key"]] = data
+    return templates
 
 
 def _derive_stats_from_hit_dice(tmpl: dict) -> dict:
@@ -88,9 +87,18 @@ def _derive_stats_from_hit_dice(tmpl: dict) -> dict:
     }
 
 
-def create_npc_from_template(npc_key: str, npc_id: str, x: int, y: int) -> NpcEntity | None:
-    """Create an NpcEntity from a template."""
-    tmpl = get_npc_template(npc_key)
+def create_npc_from_template(
+    npc_key: str, npc_id: str, x: int, y: int, templates: dict[str, dict] | None = None,
+) -> NpcEntity | None:
+    """Create an NpcEntity from a template.
+
+    Args:
+        templates: Template dict to look up from. Required in production;
+            defaults to empty dict for backward compat in tests.
+    """
+    if templates is None:
+        templates = {}
+    tmpl = templates.get(npc_key)
     if tmpl is None:
         return None
     return NpcEntity(

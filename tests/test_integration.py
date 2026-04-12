@@ -121,7 +121,7 @@ def client(test_session_factory, room_manager, connection_manager):
     game.room_manager = original_rm
     game.connection_manager = original_cm
     game.session_factory = original_sf
-    game.player_entities.clear()
+    game.player_manager.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -390,18 +390,18 @@ class TestItemUsage:
 
         with client.websocket_connect("/ws/game") as ws:
             _login(ws)
-            eid = [k for k in game.player_entities
-                   if game.player_entities[k]["entity"].name == "hero"][0]
-            info = game.player_entities[eid]
+            eid = [k for k in game.player_manager.all_entity_ids()
+                   if game.player_manager.get_session(k).entity.name == "hero"][0]
+            info = game.player_manager.get_session(eid)
             potion = ItemDef(
                 item_key="healing_potion", name="Healing Potion",
                 category="consumable", charges=3,
                 effects=[{"type": "heal", "value": 25}],
                 usable_in_combat=True, usable_outside_combat=True,
             )
-            info["inventory"].add_item(potion, quantity=2)
-            info["entity"].stats["hp"] = 50
-            info["entity"].stats["max_hp"] = 100
+            info.inventory.add_item(potion, quantity=2)
+            info.entity.stats["hp"] = 50
+            info.entity.stats["max_hp"] = 100
 
             ws.send_json({"action": "use_item", "item_key": "healing_potion"})
             resp = ws.receive_json()
@@ -414,9 +414,9 @@ class TestItemUsage:
 
         with client.websocket_connect("/ws/game") as ws:
             _login(ws)
-            eid = [k for k in game.player_entities
-                   if game.player_entities[k]["entity"].name == "hero"][0]
-            inv = game.player_entities[eid]["inventory"]
+            eid = [k for k in game.player_manager.all_entity_ids()
+                   if game.player_manager.get_session(k).entity.name == "hero"][0]
+            inv = game.player_manager.get_session(eid).inventory
             inv.add_item(ItemDef(
                 item_key="iron_shard", name="Iron Shard",
                 category="material", charges=0, effects=[],

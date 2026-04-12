@@ -10,6 +10,22 @@ from server.combat.instance import CombatInstance
 from server.combat.manager import CombatManager
 
 
+from server.player.manager import PlayerManager
+from server.player.session import PlayerSession
+
+def _ps(d: dict) -> PlayerSession:
+    """Build a PlayerSession from a dict (test helper)."""
+    entity = d["entity"]
+    return PlayerSession(
+        entity=entity,
+        room_key=d["room_key"],
+        db_id=d.get("db_id") or getattr(entity, "player_db_id", 0),
+        inventory=d.get("inventory"),
+        visited_rooms=set(d.get("visited_rooms", [])),
+        pending_level_ups=d.get("pending_level_ups", 0),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -394,14 +410,13 @@ class TestDisconnectCleanup:
         entity2.player_db_id = 2
         entity2.in_combat = True
 
-        game.player_entities = {
-            "player_1": {
-                "entity": entity1,
-                "room_key": "town_square",
-                "inventory": None,
-                "db_id": 1,
-            },
-        }
+        game.player_manager = PlayerManager()
+        game.player_manager.set_session("player_1", _ps({
+            "entity": entity1,
+            "room_key": "town_square",
+            "inventory": None,
+            "db_id": 1,
+        }))
 
         # Mock trade manager
         game.trade_manager.cancel_trades_for.return_value = None

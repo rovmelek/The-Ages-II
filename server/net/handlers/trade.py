@@ -31,10 +31,10 @@ def _resolve_item_key(inventory, name_or_key: str) -> str | None:
 async def _send_trade_update(trade, game: Game) -> None:
     """Send trade_update to both players."""
     # Resolve player names for display
-    player_a_info = game.player_entities.get(trade.player_a)
-    player_b_info = game.player_entities.get(trade.player_b)
-    name_a = player_a_info["entity"].name if player_a_info else trade.player_a
-    name_b = player_b_info["entity"].name if player_b_info else trade.player_b
+    player_a_info = game.player_manager.get_session(trade.player_a)
+    player_b_info = game.player_manager.get_session(trade.player_b)
+    name_a = player_a_info.entity.name if player_a_info else trade.player_a
+    name_b = player_b_info.entity.name if player_b_info else trade.player_b
 
     msg = {
         "type": "trade_update",
@@ -59,12 +59,12 @@ async def handle_trade(
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    player_info = game.player_entities.get(entity_id)
+    player_info = game.player_manager.get_session(entity_id)
     if player_info is None:
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    entity = player_info["entity"]
+    entity = player_info.entity
     args_str = data.get("args", "").strip()
 
     if not args_str:
@@ -114,16 +114,16 @@ async def handle_trade(
             )
             return
 
-        target_info = game.player_entities.get(target_entity_id)
-        if target_info and target_info["entity"].in_combat:
+        target_info = game.player_manager.get_session(target_entity_id)
+        if target_info and target_info.entity.in_combat:
             await websocket.send_json(
                 {"type": "error", "detail": "Target player is in combat"}
             )
             return
 
         # Check self-trade — by entity_id AND player_db_id (catches duplicate login edge case)
-        my_db_id = player_info.get("db_id")
-        target_db_id = target_info.get("db_id") if target_info else None
+        my_db_id = player_info.db_id
+        target_db_id = target_info.db_id if target_info else None
         if target_entity_id == entity_id or (my_db_id is not None and my_db_id == target_db_id):
             await websocket.send_json(
                 {"type": "error", "detail": "Cannot trade with yourself"}
@@ -193,7 +193,7 @@ async def handle_trade(
             )
             return
 
-        inventory = player_info.get("inventory")
+        inventory = player_info.inventory
         if inventory is None:
             await websocket.send_json(
                 {"type": "error", "detail": "No inventory"}
@@ -278,7 +278,7 @@ async def handle_trade(
             return
 
         item_input = sub_args[0]
-        inventory = player_info.get("inventory")
+        inventory = player_info.inventory
 
         # Resolve item key — check inventory first, then check offers directly
         item_key = None
@@ -376,78 +376,82 @@ def _validate_offers(
 
 async def _execute_trade(trade, game: Game) -> None:
     """Execute a validated, atomic trade swap between two players."""
-    trade.state = "executing"
+    lock = game.trade_manager.get_trade_lock(trade.trade_id)
+    async with lock:
+        if trade.state != "both_ready":
+            return  # Already executing or completed
+        trade.state = "executing"
 
-    # --- Pre-validation (no mutations) ---
-    player_a_info = game.player_entities.get(trade.player_a)
-    player_b_info = game.player_entities.get(trade.player_b)
+        # --- Pre-validation (no mutations) ---
+        player_a_info = game.player_manager.get_session(trade.player_a)
+        player_b_info = game.player_manager.get_session(trade.player_b)
 
-    if not player_a_info or not player_b_info:
-        await _fail_trade(trade, game, "Trade failed — a player is no longer online")
-        return
+        if not player_a_info or not player_b_info:
+            await _fail_trade(trade, game, "Trade failed — a player is no longer online")
+            return
 
-    entity_a = player_a_info["entity"]
-    entity_b = player_b_info["entity"]
+        entity_a = player_a_info.entity
+        entity_b = player_b_info.entity
 
-    # Same room check
-    room_a = game.connection_manager.get_room(trade.player_a)
-    room_b = game.connection_manager.get_room(trade.player_b)
-    if room_a != room_b:
-        await _fail_trade(trade, game, "Trade failed — players are no longer in the same room")
-        return
+        # Same room check
+        room_a = game.connection_manager.get_room(trade.player_a)
+        room_b = game.connection_manager.get_room(trade.player_b)
+        if room_a != room_b:
+            await _fail_trade(trade, game, "Trade failed — players are no longer in the same room")
+            return
 
-    # Not in combat
-    if entity_a.in_combat or entity_b.in_combat:
-        await _fail_trade(trade, game, "Trade failed — a player is in combat")
-        return
+        # Not in combat
+        if entity_a.in_combat or entity_b.in_combat:
+            await _fail_trade(trade, game, "Trade failed — a player is in combat")
+            return
 
-    inv_a = player_a_info.get("inventory")
-    inv_b = player_b_info.get("inventory")
-    if inv_a is None or inv_b is None:
-        await _fail_trade(trade, game, "Trade failed — inventory unavailable")
-        return
+        inv_a = player_a_info.inventory
+        inv_b = player_b_info.inventory
+        if inv_a is None or inv_b is None:
+            await _fail_trade(trade, game, "Trade failed — inventory unavailable")
+            return
 
-    # Re-validate all offered items from live inventory
-    name_a = entity_a.name
-    name_b = entity_b.name
-    err = _validate_offers(trade.offers_a, inv_a, name_a)
-    if err:
-        await _fail_trade(trade, game, f"Trade failed — {err}")
-        return
-    err = _validate_offers(trade.offers_b, inv_b, name_b)
-    if err:
-        await _fail_trade(trade, game, f"Trade failed — {err}")
-        return
+        # Re-validate all offered items from live inventory
+        name_a = entity_a.name
+        name_b = entity_b.name
+        err = _validate_offers(trade.offers_a, inv_a, name_a)
+        if err:
+            await _fail_trade(trade, game, f"Trade failed — {err}")
+            return
+        err = _validate_offers(trade.offers_b, inv_b, name_b)
+        if err:
+            await _fail_trade(trade, game, f"Trade failed — {err}")
+            return
 
-    # --- Compute new inventories without mutating Inventory objects ---
-    new_inv_a = dict(inv_a.to_dict())
-    new_inv_b = dict(inv_b.to_dict())
+        # --- Compute new inventories without mutating Inventory objects ---
+        new_inv_a = dict(inv_a.to_dict())
+        new_inv_b = dict(inv_b.to_dict())
 
-    # Transfer A's offers: remove from A, add to B
-    for item_key, qty in trade.offers_a.items():
-        new_inv_a[item_key] = new_inv_a.get(item_key, 0) - qty
-        if new_inv_a[item_key] <= 0:
-            del new_inv_a[item_key]
-        new_inv_b[item_key] = new_inv_b.get(item_key, 0) + qty
+        # Transfer A's offers: remove from A, add to B
+        for item_key, qty in trade.offers_a.items():
+            new_inv_a[item_key] = new_inv_a.get(item_key, 0) - qty
+            if new_inv_a[item_key] <= 0:
+                del new_inv_a[item_key]
+            new_inv_b[item_key] = new_inv_b.get(item_key, 0) + qty
 
-    # Transfer B's offers: remove from B, add to A
-    for item_key, qty in trade.offers_b.items():
-        new_inv_b[item_key] = new_inv_b.get(item_key, 0) - qty
-        if new_inv_b[item_key] <= 0:
-            del new_inv_b[item_key]
-        new_inv_a[item_key] = new_inv_a.get(item_key, 0) + qty
+        # Transfer B's offers: remove from B, add to A
+        for item_key, qty in trade.offers_b.items():
+            new_inv_b[item_key] = new_inv_b.get(item_key, 0) - qty
+            if new_inv_b[item_key] <= 0:
+                del new_inv_b[item_key]
+            new_inv_a[item_key] = new_inv_a.get(item_key, 0) + qty
 
-    # --- Single atomic DB transaction ---
-    db_id_a = player_a_info["db_id"]
-    db_id_b = player_b_info["db_id"]
-    try:
-        async with game.transaction() as session:
-            await player_repo.update_inventory(session, db_id_a, new_inv_a)
-            await player_repo.update_inventory(session, db_id_b, new_inv_b)
-    except Exception:
-        logger.exception("Trade DB commit failed for trade %s", trade.trade_id)
-        await _fail_trade(trade, game, "Trade failed — server error, no items moved")
-        return
+        # --- Single atomic DB transaction ---
+        db_id_a = player_a_info.db_id
+        db_id_b = player_b_info.db_id
+        try:
+            async with game.transaction() as session:
+                await player_repo.update_inventory(session, db_id_a, new_inv_a)
+                await player_repo.update_inventory(session, db_id_b, new_inv_b)
+        except Exception:
+            logger.exception("Trade DB commit failed for trade %s", trade.trade_id)
+            await _fail_trade(trade, game, "Trade failed — server error, no items moved")
+            return
 
     # --- DB commit succeeded — now apply to in-memory Inventory ---
     for item_key, qty in trade.offers_a.items():

@@ -8,6 +8,22 @@ import pytest
 from server.party.manager import Party, PartyManager
 
 
+from server.player.manager import PlayerManager
+from server.player.session import PlayerSession
+
+def _ps(d: dict) -> PlayerSession:
+    """Build a PlayerSession from a dict (test helper)."""
+    entity = d["entity"]
+    return PlayerSession(
+        entity=entity,
+        room_key=d["room_key"],
+        db_id=d.get("db_id") or getattr(entity, "player_db_id", 0),
+        inventory=d.get("inventory"),
+        visited_rooms=set(d.get("visited_rooms", [])),
+        pending_level_ups=d.get("pending_level_ups", 0),
+    )
+
+
 # ---------------------------------------------------------------------------
 # PartyManager unit tests
 # ---------------------------------------------------------------------------
@@ -349,18 +365,17 @@ class TestCleanupPlayerPartyIntegration:
         entity_2.stats = {"hp": 100, "max_hp": 100}
         entity_2.in_combat = False
 
-        game.player_entities = {
-            "player_1": {
-                "entity": entity_1,
-                "room_key": "town_square",
-                "inventory": None,
-            },
-            "player_2": {
-                "entity": entity_2,
-                "room_key": "town_square",
-                "inventory": None,
-            },
-        }
+        game.player_manager = PlayerManager()
+        game.player_manager.set_session("player_1", _ps({
+            "entity": entity_1,
+            "room_key": "town_square",
+            "inventory": None,
+        }))
+        game.player_manager.set_session("player_2", _ps({
+            "entity": entity_2,
+            "room_key": "town_square",
+            "inventory": None,
+        }))
 
         # Create a party
         game.party_manager.create_party("player_1", "player_2")

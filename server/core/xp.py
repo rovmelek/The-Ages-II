@@ -34,8 +34,13 @@ async def grant_xp(
     detail: str,
     game: Any,
     apply_cha_bonus: bool = True,
+    session: Any = None,
 ) -> int:
     """Apply CHA bonus (optional), update stats, persist, send xp_gained message.
+
+    Args:
+        session: Optional DB session. When provided, uses it instead of
+            opening a new transaction (for transaction consolidation).
 
     Returns final XP amount.
     """
@@ -47,8 +52,11 @@ async def grant_xp(
         final_xp = amount
     player_entity.stats["xp"] = player_entity.stats.get("xp", 0) + final_xp
     # Persist
-    async with game.transaction() as session:
+    if session is not None:
         await player_repo.update_stats(session, player_entity.player_db_id, player_entity.stats)
+    else:
+        async with game.transaction() as s:
+            await player_repo.update_stats(s, player_entity.player_db_id, player_entity.stats)
     # Send message (best-effort — broken WebSocket should not crash caller)
     ws = game.connection_manager.get_websocket(entity_id)
     if ws:
@@ -58,16 +66,17 @@ async def grant_xp(
                 "amount": final_xp,
                 "source": source,
                 "detail": detail,
+                "new_total_xp": player_entity.stats["xp"],
             })
         except Exception:
             pass
     # Level-up threshold detection
-    player_info = game.player_entities.get(entity_id)
+    player_info = game.player_manager.get_session(entity_id)
     if player_info is not None:
         new_pending = get_pending_level_ups(player_entity.stats)
-        old_pending = player_info.get("pending_level_ups", 0)
+        old_pending = player_info.pending_level_ups
         if new_pending > old_pending:
-            player_info["pending_level_ups"] = new_pending
+            player_info.pending_level_ups = new_pending
             if old_pending == 0:
                 await send_level_up_available(entity_id, player_entity, game)
     return final_xp
@@ -90,7 +99,9 @@ def get_pending_level_ups(stats: dict) -> int:
 async def send_level_up_available(entity_id: str, player_entity: Any, game: Any) -> None:
     """Send level_up_available message to the player."""
     stats = player_entity.stats
-    new_level = stats.get("level", 1) + 1
+    current_level = stats.get("level", 1)
+    new_level = current_level + 1
+    ssf = settings.STAT_SCALING_FACTOR
     ws = game.connection_manager.get_websocket(entity_id)
     if ws:
         try:
@@ -107,6 +118,16 @@ async def send_level_up_available(entity_id: str, player_entity: Any, game: Any)
                     "charisma": stats.get("charisma", settings.DEFAULT_STAT_VALUE),
                 },
                 "stat_cap": settings.STAT_CAP,
+                "xp_for_next_level": current_level * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
+                "xp_for_current_level": (current_level - 1) * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
+                "stat_effects": {
+                    "strength": f"+{ssf:g} physical damage per point",
+                    "dexterity": f"-{ssf:g} incoming damage per point",
+                    "constitution": f"+{settings.CON_HP_PER_POINT} max HP per point",
+                    "intelligence": f"+{ssf:g} magic damage per point",
+                    "wisdom": f"+{ssf:g} healing per point",
+                    "charisma": f"+{round(settings.XP_CHA_BONUS_PER_POINT * 100)}% XP per point",
+                },
             })
         except Exception:
             pass

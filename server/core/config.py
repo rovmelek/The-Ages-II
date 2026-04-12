@@ -85,7 +85,10 @@ class Settings(BaseSettings):
     @property
     def ALEMBIC_DATABASE_URL(self) -> str:
         """Auto-derived: strip async driver for sync Alembic usage."""
-        return self.DATABASE_URL.replace("sqlite+aiosqlite", "sqlite")
+        url = self.DATABASE_URL
+        url = url.replace("sqlite+aiosqlite", "sqlite")
+        url = url.replace("postgresql+asyncpg", "postgresql")
+        return url
 
     # --- Validators ---
     @field_validator("DEFAULT_BASE_HP")

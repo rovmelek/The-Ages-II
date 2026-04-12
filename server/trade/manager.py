@@ -38,11 +38,18 @@ class TradeManager:
         self._trades: dict[str, Trade] = {}  # trade_id -> Trade
         self._player_trade: dict[str, str] = {}  # entity_id -> trade_id
         self._cooldowns: dict[str, float] = {}  # entity_id -> cooldown_end timestamp
+        self._trade_locks: dict[str, asyncio.Lock] = {}  # trade_id -> Lock
         self._connection_manager = None  # set by Game after init
 
     def set_connection_manager(self, cm) -> None:  # noqa: ANN001
         """Inject ConnectionManager so timeout callbacks can notify players."""
         self._connection_manager = cm
+
+    def get_trade_lock(self, trade_id: str) -> asyncio.Lock:
+        """Return the lock for a trade, creating it lazily if needed."""
+        if trade_id not in self._trade_locks:
+            self._trade_locks[trade_id] = asyncio.Lock()
+        return self._trade_locks[trade_id]
 
     def get_trade(self, entity_id: str) -> Trade | None:
         """Get the active trade for a player, or None."""
@@ -75,6 +82,7 @@ class TradeManager:
         self._player_trade.pop(trade.player_a, None)
         self._player_trade.pop(trade.player_b, None)
         self._trades.pop(trade.trade_id, None)
+        self._trade_locks.pop(trade.trade_id, None)
         self._set_cooldown(trade.player_a)
         self._set_cooldown(trade.player_b)
 

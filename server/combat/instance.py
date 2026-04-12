@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from server.combat.cards.card_def import CardDef
 from server.combat.cards.card_hand import CardHand
+from server.core.config import settings
 
 if TYPE_CHECKING:
     from server.core.effects.registry import EffectRegistry
@@ -27,7 +28,11 @@ class CombatInstance:
     ) -> None:
         self.instance_id = instance_id or str(uuid.uuid4())
         self.mob_name = mob_name
-        self.mob_stats: dict = dict(mob_stats) if mob_stats else {"hp": 50, "max_hp": 50, "attack": 10}
+        self.mob_stats: dict = dict(mob_stats) if mob_stats else {
+            "hp": settings.DEFAULT_BASE_HP,
+            "max_hp": settings.DEFAULT_BASE_HP,
+            "attack": settings.DEFAULT_ATTACK,
+        }
         self.npc_id = npc_id
         self.room_key = room_key
         self.mob_hit_dice = mob_hit_dice

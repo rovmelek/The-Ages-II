@@ -10,7 +10,6 @@ from server.core.config import settings
 from server.core.xp import grant_xp
 from server.player import repo as player_repo
 from server.room import repo as room_repo
-from server.room.objects.npc import get_npc_template
 from server.room.room import DIRECTION_DELTAS
 
 if TYPE_CHECKING:
@@ -26,9 +25,9 @@ def _find_nearby_objects(room, x: int, y: int) -> list[dict]:
         tx, ty = x + dx, y + dy
         if tx < 0 or ty < 0 or tx >= room.width or ty >= room.height:
             continue
-        for obj in room._interactive_objects.values():
-            if obj["x"] == tx and obj["y"] == ty:
-                nearby.append({"id": obj["id"], "type": obj["type"], "direction": direction})
+        for obj in room.interactive_objects.values():
+            if obj.x == tx and obj.y == ty:
+                nearby.append({"id": obj.id, "type": obj.type, "direction": direction})
     return nearby
 
 
@@ -39,13 +38,13 @@ async def handle_move(websocket: WebSocket, data: dict, *, game: Game) -> None:
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    player_info = game.player_entities.get(entity_id)
+    player_info = game.player_manager.get_session(entity_id)
     if player_info is None:
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    entity = player_info["entity"]
-    room_key = player_info["room_key"]
+    entity = player_info.entity
+    room_key = player_info.room_key
 
     # Cannot move while in combat
     if entity.in_combat:
@@ -136,95 +135,104 @@ async def _handle_mob_encounter(
     game: Game,
     entity_id: str,
     entity,
-    player_info: dict,
+    player_info,
     room,
     mob_encounter: dict,
 ) -> None:
     """Initiate combat when player encounters a hostile mob."""
     npc_id = mob_encounter["entity_id"]
     npc = room.get_npc(npc_id)
-    if npc is None or not npc.is_alive or npc.in_combat:
-        return  # Dead or already in combat
+    if npc is None:
+        return
 
-    # Cancel active trade before entering combat
-    await _cancel_trade_for(entity_id, game)
+    # Atomically check-and-set npc.in_combat under lock to prevent TOCTOU races
+    async with npc._lock:
+        if not npc.is_alive or npc.in_combat:
+            return
+        npc.in_combat = True
 
-    room_key = player_info["room_key"]
+    try:
+        # Cancel active trade before entering combat
+        await _cancel_trade_for(entity_id, game)
 
-    # Gather eligible party members in the same room
-    all_player_ids = [entity_id]
-    party = game.party_manager.get_party(entity_id)
-    if party is not None:
-        for mid in party.members:
-            if mid == entity_id:
+        room_key = player_info.room_key
+
+        # Gather eligible party members in the same room
+        all_player_ids = [entity_id]
+        party = game.party_manager.get_party(entity_id)
+        if party is not None:
+            for mid in party.members:
+                if mid == entity_id:
+                    continue
+                mid_info = game.player_manager.get_session(mid)
+                if mid_info is None:
+                    continue
+                if game.connection_manager.get_room(mid) != room_key:
+                    continue
+                if mid_info.entity.in_combat:
+                    continue
+                all_player_ids.append(mid)
+                # Cancel trades for pulled-in party members
+                await _cancel_trade_for(mid, game)
+
+        # Load card definitions for player deck
+        from server.combat.cards.card_def import CardDef
+        from server.combat.cards import card_repo
+
+        card_defs: list[CardDef] = []
+        async with game.transaction() as session:
+            cards = await card_repo.get_all(session)
+            card_defs = [CardDef.from_db(c) for c in cards]
+
+        # Fallback: if no cards in DB, create basic cards
+        if not card_defs:
+            card_defs = [
+                CardDef(card_key=f"basic_attack_{i}", name="Basic Attack", cost=1,
+                        effects=[{"type": "damage", "value": 10}])
+                for i in range(10)
+            ]
+
+        # Create combat instance (store NPC reference for death/release on combat end)
+        mob_stats = dict(npc.stats) if npc.stats else {"hp": 50, "max_hp": 50, "attack": 10}
+        tmpl = game.npc_templates.get(npc.npc_key)
+        mob_hit_dice = tmpl.get("hit_dice", 0) if tmpl else 0
+
+        # Scale mob HP by party size for multi-player combat
+        party_size = len(all_player_ids)
+        if party_size > 1:
+            mob_stats["hp"] *= party_size
+            mob_stats["max_hp"] *= party_size
+
+        # Build player stats map for all participants
+        player_stats_map: dict[str, dict] = {}
+        for pid in all_player_ids:
+            p_info = game.player_manager.get_session(pid)
+            if p_info is None:
                 continue
-            mid_info = game.player_entities.get(mid)
-            if mid_info is None:
-                continue
-            if game.connection_manager.get_room(mid) != room_key:
-                continue
-            if mid_info["entity"].in_combat:
-                continue
-            all_player_ids.append(mid)
-            # Cancel trades for pulled-in party members
-            await _cancel_trade_for(mid, game)
+            p_stats = dict(p_info.entity.stats)
+            p_stats.setdefault("hp", settings.DEFAULT_BASE_HP)
+            p_stats.setdefault("max_hp", p_stats["hp"])
+            p_stats.setdefault("attack", settings.DEFAULT_ATTACK)
+            p_stats.setdefault("shield", 0)
+            player_stats_map[pid] = p_stats
 
-    # Mark NPC as in combat (stays alive until victory)
-    npc.in_combat = True
+        instance = game.combat_manager.start_combat(
+            npc.name, mob_stats, all_player_ids, player_stats_map, card_defs,
+            npc_id=npc_id, room_key=room_key, mob_hit_dice=mob_hit_dice,
+        )
 
-    # Load card definitions for player deck
-    from server.combat.cards.card_def import CardDef
-    from server.combat.cards import card_repo
-
-    card_defs: list[CardDef] = []
-    async with game.transaction() as session:
-        cards = await card_repo.get_all(session)
-        card_defs = [CardDef.from_db(c) for c in cards]
-
-    # Fallback: if no cards in DB, create basic cards
-    if not card_defs:
-        card_defs = [
-            CardDef(card_key=f"basic_attack_{i}", name="Basic Attack", cost=1,
-                    effects=[{"type": "damage", "value": 10}])
-            for i in range(10)
-        ]
-
-    # Create combat instance (store NPC reference for death/release on combat end)
-    mob_stats = dict(npc.stats) if npc.stats else {"hp": 50, "max_hp": 50, "attack": 10}
-    tmpl = get_npc_template(npc.npc_key)
-    mob_hit_dice = tmpl.get("hit_dice", 0) if tmpl else 0
-
-    # Scale mob HP by party size for multi-player combat
-    party_size = len(all_player_ids)
-    if party_size > 1:
-        mob_stats["hp"] *= party_size
-        mob_stats["max_hp"] *= party_size
-
-    # Build player stats map for all participants
-    player_stats_map: dict[str, dict] = {}
-    for pid in all_player_ids:
-        p_info = game.player_entities[pid]
-        p_stats = dict(p_info["entity"].stats)
-        p_stats.setdefault("hp", settings.DEFAULT_BASE_HP)
-        p_stats.setdefault("max_hp", p_stats["hp"])
-        p_stats.setdefault("attack", settings.DEFAULT_ATTACK)
-        p_stats.setdefault("shield", 0)
-        player_stats_map[pid] = p_stats
-
-    instance = game.combat_manager.start_combat(
-        npc.name, mob_stats, all_player_ids, player_stats_map, card_defs,
-        npc_id=npc_id, room_key=room_key, mob_hit_dice=mob_hit_dice,
-    )
-
-    # Mark all participants as in combat and send combat_start
-    state = instance.get_state()
-    for pid in all_player_ids:
-        p_info = game.player_entities.get(pid)
-        if p_info:
-            p_info["entity"].in_combat = True
-        ws = game.connection_manager.get_websocket(pid)
-        if ws:
-            await ws.send_json({"type": "combat_start", **state})
+        # Mark all participants as in combat and send combat_start
+        state = instance.get_state()
+        for pid in all_player_ids:
+            p_info = game.player_manager.get_session(pid)
+            if p_info:
+                p_info.entity.in_combat = True
+            ws = game.connection_manager.get_websocket(pid)
+            if ws:
+                await ws.send_json({"type": "combat_start", **state})
+    except Exception:
+        npc.in_combat = False
+        raise
 
 
 async def _handle_exit_transition(
@@ -232,7 +240,7 @@ async def _handle_exit_transition(
     game: Game,
     entity_id: str,
     entity,
-    player_info: dict,
+    player_info,
     old_room,
     old_room_key: str,
     exit_info: dict,
@@ -302,7 +310,7 @@ async def _handle_exit_transition(
     target_room.add_entity(entity)
 
     # Update tracking
-    player_info["room_key"] = target_room_key
+    player_info.room_key = target_room_key
     game.connection_manager.update_room(entity_id, target_room_key)
 
     # Save position to DB
@@ -315,17 +323,17 @@ async def _handle_exit_transition(
     await websocket.send_json({"type": "room_state", **target_room.get_state()})
 
     # Exploration XP — first visit to this room
-    visited_rooms = player_info.get("visited_rooms", [])
+    visited_rooms = player_info.visited_rooms
     if target_room_key not in visited_rooms:
-        visited_rooms.append(target_room_key)
-        player_info["visited_rooms"] = visited_rooms
+        visited_rooms.add(target_room_key)
+        player_info.visited_rooms = visited_rooms
         await grant_xp(
             entity_id, entity, settings.XP_EXPLORATION_REWARD,
             "exploration", f"Discovered {target_room.name}", game,
         )
         async with game.transaction() as session:
             await player_repo.update_visited_rooms(
-                session, entity.player_db_id, visited_rooms,
+                session, entity.player_db_id, list(visited_rooms),
             )
 
     # Notify other players in new room

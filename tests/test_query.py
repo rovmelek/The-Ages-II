@@ -16,6 +16,22 @@ from server.room.objects.npc import NpcEntity
 from server.room.room import RoomInstance
 
 
+from server.player.session import PlayerSession
+
+
+def _ps(d: dict) -> PlayerSession:
+    """Build a PlayerSession from a dict (test helper)."""
+    entity = d["entity"]
+    return PlayerSession(
+        entity=entity,
+        room_key=d["room_key"],
+        db_id=d.get("db_id") or getattr(entity, "player_db_id", 0),
+        inventory=d.get("inventory"),
+        visited_rooms=set(d.get("visited_rooms", [])),
+        pending_level_ups=d.get("pending_level_ups", 0),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -45,7 +61,7 @@ def _setup_player(game, room, entity_id="player_1", name="alice", x=5, y=5, db_i
     room.add_entity(entity)
     ws = AsyncMock()
     game.connection_manager.connect(entity_id, ws, "test")
-    game.player_entities[entity_id] = {"entity": entity, "room_key": "test", "db_id": db_id}
+    game.player_manager.set_session(entity_id, _ps({"entity": entity, "room_key": "test", "db_id": db_id}))
     game.room_manager._rooms["test"] = room
     return ws, entity
 
@@ -149,7 +165,7 @@ async def test_who_returns_room_players():
 
     bob = PlayerEntity(id="player_2", name="bob", x=3, y=7, player_db_id=2)
     room.add_entity(bob)
-    game.player_entities["player_2"] = {"entity": bob, "room_key": "test", "db_id": 2}
+    game.player_manager.set_session("player_2", _ps({"entity": bob, "room_key": "test", "db_id": 2}))
 
     await handle_who(ws, {"action": "who"}, game=game)
 
@@ -215,8 +231,9 @@ async def test_stats_excludes_transient():
 
     response = ws.send_json.call_args[0][0]
     assert "shield" not in response["stats"]
-    expected_keys = {"hp", "max_hp", "attack", "xp", "xp_next", "level",
-                     "strength", "dexterity", "constitution",
+    expected_keys = {"hp", "max_hp", "attack", "xp", "xp_next",
+                     "xp_for_next_level", "xp_for_current_level",
+                     "level", "strength", "dexterity", "constitution",
                      "intelligence", "wisdom", "charisma"}
     assert set(response["stats"].keys()) == expected_keys
 

@@ -16,6 +16,22 @@ from server.room.manager import RoomManager
 from server.room.room import RoomInstance
 
 
+from server.player.session import PlayerSession
+
+
+def _ps(d: dict) -> PlayerSession:
+    """Build a PlayerSession from a dict (test helper)."""
+    entity = d["entity"]
+    return PlayerSession(
+        entity=entity,
+        room_key=d["room_key"],
+        db_id=d.get("db_id") or getattr(entity, "player_db_id", 0),
+        inventory=d.get("inventory"),
+        visited_rooms=set(d.get("visited_rooms", [])),
+        pending_level_ups=d.get("pending_level_ups", 0),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -154,11 +170,11 @@ async def test_game_shutdown_saves_player_state():
 
     mock_ws = AsyncMock()
     game.connection_manager.connect("player_1", mock_ws, "test_room")
-    game.player_entities["player_1"] = {
+    game.player_manager.set_session("player_1", _ps({
         "entity": entity,
         "room_key": "test_room",
         "db_id": 10,
-    }
+    }))
 
     mock_session = AsyncMock()
     mock_ctx = MagicMock()
@@ -185,7 +201,7 @@ async def test_game_shutdown_saves_player_state():
     # WebSocket closed with 1001 (Going Away)
     mock_ws.close.assert_called_with(code=1001)
     # Player tracking cleared
-    assert len(game.player_entities) == 0
+    assert len(game.player_manager.all_entity_ids()) == 0
     assert game.connection_manager.get_entity_id(mock_ws) is None
 
 
@@ -195,7 +211,7 @@ async def test_game_shutdown_saves_player_state():
 
 @pytest.mark.asyncio
 async def test_handle_disconnect_removes_entity_from_room():
-    """handle_disconnect removes entity from room and player_entities."""
+    """handle_disconnect removes entity from room and player_manager."""
     from server.app import Game
 
     game = Game()
@@ -207,11 +223,11 @@ async def test_handle_disconnect_removes_entity_from_room():
 
     mock_ws = AsyncMock()
     game.connection_manager.connect("player_1", mock_ws, "test_room")
-    game.player_entities["player_1"] = {
+    game.player_manager.set_session("player_1", _ps({
         "entity": entity,
         "room_key": "test_room",
         "db_id": 1,
-    }
+    }))
 
     mock_session = AsyncMock()
     mock_ctx = MagicMock()
@@ -224,7 +240,7 @@ async def test_handle_disconnect_removes_entity_from_room():
     # Entity removed from room
     assert len(room._entities) == 0
     # Player removed from tracking
-    assert "player_1" not in game.player_entities
+    assert not game.player_manager.has_session("player_1")
     # Connection cleaned up
     assert game.connection_manager.get_entity_id(mock_ws) is None
 
@@ -243,11 +259,11 @@ async def test_handle_disconnect_saves_position():
 
     mock_ws = AsyncMock()
     game.connection_manager.connect("player_1", mock_ws, "test_room")
-    game.player_entities["player_1"] = {
+    game.player_manager.set_session("player_1", _ps({
         "entity": entity,
         "room_key": "test_room",
         "db_id": 42,
-    }
+    }))
 
     mock_session = AsyncMock()
     mock_ctx = MagicMock()
@@ -282,8 +298,8 @@ async def test_handle_disconnect_broadcasts_entity_left():
     ws2 = AsyncMock()
     game.connection_manager.connect("player_1", ws1, "test_room")
     game.connection_manager.connect("player_2", ws2, "test_room")
-    game.player_entities["player_1"] = {"entity": entity1, "room_key": "test_room", "db_id": 1}
-    game.player_entities["player_2"] = {"entity": entity2, "room_key": "test_room", "db_id": 2}
+    game.player_manager.set_session("player_1", _ps({"entity": entity1, "room_key": "test_room", "db_id": 1}))
+    game.player_manager.set_session("player_2", _ps({"entity": entity2, "room_key": "test_room", "db_id": 2}))
 
     mock_session = AsyncMock()
     mock_ctx = MagicMock()

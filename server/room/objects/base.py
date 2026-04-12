@@ -19,6 +19,7 @@ class RoomObject:
     category: str  # "static", "interactive", "npc"
     state_scope: str | None = None  # "player" or "room"
     config: dict = field(default_factory=dict)
+    room_key: str = ""
 
 
 class InteractiveObject(RoomObject):

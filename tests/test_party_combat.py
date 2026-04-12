@@ -1,6 +1,7 @@
 """Tests for party combat integration (Story 12.7)."""
 from __future__ import annotations
 
+import asyncio
 import math
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -13,6 +14,23 @@ from server.combat.manager import CombatManager
 from server.core.config import settings
 from server.core.effects.registry import EffectRegistry, create_default_registry
 from server.party.manager import PartyManager
+
+
+from server.player.manager import PlayerManager
+from server.player.session import PlayerSession
+
+
+def _ps(d: dict) -> PlayerSession:
+    """Build a PlayerSession from a dict (test helper)."""
+    entity = d["entity"]
+    return PlayerSession(
+        entity=entity,
+        room_key=d["room_key"],
+        db_id=d.get("db_id") or getattr(entity, "player_db_id", 0),
+        inventory=d.get("inventory"),
+        visited_rooms=set(d.get("visited_rooms", [])),
+        pending_level_ups=d.get("pending_level_ups", 0),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -57,16 +75,20 @@ class _FakeNpc:
         self.in_combat = False
         self.loot_table = "goblin_loot"
         self.stats = {"hp": hp, "max_hp": hp, "attack": 10}
+        self._lock = asyncio.Lock()
 
 
 def _make_game(entities: dict, room_key="test_room"):
     """Build a minimal Game-like mock with real CombatManager and PartyManager."""
     game = MagicMock()
-    game.player_entities = entities
+    game.player_manager = PlayerManager()
+    for eid, session in entities.items():
+        game.player_manager.set_session(eid, session)
     game.combat_manager = CombatManager(effect_registry=create_default_registry())
     game.party_manager = PartyManager()
     game.trade_manager = MagicMock()
     game.trade_manager.cancel_trades_for = MagicMock(return_value=None)
+    game.npc_templates = {"goblin": {"hit_dice": 2}}
 
     # ConnectionManager mock
     cm = MagicMock()
@@ -122,12 +144,12 @@ def _register_entity(game, entity_id, room_key="test_room", db_id=None):
     if db_id is None:
         db_id = int(entity_id.split("_")[1])
     ent = _FakeEntity(id=entity_id, name=f"Player{db_id}", player_db_id=db_id)
-    game.player_entities[entity_id] = {
+    game.player_manager.set_session(entity_id, _ps({
         "entity": ent,
         "room_key": room_key,
         "db_id": db_id,
         "inventory": MagicMock(),
-    }
+    }))
     game.connection_manager._room_map[entity_id] = room_key
     return ent
 
@@ -158,11 +180,10 @@ class TestPartyCombatEncounter:
         from server.net.handlers.movement import _handle_mob_encounter
         ws = game.connection_manager.get_websocket("player_1")
 
-        with patch("server.combat.cards.card_repo.get_all", new_callable=AsyncMock, return_value=[]), \
-             patch("server.net.handlers.movement.get_npc_template", return_value={"hit_dice": 2}):
+        with patch("server.combat.cards.card_repo.get_all", new_callable=AsyncMock, return_value=[]):
             await _handle_mob_encounter(
                 ws, game, "player_1", e1,
-                game.player_entities["player_1"],
+                game.player_manager.get_session("player_1"),
                 game.room_manager.get_room("test_room"),
                 {"entity_id": "npc_1"},
             )
@@ -190,11 +211,10 @@ class TestPartyCombatEncounter:
         from server.net.handlers.movement import _handle_mob_encounter
         ws = game.connection_manager.get_websocket("player_1")
 
-        with patch("server.combat.cards.card_repo.get_all", new_callable=AsyncMock, return_value=[]), \
-             patch("server.net.handlers.movement.get_npc_template", return_value={"hit_dice": 2}):
+        with patch("server.combat.cards.card_repo.get_all", new_callable=AsyncMock, return_value=[]):
             await _handle_mob_encounter(
                 ws, game, "player_1", e1,
-                game.player_entities["player_1"],
+                game.player_manager.get_session("player_1"),
                 game.room_manager.get_room("test_room"),
                 {"entity_id": "npc_1"},
             )
@@ -215,11 +235,10 @@ class TestPartyCombatEncounter:
         from server.net.handlers.movement import _handle_mob_encounter
         ws = game.connection_manager.get_websocket("player_1")
 
-        with patch("server.combat.cards.card_repo.get_all", new_callable=AsyncMock, return_value=[]), \
-             patch("server.net.handlers.movement.get_npc_template", return_value={"hit_dice": 2}):
+        with patch("server.combat.cards.card_repo.get_all", new_callable=AsyncMock, return_value=[]):
             await _handle_mob_encounter(
                 ws, game, "player_1", e1,
-                game.player_entities["player_1"],
+                game.player_manager.get_session("player_1"),
                 game.room_manager.get_room("test_room"),
                 {"entity_id": "npc_1"},
             )
@@ -241,11 +260,10 @@ class TestPartyCombatEncounter:
         from server.net.handlers.movement import _handle_mob_encounter
         ws = game.connection_manager.get_websocket("player_1")
 
-        with patch("server.combat.cards.card_repo.get_all", new_callable=AsyncMock, return_value=[]), \
-             patch("server.net.handlers.movement.get_npc_template", return_value={"hit_dice": 2}):
+        with patch("server.combat.cards.card_repo.get_all", new_callable=AsyncMock, return_value=[]):
             await _handle_mob_encounter(
                 ws, game, "player_1", e1,
-                game.player_entities["player_1"],
+                game.player_manager.get_session("player_1"),
                 game.room_manager.get_room("test_room"),
                 {"entity_id": "npc_1"},
             )
@@ -270,11 +288,10 @@ class TestPartyCombatEncounter:
         from server.net.handlers.movement import _handle_mob_encounter
         ws = game.connection_manager.get_websocket("player_1")
 
-        with patch("server.combat.cards.card_repo.get_all", new_callable=AsyncMock, return_value=[]), \
-             patch("server.net.handlers.movement.get_npc_template", return_value={"hit_dice": 2}):
+        with patch("server.combat.cards.card_repo.get_all", new_callable=AsyncMock, return_value=[]):
             await _handle_mob_encounter(
                 ws, game, "player_1", e1,
-                game.player_entities["player_1"],
+                game.player_manager.get_session("player_1"),
                 game.room_manager.get_room("test_room"),
                 {"entity_id": "npc_1"},
             )
@@ -300,11 +317,10 @@ class TestPartyCombatEncounter:
         from server.net.handlers.movement import _handle_mob_encounter
         ws = game.connection_manager.get_websocket("player_1")
 
-        with patch("server.combat.cards.card_repo.get_all", new_callable=AsyncMock, return_value=[]), \
-             patch("server.net.handlers.movement.get_npc_template", return_value={"hit_dice": 2}):
+        with patch("server.combat.cards.card_repo.get_all", new_callable=AsyncMock, return_value=[]):
             await _handle_mob_encounter(
                 ws, game, "player_1", e1,
-                game.player_entities["player_1"],
+                game.player_manager.get_session("player_1"),
                 game.room_manager.get_room("test_room"),
                 {"entity_id": "npc_1"},
             )
@@ -328,11 +344,10 @@ class TestPartyCombatEncounter:
         from server.net.handlers.movement import _handle_mob_encounter
         ws = game.connection_manager.get_websocket("player_1")
 
-        with patch("server.combat.cards.card_repo.get_all", new_callable=AsyncMock, return_value=[]), \
-             patch("server.net.handlers.movement.get_npc_template", return_value={"hit_dice": 2}):
+        with patch("server.combat.cards.card_repo.get_all", new_callable=AsyncMock, return_value=[]):
             await _handle_mob_encounter(
                 ws, game, "player_1", e1,
-                game.player_entities["player_1"],
+                game.player_manager.get_session("player_1"),
                 game.room_manager.get_room("test_room"),
                 {"entity_id": "npc_1"},
             )
@@ -360,11 +375,11 @@ class TestPartyCombatEncounter:
         from server.net.handlers.movement import _handle_mob_encounter
         ws = game.connection_manager.get_websocket("player_1")
 
-        with patch("server.combat.cards.card_repo.get_all", new_callable=AsyncMock, return_value=[]), \
-             patch("server.net.handlers.movement.get_npc_template", return_value={"hit_dice": 1}):
+        game.npc_templates = {"goblin": {"hit_dice": 1}}
+        with patch("server.combat.cards.card_repo.get_all", new_callable=AsyncMock, return_value=[]):
             await _handle_mob_encounter(
                 ws, game, "player_1", e1,
-                game.player_entities["player_1"],
+                game.player_manager.get_session("player_1"),
                 game.room_manager.get_room("test_room"),
                 {"entity_id": "npc_1"},
             )
@@ -479,17 +494,6 @@ class TestPartyCombatEnd:
         # Verify dead player should be skipped in handler
         p2_combat_hp = instance.participant_stats["player_2"]["hp"]
         assert p2_combat_hp <= 0
-
-    async def test_per_player_loot_independence(self):
-        """Each participant gets their own independent loot roll."""
-        from server.items.loot import generate_loot
-
-        # generate_loot returns a new list each call
-        loot1 = generate_loot("goblin_loot")
-        loot2 = generate_loot("goblin_loot")
-        # They should be equal in content but independent objects
-        assert loot1 == loot2
-        assert loot1 is not loot2
 
     async def test_party_leave_during_combat_stays_in_combat(self):
         """Party leave does not affect active combat — player stays in instance."""
@@ -617,65 +621,6 @@ class TestCheckCombatEndParty:
         # Only player_1 (alive) gets XP
         assert mock_grant.call_count == 1
         assert mock_grant.call_args[0][0] == "player_1"
-
-    async def test_check_combat_end_per_player_loot(self):
-        """Each surviving player gets independent loot roll."""
-        entities = {}
-        game = _make_game(entities)
-        e1 = _register_entity(game, "player_1")
-        e2 = _register_entity(game, "player_2")
-
-        cards = _make_card_defs()
-        p1_stats = {"hp": 100, "max_hp": 100, "attack": 10, "shield": 0, "xp": 0, "level": 1, "charisma": 0}
-        p2_stats = {"hp": 100, "max_hp": 100, "attack": 10, "shield": 0, "xp": 0, "level": 1, "charisma": 0}
-        instance = game.combat_manager.start_combat(
-            "Goblin", {"hp": 1, "max_hp": 1, "attack": 5},
-            ["player_1", "player_2"],
-            {"player_1": p1_stats, "player_2": p2_stats},
-            cards, mob_hit_dice=2, npc_id="npc_1", room_key="test_room",
-        )
-        e1.in_combat = True
-        e2.in_combat = True
-
-        await instance.play_card("player_1", _first_hand_card(instance, "player_1"))
-        assert instance.is_finished
-
-        npc = _FakeNpc()
-        npc.loot_table = "goblin_loot"
-        room = MagicMock()
-        room.get_npc.return_value = npc
-        room.get_state.return_value = {}
-        game.room_manager.get_room.return_value = room
-
-        from server.net.handlers.combat import _check_combat_end
-        loot_calls = []
-        original_generate_loot = generate_loot_fn = None
-        from server.items.loot import generate_loot as gl
-        original_generate_loot = gl
-
-        with patch("server.net.handlers.combat.player_repo") as mock_repo, \
-             patch("server.net.handlers.combat.grant_xp", new_callable=AsyncMock), \
-             patch("server.net.handlers.combat.items_repo") as mock_items_repo, \
-             patch("server.net.handlers.combat.generate_loot", side_effect=lambda k: (loot_calls.append(k), original_generate_loot(k))[1]) as mock_loot:
-            mock_repo.update_stats = AsyncMock()
-            mock_repo.update_inventory = AsyncMock()
-            mock_repo.get_by_id = AsyncMock(return_value=MagicMock(inventory={}))
-            mock_items_repo.get_all = AsyncMock(return_value=[])
-            await _check_combat_end(instance, game)
-
-        # generate_loot called once per surviving participant
-        assert len(loot_calls) == 2
-
-        # Each player's combat_end message has their own loot
-        ws1 = game.connection_manager.get_websocket("player_1")
-        ws2 = game.connection_manager.get_websocket("player_2")
-
-        # Find combat_end messages
-        for call in ws1.send_json.call_args_list:
-            msg = call[0][0]
-            if msg.get("type") == "combat_end":
-                assert "loot" in msg
-                break
 
     async def test_check_combat_end_solo_no_bonus(self):
         """Solo combat: no party XP bonus applied."""

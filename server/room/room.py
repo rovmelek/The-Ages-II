@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from types import MappingProxyType
+
 from server.player.entity import PlayerEntity
+from server.room.objects.base import RoomObject
+from server.room.objects.registry import create_object
 from server.room.tile import TileType, is_walkable
 
 if TYPE_CHECKING:
@@ -43,10 +47,10 @@ class RoomInstance:
         self._npcs: dict[str, NpcEntity] = {}
 
         # Index interactive objects by id for quick lookup
-        self._interactive_objects: dict[str, dict] = {}
+        self._interactive_objects: dict[str, RoomObject] = {}
         for obj in self.objects:
             if obj.get("id") and obj.get("category") == "interactive":
-                self._interactive_objects[obj["id"]] = obj
+                self._interactive_objects[obj["id"]] = create_object(obj, room_key=self.room_key)
 
         # Apply blocking objects to the grid (static and interactive)
         for obj in self.objects:
@@ -76,6 +80,11 @@ class RoomInstance:
                 return (sp["x"], sp["y"])
         return (0, 0)
 
+    def set_tile(self, x: int, y: int, tile_type: int) -> None:
+        """Set the tile type at (x, y)."""
+        if 0 <= x < self.width and 0 <= y < self.height:
+            self._grid[y][x] = tile_type
+
     def is_walkable(self, x: int, y: int) -> bool:
         """Check if tile at (x, y) is walkable and within bounds."""
         if not (0 <= x < self.width and 0 <= y < self.height):
@@ -94,9 +103,24 @@ class RoomInstance:
         """Return all entity IDs currently in the room."""
         return list(self._entities.keys())
 
-    def get_object(self, object_id: str) -> dict | None:
-        """Return an interactive object dict by id, or None."""
+    def get_object(self, object_id: str) -> RoomObject | None:
+        """Return an interactive object by id, or None."""
         return self._interactive_objects.get(object_id)
+
+    @property
+    def entities(self) -> MappingProxyType:
+        """Read-only view of player entities in the room."""
+        return MappingProxyType(self._entities)
+
+    @property
+    def npcs(self) -> MappingProxyType:
+        """Read-only view of NPCs in the room."""
+        return MappingProxyType(self._npcs)
+
+    @property
+    def interactive_objects(self) -> MappingProxyType:
+        """Read-only view of interactive objects in the room."""
+        return MappingProxyType(self._interactive_objects)
 
     # --- NPC management ---
 

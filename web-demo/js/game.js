@@ -512,15 +512,14 @@ function handleLoginSuccess(data) {
   }
 
   // Login flow
-  const entityId = `player_${data.player_id}`;
+  const entityId = data.entity_id || `player_${data.player_id}`;
   gameState.player = {
     id: entityId,
     dbId: data.player_id,
     name: data.username,
     x: 0,
     y: 0,
-    stats: data.stats || { hp: 105, max_hp: 105, attack: 10, xp: 0, level: 1,
-      strength: 1, dexterity: 1, constitution: 1, intelligence: 1, wisdom: 1, charisma: 1 },
+    stats: data.stats || {},
   };
 }
 
@@ -647,7 +646,7 @@ function handleRespawn(data) {
     gameState.player.x = data.x;
     gameState.player.y = data.y;
     if (gameState.player.stats) {
-      gameState.player.stats.hp = gameState.player.stats.max_hp;
+      gameState.player.stats.hp = data.hp;
     }
   }
   gameState.combat = null;
@@ -1168,16 +1167,9 @@ function handleCombatEnd(data) {
       msg += ` | Loot: ${lootStr}`;
     }
     // Mark mob NPC as dead in room state
-    if (gameState.room && gameState.combat && gameState.player) {
-      const mobName = gameState.combat.mob?.name;
-      if (mobName) {
-        const npc = gameState.room.npcs.find(
-          (n) => n.name === mobName && n.is_alive &&
-            Math.abs(n.x - gameState.player.x) <= 1 &&
-            Math.abs(n.y - gameState.player.y) <= 1
-        );
-        if (npc) npc.is_alive = false;
-      }
+    if (gameState.room && data.defeated_npc_id) {
+      const npc = gameState.room.npcs.find((n) => n.id === data.defeated_npc_id);
+      if (npc) npc.is_alive = false;
     }
   } else {
     msg = 'Defeated!';
@@ -1584,8 +1576,8 @@ function updateStatsPanel() {
 
   // XP progress bar
   const level = stats.level || 1;
-  const xpNext = level * 1000;
-  const xpPrev = (level - 1) * 1000;
+  const xpNext = stats.xp_for_next_level ?? 0;
+  const xpPrev = stats.xp_for_current_level ?? 0;
   const currentXp = stats.xp || 0;
   const xpInLevel = currentXp - xpPrev;
   const xpNeeded = xpNext - xpPrev;
@@ -1616,18 +1608,18 @@ function updateStatsPanel() {
 /** @param {Object} stats */
 function updateStatsDetailPanel(stats) {
   const descriptions = {
-    str: { label: 'STR', key: 'strength', desc: (v) => `+${v} physical dmg` },
-    dex: { label: 'DEX', key: 'dexterity', desc: (v) => `-${v} incoming dmg` },
-    con: { label: 'CON', key: 'constitution', desc: (v) => `+${v * 5} max HP` },
-    int: { label: 'INT', key: 'intelligence', desc: (v) => `+${v} magic dmg` },
-    wis: { label: 'WIS', key: 'wisdom', desc: (v) => `+${v} healing` },
-    cha: { label: 'CHA', key: 'charisma', desc: (v) => `+${Math.round(v * 3)}% XP` },
+    str: { label: 'STR', key: 'strength', desc: 'physical dmg bonus' },
+    dex: { label: 'DEX', key: 'dexterity', desc: 'incoming dmg reduction' },
+    con: { label: 'CON', key: 'constitution', desc: 'max HP bonus' },
+    int: { label: 'INT', key: 'intelligence', desc: 'magic dmg bonus' },
+    wis: { label: 'WIS', key: 'wisdom', desc: 'healing bonus' },
+    cha: { label: 'CHA', key: 'charisma', desc: 'XP bonus' },
   };
   for (const [id, info] of Object.entries(descriptions)) {
     const $row = document.getElementById(`stat-${id}`);
     if ($row) {
       const val = stats[info.key] ?? 1;
-      $row.textContent = `${info.label}: ${val} (${info.desc(val)})`;
+      $row.textContent = `${info.label}: ${val} (${info.desc})`;
     }
   }
 }
@@ -1650,7 +1642,7 @@ function toggleStatsPanel(forceOpen) {
 /** @param {Object} data */
 function handleXpGained(data) {
   if (!gameState.player?.stats) return;
-  gameState.player.stats.xp = (gameState.player.stats.xp || 0) + (data.amount || 0);
+  gameState.player.stats.xp = data.new_total_xp ?? ((gameState.player.stats.xp || 0) + (data.amount || 0));
   updateStatsPanel();
   if (data.source !== 'combat') {
     appendChat(`+${data.amount} XP (${data.source}: ${data.detail})`, 'system');
@@ -1672,7 +1664,7 @@ function handleLevelUpComplete(data) {
   const stats = gameState.player.stats;
   stats.level = data.level;
   stats.max_hp = data.new_max_hp;
-  stats.hp = data.new_max_hp;
+  stats.hp = data.new_hp || data.new_max_hp;
   if (data.stat_changes) {
     for (const [key, val] of Object.entries(data.stat_changes)) {
       stats[key] = val;
@@ -1712,13 +1704,14 @@ function showLevelUpModal(data) {
   $confirm.disabled = true;
   $grid.innerHTML = '';
 
+  const serverEffects = data.stat_effects || {};
   const statInfo = {
-    strength: { label: 'STR', effect: 'physical dmg per point' },
-    dexterity: { label: 'DEX', effect: 'incoming dmg reduction per point' },
-    constitution: { label: 'CON', effect: '+5 max HP per point' },
-    intelligence: { label: 'INT', effect: 'magic dmg per point' },
-    wisdom: { label: 'WIS', effect: 'healing per point' },
-    charisma: { label: 'CHA', effect: '+3% XP per point' },
+    strength: { label: 'STR', effect: serverEffects.strength || 'physical dmg per point' },
+    dexterity: { label: 'DEX', effect: serverEffects.dexterity || 'incoming dmg reduction per point' },
+    constitution: { label: 'CON', effect: serverEffects.constitution || 'max HP per point' },
+    intelligence: { label: 'INT', effect: serverEffects.intelligence || 'magic dmg per point' },
+    wisdom: { label: 'WIS', effect: serverEffects.wisdom || 'healing per point' },
+    charisma: { label: 'CHA', effect: serverEffects.charisma || 'XP per point' },
   };
 
   const currentStats = data.current_stats || {};
@@ -1770,8 +1763,8 @@ function toggleLevelUpStat(stat, btn, $feedback, $confirm) {
   if (idx >= 0) {
     gameState.levelUpSelections.splice(idx, 1);
     btn.classList.remove('selected');
-  } else if (gameState.levelUpSelections.length >= 3) {
-    $feedback.textContent = 'Max 3 selected';
+  } else if (gameState.levelUpSelections.length >= (gameState.pendingLevelUp?.choose_stats ?? 3)) {
+    $feedback.textContent = `Max ${gameState.pendingLevelUp?.choose_stats ?? 3} selected`;
     return;
   } else {
     gameState.levelUpSelections.push(stat);

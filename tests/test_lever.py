@@ -13,6 +13,22 @@ from server.room.room import RoomInstance
 from server.room.tile import TileType
 
 
+from server.player.session import PlayerSession
+
+
+def _ps(d: dict) -> PlayerSession:
+    """Build a PlayerSession from a dict (test helper)."""
+    entity = d["entity"]
+    return PlayerSession(
+        entity=entity,
+        room_key=d["room_key"],
+        db_id=d.get("db_id") or getattr(entity, "player_db_id", 0),
+        inventory=d.get("inventory"),
+        visited_rooms=set(d.get("visited_rooms", [])),
+        pending_level_ups=d.get("pending_level_ups", 0),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -50,9 +66,9 @@ def _setup_player(game, room, entity_id="player_1", db_id=1):
     game.room_manager._rooms[room.room_key] = room
     ws = AsyncMock()
     game.connection_manager.connect(entity_id, ws, room.room_key)
-    game.player_entities[entity_id] = {
+    game.player_manager.set_session(entity_id, _ps({
         "entity": entity, "room_key": room.room_key, "db_id": db_id,
-    }
+    }))
     return ws, entity
 
 
@@ -139,7 +155,7 @@ async def test_lever_broadcasts_tile_changed():
     room.add_entity(e2)
     ws2 = AsyncMock()
     game.connection_manager.connect("player_2", ws2, "test")
-    game.player_entities["player_2"] = {"entity": e2, "room_key": "test", "db_id": 2}
+    game.player_manager.set_session("player_2", _ps({"entity": e2, "room_key": "test", "db_id": 2}))
 
     with patch("server.room.objects.lever.get_room_object_state", return_value={}), \
          patch("server.room.objects.lever.set_room_object_state"), \

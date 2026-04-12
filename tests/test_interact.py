@@ -12,6 +12,22 @@ from server.room.objects.registry import OBJECT_HANDLERS, register_object_type
 from server.room.room import RoomInstance
 
 
+from server.player.session import PlayerSession
+
+
+def _ps(d: dict) -> PlayerSession:
+    """Build a PlayerSession from a dict (test helper)."""
+    entity = d["entity"]
+    return PlayerSession(
+        entity=entity,
+        room_key=d["room_key"],
+        db_id=d.get("db_id") or getattr(entity, "player_db_id", 0),
+        inventory=d.get("inventory"),
+        visited_rooms=set(d.get("visited_rooms", [])),
+        pending_level_ups=d.get("pending_level_ups", 0),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -37,9 +53,9 @@ def _setup_player(game, room, entity_id="player_1"):
 
     ws = AsyncMock()
     game.connection_manager.connect(entity_id, ws, room.room_key)
-    game.player_entities[entity_id] = {
+    game.player_manager.set_session(entity_id, _ps({
         "entity": entity, "room_key": room.room_key, "db_id": 1,
-    }
+    }))
     return ws, entity
 
 
@@ -137,7 +153,7 @@ def test_room_get_object_found():
                 "x": 2, "y": 3, "state_scope": "player", "config": {}}]
     room = _make_room_with_objects(objects=objects)
     assert room.get_object("chest_01") is not None
-    assert room.get_object("chest_01")["type"] == "chest"
+    assert room.get_object("chest_01").type == "chest"
 
 
 def test_room_get_object_not_found():

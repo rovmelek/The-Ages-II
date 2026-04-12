@@ -15,7 +15,6 @@ import pytest
 from server.core.scheduler import Scheduler
 from server.room.objects.npc import (
     NpcEntity,
-    _NPC_TEMPLATES,
     create_npc_from_template,
     load_npc_templates,
 )
@@ -38,13 +37,14 @@ def _make_room(room_key: str = "test", width: int = 5, height: int = 5) -> RoomI
     )
 
 
-def _make_game(room: RoomInstance | None = None) -> MagicMock:
+def _make_game(room: RoomInstance | None = None, npc_templates: dict | None = None) -> MagicMock:
     """Create a mock Game object with room_manager, connection_manager, event_bus."""
     game = MagicMock()
     game.connection_manager = MagicMock()
     game.connection_manager.broadcast_to_room = AsyncMock()
     game.event_bus = MagicMock()
     game.event_bus.emit = AsyncMock()
+    game.npc_templates = npc_templates if npc_templates is not None else {}
 
     rm = MagicMock()
     if room:
@@ -55,9 +55,8 @@ def _make_game(room: RoomInstance | None = None) -> MagicMock:
     return game
 
 
-def _load_test_templates():
-    """Load persistent + rare NPC templates into _NPC_TEMPLATES (clears first)."""
-    _NPC_TEMPLATES.clear()
+def _load_test_templates() -> dict[str, dict]:
+    """Load persistent + rare NPC templates and return them."""
     templates = [
         {
             "npc_key": "test_goblin",
@@ -89,7 +88,7 @@ def _load_test_templates():
     with tempfile.TemporaryDirectory() as tmpdir:
         p = Path(tmpdir) / "test.json"
         p.write_text(json.dumps(templates))
-        load_npc_templates(Path(tmpdir))
+        return load_npc_templates(Path(tmpdir))
 
 
 # ---------------------------------------------------------------------------
@@ -99,13 +98,13 @@ def _load_test_templates():
 class TestPersistentRespawn:
     @pytest.fixture(autouse=True)
     def setup(self):
-        _load_test_templates()
+        self.npc_templates = _load_test_templates()
 
     @pytest.mark.asyncio
     async def test_respawn_npc_restores_hp_and_alive(self):
         """AC #1: NPC respawns with full HP and is_alive = True."""
         room = _make_room()
-        npc = create_npc_from_template("test_goblin", "npc_1", 3, 3)
+        npc = create_npc_from_template("test_goblin", "npc_1", 3, 3, templates=self.npc_templates)
         assert npc is not None
         room.add_npc(npc)
 
@@ -113,7 +112,7 @@ class TestPersistentRespawn:
         npc.is_alive = False
         npc.stats["hp"] = 0
 
-        game = _make_game(room)
+        game = _make_game(room, npc_templates=self.npc_templates)
         scheduler = Scheduler()
         scheduler._game = game
 
@@ -132,13 +131,13 @@ class TestPersistentRespawn:
     async def test_schedule_respawn_calls_after_delay(self):
         """AC #1: Respawn fires after configured delay."""
         room = _make_room()
-        npc = create_npc_from_template("test_goblin", "npc_1", 3, 3)
+        npc = create_npc_from_template("test_goblin", "npc_1", 3, 3, templates=self.npc_templates)
         assert npc is not None
         room.add_npc(npc)
         npc.is_alive = False
         npc.stats["hp"] = 0
 
-        game = _make_game(room)
+        game = _make_game(room, npc_templates=self.npc_templates)
         scheduler = Scheduler()
         scheduler._game = game
 
@@ -166,17 +165,17 @@ class TestPersistentRespawn:
 class TestRareSpawnChecks:
     @pytest.fixture(autouse=True)
     def setup(self):
-        _load_test_templates()
+        self.npc_templates = _load_test_templates()
 
     @pytest.mark.asyncio
     async def test_rare_spawn_success(self):
         """AC #2: Rare NPC spawns when roll succeeds."""
         room = _make_room()
-        game = _make_game(room)
+        game = _make_game(room, npc_templates=self.npc_templates)
         scheduler = Scheduler()
         scheduler._game = game
 
-        now = datetime.now(UTC).replace(tzinfo=None)
+        now = datetime.now(UTC)
         mock_cp = MagicMock()
         mock_cp.npc_key = "test_dragon"
         mock_cp.room_key = "test"
@@ -211,11 +210,11 @@ class TestRareSpawnChecks:
     async def test_rare_spawn_roll_fails(self):
         """AC #2: No spawn when roll fails."""
         room = _make_room()
-        game = _make_game(room)
+        game = _make_game(room, npc_templates=self.npc_templates)
         scheduler = Scheduler()
         scheduler._game = game
 
-        now = datetime.now(UTC).replace(tzinfo=None)
+        now = datetime.now(UTC)
         mock_cp = MagicMock()
         mock_cp.npc_key = "test_dragon"
         mock_cp.room_key = "test"
@@ -247,11 +246,11 @@ class TestRareSpawnChecks:
     async def test_max_active_prevents_duplicate(self):
         """AC #4: max_active=1 prevents spawning when already spawned."""
         room = _make_room()
-        game = _make_game(room)
+        game = _make_game(room, npc_templates=self.npc_templates)
         scheduler = Scheduler()
         scheduler._game = game
 
-        now = datetime.now(UTC).replace(tzinfo=None)
+        now = datetime.now(UTC)
         mock_cp = MagicMock()
         mock_cp.npc_key = "test_dragon"
         mock_cp.room_key = "test"
@@ -281,14 +280,14 @@ class TestRareSpawnChecks:
     async def test_not_due_yet_skipped(self):
         """Spawn check not run when next_check_at is in the future."""
         room = _make_room()
-        game = _make_game(room)
+        game = _make_game(room, npc_templates=self.npc_templates)
         scheduler = Scheduler()
         scheduler._game = game
 
         mock_cp = MagicMock()
         mock_cp.npc_key = "test_dragon"
         mock_cp.room_key = "test"
-        mock_cp.next_check_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=6)
+        mock_cp.next_check_at = datetime.now(UTC) + timedelta(hours=6)
         mock_cp.currently_spawned = False
 
         session = AsyncMock()
@@ -361,7 +360,7 @@ class TestCheckpointRecovery:
         scheduler = Scheduler()
         game = _make_game()
         scheduler._game = game
-        now = datetime.now(UTC).replace(tzinfo=None)
+        now = datetime.now(UTC)
 
         mock_cp = MagicMock()
         mock_cp.npc_key = "test_dragon"
@@ -392,13 +391,13 @@ class TestCheckpointRecovery:
 class TestKillNpcHook:
     @pytest.fixture(autouse=True)
     def setup(self):
-        _load_test_templates()
+        self.npc_templates = _load_test_templates()
 
     @pytest.mark.asyncio
     async def test_kill_npc_marks_dead_and_schedules_respawn(self):
         """AC #1: kill_npc sets is_alive=False and schedules respawn for persistent."""
         room = _make_room()
-        npc = create_npc_from_template("test_goblin", "npc_1", 3, 3)
+        npc = create_npc_from_template("test_goblin", "npc_1", 3, 3, templates=self.npc_templates)
         assert npc is not None
         room.add_npc(npc)
 
@@ -410,6 +409,7 @@ class TestKillNpcHook:
         game.room_manager.get_room.return_value = room
         game.scheduler = MagicMock()
         game.scheduler.schedule_respawn = MagicMock()
+        game.npc_templates = self.npc_templates
 
         await game.kill_npc("test", "npc_1")
 
@@ -420,7 +420,7 @@ class TestKillNpcHook:
     async def test_kill_npc_dead_npc_noop(self):
         """Killing an already-dead NPC is a no-op."""
         room = _make_room()
-        npc = create_npc_from_template("test_goblin", "npc_1", 3, 3)
+        npc = create_npc_from_template("test_goblin", "npc_1", 3, 3, templates=self.npc_templates)
         assert npc is not None
         npc.is_alive = False
         room.add_npc(npc)
@@ -431,6 +431,7 @@ class TestKillNpcHook:
         game.room_manager = MagicMock()
         game.room_manager.get_room.return_value = room
         game.scheduler = MagicMock()
+        game.npc_templates = self.npc_templates
 
         await game.kill_npc("test", "npc_1")
         game.scheduler.schedule_respawn.assert_not_called()

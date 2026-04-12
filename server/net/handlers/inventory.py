@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import WebSocket
 
+from server.core.config import settings
 from server.player import repo as player_repo
 
 if TYPE_CHECKING:
@@ -20,12 +21,12 @@ async def handle_inventory(
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    player_info = game.player_entities.get(entity_id)
+    player_info = game.player_manager.get_session(entity_id)
     if player_info is None:
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    inventory = player_info.get("inventory")
+    inventory = player_info.inventory
     if inventory is None:
         await websocket.send_json({"type": "inventory", "items": []})
         return
@@ -45,12 +46,12 @@ async def handle_use_item(
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    player_info = game.player_entities.get(entity_id)
+    player_info = game.player_manager.get_session(entity_id)
     if player_info is None:
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    entity = player_info["entity"]
+    entity = player_info.entity
 
     # Cannot use items this way during combat
     if entity.in_combat:
@@ -64,7 +65,7 @@ async def handle_use_item(
         await websocket.send_json({"type": "error", "detail": "Missing item_key"})
         return
 
-    inventory = player_info.get("inventory")
+    inventory = player_info.inventory
     if inventory is None or not inventory.has_item(item_key):
         await websocket.send_json({"type": "error", "detail": "Item not in inventory"})
         return
@@ -77,8 +78,8 @@ async def handle_use_item(
     # Resolve effects through EffectRegistry
     effect_results = []
     player_stats = entity.stats
-    player_stats.setdefault("hp", 100)
-    player_stats.setdefault("max_hp", 100)
+    player_stats.setdefault("hp", settings.DEFAULT_BASE_HP)
+    player_stats.setdefault("max_hp", settings.DEFAULT_BASE_HP)
     player_stats.setdefault("shield", 0)
     for effect in item_def.effects:
         result = await game.effect_registry.resolve(
@@ -90,7 +91,7 @@ async def handle_use_item(
     inventory.use_charge(item_key)
 
     # Persist inventory and stats to DB
-    db_id = player_info["db_id"]
+    db_id = player_info.db_id
     async with game.transaction() as session:
         await player_repo.update_inventory(session, db_id, inventory.to_dict())
         await player_repo.update_stats(session, db_id, entity.stats)

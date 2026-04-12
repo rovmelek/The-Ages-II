@@ -23,6 +23,7 @@ from server.net.handlers.admin import admin_router
 from server.room.manager import RoomManager
 from server.room.provider import JsonRoomProvider
 from server.party.manager import PartyManager
+from server.player.manager import PlayerManager
 from server.trade.manager import TradeManager
 
 logger = logging.getLogger(__name__)
@@ -42,9 +43,11 @@ class Game:
         self.trade_manager = TradeManager()
         self.trade_manager.set_connection_manager(self.connection_manager)
         self.party_manager = PartyManager()
-        self.player_entities: dict[str, dict] = {}
+        self.player_manager = PlayerManager()
         self.session_factory = _database.async_session
         self._shutting_down: bool = False
+        self.loot_tables: dict = {}
+        self.npc_templates: dict[str, dict] = {}
 
     @asynccontextmanager
     async def transaction(self):
@@ -66,14 +69,14 @@ class Game:
         if npcs_dir.exists():
             from server.room.objects.npc import load_npc_templates
 
-            load_npc_templates(npcs_dir)
+            self.npc_templates = load_npc_templates(npcs_dir)
 
         # Load rooms from JSON into DB, then into memory
         async with self.transaction() as session:
             provider = JsonRoomProvider()
             rooms = await provider.load_rooms(session)
             for room_db in rooms:
-                self.room_manager.load_room(room_db)
+                self.room_manager.load_room(room_db, self.npc_templates)
 
         # Load cards from JSON if any card files exist
         cards_dir = settings.DATA_DIR / "cards"
@@ -93,6 +96,13 @@ class Game:
                 for json_file in sorted(items_dir.glob("*.json")):
                     await item_repo.load_items_from_json(session, json_file)
 
+        # Load loot tables from JSON (after items, since loot references item keys)
+        loot_dir = settings.DATA_DIR / "loot"
+        if loot_dir.exists():
+            from server.items import item_repo
+
+            self.loot_tables = item_repo.load_loot_tables(loot_dir)
+
         self._register_handlers()
         self._register_events()
 
@@ -106,7 +116,7 @@ class Game:
         await self.scheduler.stop()
 
         player_count = 0
-        for entity_id in list(self.player_entities.keys()):
+        for entity_id in self.player_manager.all_entity_ids():
             # Notify before cleanup (WebSocket still mapped)
             ws = self.connection_manager.get_websocket(entity_id)
             if ws:
@@ -128,7 +138,7 @@ class Game:
 
             player_count += 1
 
-        self.player_entities.clear()
+        self.player_manager.clear()
         logger.info("Shutdown complete: %d players saved and disconnected.", player_count)
 
     def _register_handlers(self) -> None:
@@ -250,42 +260,48 @@ class Game:
         npc.in_combat = False
 
         # Schedule respawn for persistent NPCs
-        tmpl = None
-        from server.room.objects.npc import get_npc_template
-
-        tmpl = get_npc_template(npc.npc_key)
+        tmpl = self.npc_templates.get(npc.npc_key)
         if tmpl and tmpl.get("spawn_type") == "persistent":
             respawn_seconds = tmpl.get("spawn_config", {}).get("respawn_seconds", settings.MOB_RESPAWN_SECONDS)
             self.scheduler.schedule_respawn(room_key, npc_id, respawn_seconds)
 
-    async def respawn_player(self, entity_id: str) -> None:
-        """Respawn a defeated player in town_square with full HP."""
-        player_info = self.player_entities.get(entity_id)
-        if player_info is None:
-            return
-
-        entity = player_info["entity"]
-        old_room_key = player_info["room_key"]
-
-        # Restore HP to max
+    @staticmethod
+    def _reset_player_stats(entity) -> None:
+        """Clear combat flags and restore HP to max for respawn."""
         entity.in_combat = False
         entity.stats["hp"] = entity.stats.get("max_hp", settings.DEFAULT_BASE_HP)
         entity.stats.pop("shield", None)
 
-        # Determine spawn point in town_square
-        spawn_room_key = settings.DEFAULT_SPAWN_ROOM
-        spawn_room = self.room_manager.get_room(spawn_room_key)
-        if spawn_room is None:
-            return  # Cannot respawn without town_square
-
+    @staticmethod
+    def _find_spawn_point(spawn_room, spawn_room_key: str, entity_name: str) -> tuple[int, int]:
+        """Find a walkable spawn point in the given room."""
         sx, sy = spawn_room.get_player_spawn()
         if not spawn_room.is_walkable(sx, sy):
             sx, sy = spawn_room.find_first_walkable()
         if not spawn_room.is_walkable(sx, sy):
             logger.warning(
                 "Room %s has no walkable tile; placing %s at (%d, %d)",
-                spawn_room_key, entity.name, sx, sy,
+                spawn_room_key, entity_name, sx, sy,
             )
+        return sx, sy
+
+    async def respawn_player(self, entity_id: str) -> None:
+        """Respawn a defeated player in town_square with full HP."""
+        player_info = self.player_manager.get_session(entity_id)
+        if player_info is None:
+            return
+
+        entity = player_info.entity
+        old_room_key = player_info.room_key
+
+        self._reset_player_stats(entity)
+
+        spawn_room_key = settings.DEFAULT_SPAWN_ROOM
+        spawn_room = self.room_manager.get_room(spawn_room_key)
+        if spawn_room is None:
+            return  # Cannot respawn without town_square
+
+        sx, sy = self._find_spawn_point(spawn_room, spawn_room_key, entity.name)
 
         # Save to DB FIRST (crash recovery: player placed correctly on re-login)
         try:
@@ -312,7 +328,7 @@ class Game:
         entity.x = sx
         entity.y = sy
         spawn_room.add_entity(entity)
-        player_info["room_key"] = spawn_room_key
+        player_info.room_key = spawn_room_key
         self.connection_manager.update_room(entity_id, spawn_room_key)
 
         # Send respawn + new room state to player

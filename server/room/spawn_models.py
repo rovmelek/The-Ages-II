@@ -13,6 +13,6 @@ class SpawnCheckpoint(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     npc_key: Mapped[str] = mapped_column(String(50))
     room_key: Mapped[str] = mapped_column(String(50))
-    last_check_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    next_check_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     currently_spawned: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -8,6 +8,23 @@ import pytest
 from server.net.handlers.party import handle_party, handle_party_chat
 
 
+from server.player.manager import PlayerManager
+from server.player.session import PlayerSession
+
+
+def _ps(d: dict) -> PlayerSession:
+    """Build a PlayerSession from a dict (test helper)."""
+    entity = d["entity"]
+    return PlayerSession(
+        entity=entity,
+        room_key=d["room_key"],
+        db_id=d.get("db_id") or getattr(entity, "player_db_id", 0),
+        inventory=d.get("inventory"),
+        visited_rooms=set(d.get("visited_rooms", [])),
+        pending_level_ups=d.get("pending_level_ups", 0),
+    )
+
+
 def _make_game():
     """Create a minimal mock Game with party, connection, and combat managers."""
     game = MagicMock()
@@ -15,7 +32,7 @@ def _make_game():
     game.connection_manager = MagicMock()
     game.connection_manager.send_to_player = AsyncMock()
     game.combat_manager = MagicMock()
-    game.player_entities = {}
+    game.player_manager = PlayerManager()
     return game
 
 
@@ -31,10 +48,10 @@ def _register_player(game, entity_id: str, name: str, room_key: str = "town_squa
     entity = MagicMock()
     entity.name = name
     entity.id = entity_id
-    game.player_entities[entity_id] = {
+    game.player_manager.set_session(entity_id, _ps({
         "entity": entity,
         "room_key": room_key,
-    }
+    }))
     game.connection_manager.get_entity_id.return_value = entity_id
     return entity
 
@@ -241,12 +258,12 @@ async def test_party_chat_not_logged_in():
 
 
 @pytest.mark.asyncio
-async def test_party_chat_no_player_entities():
-    """Players with no player_entities entry get a not-logged-in error."""
+async def test_party_chat_no_player_session():
+    """Players with no player session get a not-logged-in error."""
     game = _make_game()
     ws = _make_ws("player_1")
     game.connection_manager.get_entity_id.return_value = "player_1"
-    # player_entities is empty — player_1 not registered
+    # player_manager is empty — player_1 not registered
 
     await handle_party_chat(ws, {"message": "hello"}, game=game)
 

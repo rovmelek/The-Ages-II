@@ -27,19 +27,19 @@ async def handle_level_up(
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    player_info = game.player_entities.get(entity_id)
+    player_info = game.player_manager.get_session(entity_id)
     if player_info is None:
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    entity = player_info["entity"]
+    entity = player_info.entity
     if entity.in_combat:
         await websocket.send_json(
             {"type": "error", "detail": "Cannot level up during combat"}
         )
         return
 
-    pending = player_info.get("pending_level_ups", 0)
+    pending = player_info.pending_level_ups
     if pending <= 0:
         await websocket.send_json(
             {"type": "error", "detail": "No level-up available"}
@@ -96,6 +96,7 @@ async def handle_level_up(
         "level": stats["level"],
         "stat_changes": stat_changes,
         "new_max_hp": stats["max_hp"],
+        "new_hp": stats["hp"],
     }
     if skipped:
         response["skipped_at_cap"] = skipped
@@ -103,6 +104,6 @@ async def handle_level_up(
 
     # Check for queued level-ups
     remaining = get_pending_level_ups(stats)
-    player_info["pending_level_ups"] = remaining
+    player_info.pending_level_ups = remaining
     if remaining > 0:
         await send_level_up_available(entity_id, entity, game)

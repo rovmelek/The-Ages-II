@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Any
 
 from server.items.item_def import ItemDef
 from server.items import item_repo as items_repo
-from server.items.loot import generate_loot
 from server.player import repo as player_repo
 from server.room.objects.base import InteractiveObject
 from server.room.objects.state import get_player_object_state, set_player_object_state
@@ -22,7 +21,7 @@ class ChestObject(InteractiveObject):
     """A chest with per-player one-time loot."""
 
     async def interact(self, player_id: int, game: Game) -> dict[str, Any]:
-        room_key = self._get_room_key(game)
+        room_key = self.room_key
 
         async with game.transaction() as session:
             # Check if already opened by this player
@@ -32,7 +31,7 @@ class ChestObject(InteractiveObject):
 
             # Generate loot
             loot_table = self.config.get("loot_table", "common_chest")
-            items = generate_loot(loot_table)
+            items = list(game.loot_tables.get(loot_table, []))
 
             # Add items to player DB inventory
             player = await player_repo.get_by_id(session, player_id)
@@ -45,9 +44,9 @@ class ChestObject(InteractiveObject):
 
             # Sync to runtime inventory (items immediately visible)
             entity_id = f"player_{player_id}"
-            player_info = game.player_entities.get(entity_id)
+            player_info = game.player_manager.get_session(entity_id)
             if player_info:
-                runtime_inv = player_info.get("inventory")
+                runtime_inv = player_info.inventory
                 if runtime_inv:
                     for item in items:
                         item_db = await items_repo.get_by_key(session, item["item_key"])
@@ -59,10 +58,3 @@ class ChestObject(InteractiveObject):
             await set_player_object_state(session, player_id, room_key, self.id, {"opened": True})
 
         return {"status": "looted", "items": items}
-
-    def _get_room_key(self, game: Game) -> str:
-        """Find which room this object belongs to."""
-        for room_key, room in game.room_manager._rooms.items():
-            if room.get_object(self.id) is not None:
-                return room_key
-        return ""

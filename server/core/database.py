@@ -7,7 +7,13 @@ from server.core.config import settings
 class Base(DeclarativeBase):
     pass
 
-engine = create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG)
+_engine_kwargs: dict = {"echo": settings.DEBUG}
+if "sqlite" not in settings.DATABASE_URL:
+    _engine_kwargs["pool_size"] = settings.DB_POOL_SIZE
+    _engine_kwargs["max_overflow"] = settings.DB_MAX_OVERFLOW
+    _engine_kwargs["pool_pre_ping"] = settings.DB_POOL_PRE_PING
+
+engine = create_async_engine(settings.DATABASE_URL, **_engine_kwargs)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

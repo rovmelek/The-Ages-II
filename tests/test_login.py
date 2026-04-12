@@ -75,7 +75,7 @@ def client(test_session_factory, room_manager, connection_manager):
     game.room_manager = original_rm
     game.connection_manager = original_cm
     game.session_factory = original_sf
-    game.player_entities.clear()
+    game.player_manager.clear()
 
 
 def _register_player(client, username="hero", password="secret123"):

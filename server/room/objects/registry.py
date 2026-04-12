@@ -15,7 +15,7 @@ def register_object_type(type_name: str, cls: Type[InteractiveObject]) -> None:
     OBJECT_HANDLERS[type_name] = cls
 
 
-def create_object(obj_dict: dict) -> RoomObject | InteractiveObject:
+def create_object(obj_dict: dict, room_key: str = "") -> RoomObject | InteractiveObject:
     """Build a RoomObject (or InteractiveObject subclass) from a JSON dict."""
     obj_type = obj_dict.get("type", "")
     handler_cls = OBJECT_HANDLERS.get(obj_type)
@@ -29,6 +29,7 @@ def create_object(obj_dict: dict) -> RoomObject | InteractiveObject:
             category=obj_dict.get("category", "interactive"),
             state_scope=obj_dict.get("state_scope"),
             config=obj_dict.get("config", {}),
+            room_key=room_key,
         )
 
     # Fallback: plain RoomObject for unregistered types
@@ -40,4 +41,5 @@ def create_object(obj_dict: dict) -> RoomObject | InteractiveObject:
         category=obj_dict.get("category", "static"),
         state_scope=obj_dict.get("state_scope"),
         config=obj_dict.get("config", {}),
+        room_key=room_key,
     )

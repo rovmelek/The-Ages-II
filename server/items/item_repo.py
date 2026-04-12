@@ -1,6 +1,7 @@
 """Item persistence repository."""
 import json
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +19,15 @@ async def get_all(session: AsyncSession) -> list[Item]:
     """Return all item definitions."""
     result = await session.execute(select(Item))
     return list(result.scalars().all())
+
+
+def load_loot_tables(data_dir: Path) -> dict[str, list[dict[str, Any]]]:
+    """Load loot table definitions from JSON file."""
+    loot_file = data_dir / "loot_tables.json"
+    if not loot_file.exists():
+        return {}
+    with open(loot_file) as f:
+        return json.load(f)
 
 
 async def load_items_from_json(session: AsyncSession, json_path: Path | str) -> list[Item]:

@@ -9,6 +9,7 @@ import pytest
 
 from server.core.config import settings
 from server.items.inventory import Inventory
+from server.player.manager import PlayerManager
 from server.items.item_def import ItemDef
 from server.net.handlers.trade import handle_trade
 from server.trade.manager import TradeManager
@@ -41,7 +42,10 @@ def _make_game(
     game.trade_manager = TradeManager()
     game.connection_manager = MagicMock()
     game.connection_manager.send_to_player = AsyncMock()
-    game.player_entities = players or {}
+    game.player_manager = PlayerManager()
+    if players:
+        for eid, session in players.items():
+            game.player_manager.set_session(eid, session)
 
     # Default: all players in same room
     if same_room:
@@ -353,7 +357,7 @@ class TestTradeHandler:
         ws, eid = _make_ws()
         game = _make_game()
         game.connection_manager.get_entity_id.return_value = eid
-        game.player_entities[eid] = {"entity": _entity(), "room_key": "town_square"}
+        game.player_manager.set_session(eid, _ps({"entity": _entity(), "room_key": "town_square"}))
         await handle_trade(ws, {"args": ""}, game=game)
         ws.send_json.assert_called_with(
             {"type": "error", "detail": "You are not in a trade session"}
@@ -364,7 +368,7 @@ class TestTradeHandler:
         ws, eid = _make_ws()
         game = _make_game()
         game.connection_manager.get_entity_id.return_value = eid
-        game.player_entities[eid] = {"entity": _entity(), "room_key": "town_square"}
+        game.player_manager.set_session(eid, _ps({"entity": _entity(), "room_key": "town_square"}))
         await handle_trade(ws, {"args": "foobar"}, game=game)
         ws.send_json.assert_called_with(
             {"type": "error", "detail": "Unknown trade command. Use /help for options"}
@@ -376,7 +380,7 @@ class TestTradeHandler:
         game = _make_game()
         game.connection_manager.get_entity_id.return_value = eid
         game.connection_manager.get_entity_id_by_name.return_value = None
-        game.player_entities[eid] = {"entity": _entity(), "room_key": "town_square"}
+        game.player_manager.set_session(eid, _ps({"entity": _entity(), "room_key": "town_square"}))
         await handle_trade(ws, {"args": "@nobody"}, game=game)
         ws.send_json.assert_called_with(
             {"type": "error", "detail": "Player 'nobody' is not online"}
@@ -390,8 +394,8 @@ class TestTradeHandler:
         game.connection_manager.get_entity_id_by_name.return_value = "player_2"
         game.connection_manager.get_room.side_effect = lambda x: "town_square" if x == eid else "dark_cave"
         entity = _entity()
-        game.player_entities[eid] = {"entity": entity, "room_key": "town_square"}
-        game.player_entities["player_2"] = {"entity": _entity("Other", "player_2", 2), "room_key": "dark_cave"}
+        game.player_manager.set_session(eid, _ps({"entity": entity, "room_key": "town_square"}))
+        game.player_manager.set_session("player_2", _ps({"entity": _entity("Other", "player_2", 2), "room_key": "dark_cave"}))
         await handle_trade(ws, {"args": "@Other"}, game=game)
         ws.send_json.assert_called_with(
             {"type": "error", "detail": "Player is not in your room"}
@@ -404,8 +408,8 @@ class TestTradeHandler:
         game.connection_manager.get_entity_id.return_value = eid
         game.connection_manager.get_entity_id_by_name.return_value = "player_2"
         entity = _entity(in_combat=True)
-        game.player_entities[eid] = {"entity": entity, "room_key": "town_square"}
-        game.player_entities["player_2"] = {"entity": _entity("Other", "player_2", 2), "room_key": "town_square"}
+        game.player_manager.set_session(eid, _ps({"entity": entity, "room_key": "town_square"}))
+        game.player_manager.set_session("player_2", _ps({"entity": _entity("Other", "player_2", 2), "room_key": "town_square"}))
         await handle_trade(ws, {"args": "@Other"}, game=game)
         ws.send_json.assert_called_with(
             {"type": "error", "detail": "Cannot trade while in combat"}
@@ -418,8 +422,8 @@ class TestTradeHandler:
         game.connection_manager.get_entity_id.return_value = eid
         game.connection_manager.get_entity_id_by_name.return_value = "player_2"
         entity = _entity()
-        game.player_entities[eid] = {"entity": entity, "room_key": "town_square"}
-        game.player_entities["player_2"] = {"entity": _entity("Other", "player_2", 2), "room_key": "town_square"}
+        game.player_manager.set_session(eid, _ps({"entity": entity, "room_key": "town_square"}))
+        game.player_manager.set_session("player_2", _ps({"entity": _entity("Other", "player_2", 2), "room_key": "town_square"}))
         await handle_trade(ws, {"args": "@Other"}, game=game)
         # Should send trade_request to target
         game.connection_manager.send_to_player.assert_called()
@@ -439,8 +443,8 @@ class TestTradeHandler:
         game = _make_game()
         game.connection_manager.get_entity_id.return_value = eid
         entity = _entity()
-        game.player_entities[eid] = {"entity": entity, "room_key": "town_square", "inventory": inv}
-        game.player_entities["player_2"] = {"entity": _entity("Other", "player_2", 2), "room_key": "town_square"}
+        game.player_manager.set_session(eid, _ps({"entity": entity, "room_key": "town_square", "inventory": inv}))
+        game.player_manager.set_session("player_2", _ps({"entity": _entity("Other", "player_2", 2), "room_key": "town_square"}))
 
         # Set up a trade session
         game.connection_manager.get_entity_id_by_name.return_value = "player_2"
@@ -469,8 +473,8 @@ class TestTradeHandler:
         game = _make_game()
         game.connection_manager.get_entity_id.return_value = eid
         entity = _entity()
-        game.player_entities[eid] = {"entity": entity, "room_key": "town_square", "inventory": inv}
-        game.player_entities["player_2"] = {"entity": _entity("Other", "player_2", 2), "room_key": "town_square"}
+        game.player_manager.set_session(eid, _ps({"entity": entity, "room_key": "town_square", "inventory": inv}))
+        game.player_manager.set_session("player_2", _ps({"entity": _entity("Other", "player_2", 2), "room_key": "town_square"}))
 
         # Set up trade session
         game.connection_manager.get_entity_id_by_name.return_value = "player_2"
@@ -494,8 +498,8 @@ class TestTradeHandler:
         game = _make_game()
         game.connection_manager.get_entity_id.return_value = eid
         entity = _entity()
-        game.player_entities[eid] = {"entity": entity, "room_key": "town_square"}
-        game.player_entities["player_2"] = {"entity": _entity("Other", "player_2", 2), "room_key": "town_square"}
+        game.player_manager.set_session(eid, _ps({"entity": entity, "room_key": "town_square"}))
+        game.player_manager.set_session("player_2", _ps({"entity": _entity("Other", "player_2", 2), "room_key": "town_square"}))
 
         game.connection_manager.get_entity_id_by_name.return_value = "player_2"
         await handle_trade(ws, {"args": "@Other"}, game=game)
@@ -575,6 +579,22 @@ class TestItemDefTradeable:
 from server.net.handlers.trade import _execute_trade, _validate_offers
 
 
+from server.player.session import PlayerSession
+
+
+def _ps(d: dict) -> PlayerSession:
+    """Build a PlayerSession from a dict (test helper)."""
+    entity = d["entity"]
+    return PlayerSession(
+        entity=entity,
+        room_key=d["room_key"],
+        db_id=d.get("db_id") or getattr(entity, "player_db_id", 0),
+        inventory=d.get("inventory"),
+        visited_rooms=set(d.get("visited_rooms", [])),
+        pending_level_ups=d.get("pending_level_ups", 0),
+    )
+
+
 class TestTradePreValidation:
     """Test pre-validation in _execute_trade (AC #1)."""
 
@@ -586,11 +606,11 @@ class TestTradePreValidation:
         entity_a = _entity("Alice", "player_1", 1)
         potion = _make_item()
         inv_a = _make_inventory((potion, 5))
-        game.player_entities["player_1"] = {
+        game.player_manager.set_session("player_1", _ps({
             "entity": entity_a, "room_key": "town_square",
             "inventory": inv_a, "db_id": 1,
-        }
-        # player_2 is NOT in game.player_entities
+        }))
+        # player_2 is NOT in game.player_manager
 
         trade = game.trade_manager.initiate_trade("player_1", "player_2")
         trade.timeout_handle.cancel()
@@ -620,14 +640,14 @@ class TestTradePreValidation:
         entity_a = _entity("Alice", "player_1", 1)
         entity_b = _entity("Bob", "player_2", 2)
         potion = _make_item()
-        game.player_entities["player_1"] = {
+        game.player_manager.set_session("player_1", _ps({
             "entity": entity_a, "room_key": "town_square",
             "inventory": _make_inventory((potion, 5)), "db_id": 1,
-        }
-        game.player_entities["player_2"] = {
+        }))
+        game.player_manager.set_session("player_2", _ps({
             "entity": entity_b, "room_key": "dark_cave",
             "inventory": _make_inventory((potion, 3)), "db_id": 2,
-        }
+        }))
 
         trade = game.trade_manager.initiate_trade("player_1", "player_2")
         trade.timeout_handle.cancel()
@@ -651,14 +671,14 @@ class TestTradePreValidation:
         entity_a = _entity("Alice", "player_1", 1, in_combat=True)
         entity_b = _entity("Bob", "player_2", 2)
         potion = _make_item()
-        game.player_entities["player_1"] = {
+        game.player_manager.set_session("player_1", _ps({
             "entity": entity_a, "room_key": "town_square",
             "inventory": _make_inventory((potion, 5)), "db_id": 1,
-        }
-        game.player_entities["player_2"] = {
+        }))
+        game.player_manager.set_session("player_2", _ps({
             "entity": entity_b, "room_key": "town_square",
             "inventory": _make_inventory((potion, 3)), "db_id": 2,
-        }
+        }))
 
         trade = game.trade_manager.initiate_trade("player_1", "player_2")
         trade.timeout_handle.cancel()
@@ -683,14 +703,14 @@ class TestTradePreValidation:
         entity_b = _entity("Bob", "player_2", 2)
         potion = _make_item()
         inv_a = _make_inventory((potion, 1))  # only 1 but offer says 5
-        game.player_entities["player_1"] = {
+        game.player_manager.set_session("player_1", _ps({
             "entity": entity_a, "room_key": "town_square",
             "inventory": inv_a, "db_id": 1,
-        }
-        game.player_entities["player_2"] = {
+        }))
+        game.player_manager.set_session("player_2", _ps({
             "entity": entity_b, "room_key": "town_square",
             "inventory": _make_inventory((potion, 3)), "db_id": 2,
-        }
+        }))
 
         trade = game.trade_manager.initiate_trade("player_1", "player_2")
         trade.timeout_handle.cancel()
@@ -754,14 +774,14 @@ class TestAtomicSwap:
         inv_b = _make_inventory((essence, 3))
         entity_a = _entity("Alice", "player_1", 1)
         entity_b = _entity("Bob", "player_2", 2)
-        game.player_entities["player_1"] = {
+        game.player_manager.set_session("player_1", _ps({
             "entity": entity_a, "room_key": "town_square",
             "inventory": inv_a, "db_id": 1,
-        }
-        game.player_entities["player_2"] = {
+        }))
+        game.player_manager.set_session("player_2", _ps({
             "entity": entity_b, "room_key": "town_square",
             "inventory": inv_b, "db_id": 2,
-        }
+        }))
 
         # Mock session factory for DB persistence
         mock_session = AsyncMock()
@@ -802,14 +822,14 @@ class TestAtomicSwap:
         inv_b = _make_inventory((essence, 3))
         entity_a = _entity("Alice", "player_1", 1)
         entity_b = _entity("Bob", "player_2", 2)
-        game.player_entities["player_1"] = {
+        game.player_manager.set_session("player_1", _ps({
             "entity": entity_a, "room_key": "town_square",
             "inventory": inv_a, "db_id": 1,
-        }
-        game.player_entities["player_2"] = {
+        }))
+        game.player_manager.set_session("player_2", _ps({
             "entity": entity_b, "room_key": "town_square",
             "inventory": inv_b, "db_id": 2,
-        }
+        }))
 
         # Mock session where execute raises to simulate DB failure
         mock_session = AsyncMock()
@@ -856,12 +876,12 @@ class TestSelfTradeByDbId:
         game.connection_manager.get_entity_id_by_name.return_value = "player_2"
         entity_a = _entity("Alice", "player_1", db_id=42)
         entity_b = _entity("Alice_alt", "player_2", db_id=42)  # same db_id!
-        game.player_entities["player_1"] = {
+        game.player_manager.set_session("player_1", _ps({
             "entity": entity_a, "room_key": "town_square", "db_id": 42,
-        }
-        game.player_entities["player_2"] = {
+        }))
+        game.player_manager.set_session("player_2", _ps({
             "entity": entity_b, "room_key": "town_square", "db_id": 42,
-        }
+        }))
         await handle_trade(ws, {"args": "@Alice_alt"}, game=game)
         last_call = ws.send_json.call_args_list[-1][0][0]
         assert last_call["type"] == "error"
@@ -881,12 +901,12 @@ class TestRoomTransitionCancelsTrade:
         entity.y = 0
         entity.player_db_id = 1
         entity.stats = {"level": 1}
-        player_info = {
+        player_info = _ps({
             "entity": entity, "room_key": "town_square",
             "inventory": _make_inventory(), "db_id": 1,
             "visited_rooms": ["town_square"],
-        }
-        game.player_entities["player_1"] = player_info
+        })
+        game.player_manager.set_session("player_1", player_info)
 
         # Set up trade
         trade = game.trade_manager.initiate_trade("player_1", "player_2")
@@ -935,11 +955,11 @@ class TestCombatEntryCancelsTrade:
         from server.net.handlers.movement import _handle_mob_encounter
         game = _make_game()
         entity = _entity("Alice", "player_1", 1)
-        player_info = {
+        player_info = _ps({
             "entity": entity, "room_key": "town_square",
             "inventory": _make_inventory(), "db_id": 1,
-        }
-        game.player_entities["player_1"] = player_info
+        })
+        game.player_manager.set_session("player_1", player_info)
 
         # Set up trade
         trade = game.trade_manager.initiate_trade("player_1", "player_2")
@@ -952,6 +972,7 @@ class TestCombatEntryCancelsTrade:
         npc.stats = {"hp": 50, "max_hp": 50, "attack": 10}
         npc.name = "Goblin"
         npc.npc_key = "goblin"
+        npc._lock = asyncio.Lock()
         room = MagicMock()
         room.get_npc.return_value = npc
 
@@ -979,11 +1000,11 @@ class TestCombatEntryCancelsTrade:
         ws = AsyncMock()
         ws.send_json = AsyncMock()
 
-        with patch("server.net.handlers.movement.get_npc_template", return_value={"hit_dice": 1}):
-            await _handle_mob_encounter(
-                ws, game, "player_1", entity, player_info, room,
-                {"entity_id": "npc_1"},
-            )
+        game.npc_templates = {"goblin": {"hit_dice": 1}}
+        await _handle_mob_encounter(
+            ws, game, "player_1", entity, player_info, room,
+            {"entity_id": "npc_1"},
+        )
 
         # Trade should be cancelled
         assert game.trade_manager.get_trade("player_1") is None

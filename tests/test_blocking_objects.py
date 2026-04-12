@@ -10,6 +10,22 @@ from server.room.room import RoomInstance
 from server.room.tile import TileType
 
 
+from server.player.session import PlayerSession
+
+
+def _ps(d: dict) -> PlayerSession:
+    """Build a PlayerSession from a dict (test helper)."""
+    entity = d["entity"]
+    return PlayerSession(
+        entity=entity,
+        room_key=d["room_key"],
+        db_id=d.get("db_id") or getattr(entity, "player_db_id", 0),
+        inventory=d.get("inventory"),
+        visited_rooms=set(d.get("visited_rooms", [])),
+        pending_level_ups=d.get("pending_level_ups", 0),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Blocking behavior
 # ---------------------------------------------------------------------------
@@ -157,9 +173,9 @@ def _setup_player(game, room, entity_id="player_1"):
     game.room_manager._rooms[room.room_key] = room
     ws = AsyncMock()
     game.connection_manager.connect(entity_id, ws, room.room_key)
-    game.player_entities[entity_id] = {
+    game.player_manager.set_session(entity_id, _ps({
         "entity": entity, "room_key": room.room_key, "db_id": 1,
-    }
+    }))
     return ws, entity
 
 

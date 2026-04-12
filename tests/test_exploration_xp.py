@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from server.net.handlers.movement import _handle_exit_transition
+from server.player.manager import PlayerManager
+from server.player.session import PlayerSession
 
 
 def _make_entity(entity_id="player_1", name="TestPlayer", x=0, y=0, db_id=1):
@@ -50,14 +52,15 @@ def _make_game(entity, room_key="town_square", target_room=None, visited_rooms=N
     game = MagicMock()
     factory, _ = _mock_transaction()
     game.transaction = factory
-    player_info = {
-        "entity": entity,
-        "room_key": room_key,
-        "db_id": entity.player_db_id,
-        "inventory": MagicMock(),
-        "visited_rooms": visited_rooms if visited_rooms is not None else [],
-    }
-    game.player_entities = {entity.id: player_info}
+    player_info = PlayerSession(
+        entity=entity,
+        room_key=room_key,
+        db_id=entity.player_db_id,
+        inventory=MagicMock(),
+        visited_rooms=set(visited_rooms) if visited_rooms is not None else set(),
+    )
+    game.player_manager = PlayerManager()
+    game.player_manager.set_session(entity.id, player_info)
     game.connection_manager.broadcast_to_room = AsyncMock()
     game.connection_manager.send_to_player = AsyncMock()
     game.room_manager.get_room.return_value = target_room
@@ -95,7 +98,7 @@ class TestExplorationXP:
             assert "Dark Cave" in call_args[0][4]
 
             # visited_rooms updated
-            assert "dark_cave" in player_info["visited_rooms"]
+            assert "dark_cave" in player_info.visited_rooms
             mock_repo.update_visited_rooms.assert_called_once()
 
     async def test_repeat_visit_no_xp(self):
@@ -130,14 +133,14 @@ class TestExplorationXP:
         game = MagicMock()
         factory, mock_session = _mock_transaction()
         game.transaction = factory
-        game.player_entities = {
-            entity.id: {
-                "entity": entity,
-                "room_key": "town_square",
-                "inventory": MagicMock(),
-                "visited_rooms": ["town_square", "dark_cave"],
-            }
-        }
+        game.player_manager = PlayerManager()
+        game.player_manager.set_session(entity.id, PlayerSession(
+            entity=entity,
+            room_key="town_square",
+            db_id=entity.player_db_id,
+            inventory=MagicMock(),
+            visited_rooms={"town_square", "dark_cave"},
+        ))
         game.combat_manager.get_player_instance.return_value = None
         game.trade_manager.cancel_trades_for.return_value = None
         game.party_manager.handle_disconnect.return_value = (None, None)
@@ -153,9 +156,11 @@ class TestExplorationXP:
 
             await _cleanup_player(entity.id, game)
 
-            mock_repo.update_visited_rooms.assert_called_once_with(
-                mock_session, entity.player_db_id, ["town_square", "dark_cave"]
-            )
+            mock_repo.update_visited_rooms.assert_called_once()
+            call_args = mock_repo.update_visited_rooms.call_args[0]
+            assert call_args[0] is mock_session
+            assert call_args[1] == entity.player_db_id
+            assert set(call_args[2]) == {"town_square", "dark_cave"}
 
     async def test_visited_rooms_restored_on_login(self):
         """visited_rooms loaded from DB on login and stored in player_info."""
@@ -167,7 +172,7 @@ class TestExplorationXP:
         game.transaction = factory
         game.connection_manager.get_entity_id.return_value = None
         game.connection_manager.get_websocket.return_value = None
-        game.player_entities = {}
+        game.player_manager = PlayerManager()
 
         player_db = MagicMock()
         player_db.id = 1
@@ -196,5 +201,5 @@ class TestExplorationXP:
             await handle_login(ws, {"username": "testuser", "password": "123456"}, game=game)
 
             # Check visited_rooms in player_info
-            assert "player_1" in game.player_entities
-            assert game.player_entities["player_1"]["visited_rooms"] == ["town_square", "dark_cave"]
+            assert game.player_manager.has_session("player_1")
+            assert game.player_manager.get_session("player_1").visited_rooms == {"town_square", "dark_cave"}

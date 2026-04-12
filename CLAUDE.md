@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **The-Ages-II** is a multiplayer room-based dungeon game with turn-based card combat. The project combines:
 - A **BMAD framework** (v6.2.0) for AI-assisted design, planning, and project management workflows
-- A **Python game server** (Epics 1-13 complete, Epic 14 planned; 804 tests passing) built with FastAPI + WebSockets
+- A **Python game server** (Epics 1-14 complete; 807 tests passing) built with FastAPI + WebSockets
 - A **web demo client** (`web-demo/`) — vanilla HTML/CSS/JS proof-of-concept for testing and demos; production client planned in Godot
 
 **Key reference documents:**
@@ -54,9 +54,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Tech Stack
 - **Python 3.11+**, FastAPI, WebSockets (real-time game communication)
 - **SQLAlchemy async** + SQLite (aiosqlite) for persistence
+- **Alembic** for schema migrations (`make db-migrate`); `create_all` still used at startup alongside Alembic
 - **Pydantic** for message schemas and settings
 - **bcrypt** for password hashing
-- **pytest** + **pytest-asyncio** for testing (804 tests)
+- **pytest** + **pytest-asyncio** for testing (807 tests)
 
 ### Commands
 ```bash
@@ -64,6 +65,7 @@ make install                   # install with dev dependencies
 make server                    # start server on port 8000
 make test                      # run tests (uses .venv/bin/python)
 make test-verbose              # run tests with verbose output
+make db-migrate                # run Alembic migrations (alembic upgrade head)
 curl localhost:8000/health     # health check
 open http://localhost:8000     # web demo client (requires server running)
 ```
@@ -95,7 +97,9 @@ open http://localhost:8000     # web demo client (requires server running)
 - **Card Energy System**: Cards cost energy to play (configurable starting energy + per-cycle regen); items and pass are free
 - **Vertical Exits**: Stairs tiles (`STAIRS_UP`/`STAIRS_DOWN`) with `"ascend"`/`"descend"` exit directions (distinct from movement `"up"`/`"down"`)
 - **Admin REST API**: Authenticated endpoints (`/admin/status`, `/admin/shutdown`, `/admin/restart`) protected by `ADMIN_SECRET` env var with `hmac.compare_digest`
-- **Centralized Config**: All game balance values must reference `settings.*` from `server/core/config.py` — never hardcode HP, attack, stat defaults, spawn room, auth lengths, etc. (Epic 14.1)
+- **Centralized Config**: All game balance values must reference `settings.*` from `server/core/config.py` — never hardcode HP, attack, stat defaults, spawn room, auth lengths, etc.
+- **NPC Templates**: `game.npc_templates` is the single source of truth — no module-level global. Pass `templates` dict to `create_npc_from_template()`.
+- **Tile Modification**: Use `RoomInstance.set_tile(x, y, tile_type)` — never access `_grid` directly from outside `room.py`.
 
 ### Directory Structure
 ```
@@ -116,6 +120,7 @@ data/
 ├── cards/         # Card set definitions (JSON)
 ├── items/         # Item definitions (JSON)
 └── npcs/          # NPC template definitions (JSON)
+alembic/           # Alembic migrations (env.py, versions/)
 tests/             # pytest — 49 test files (flat structure)
 web-demo/          # Browser-based test/demo client (vanilla HTML/CSS/JS)
 ├── index.html     # Auth, game viewport, combat overlay

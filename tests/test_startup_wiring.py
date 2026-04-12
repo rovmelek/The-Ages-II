@@ -198,7 +198,7 @@ class TestRoomDataIntegration:
         from server.room.objects.npc import create_npc_from_template, load_npc_templates
         from pathlib import Path
 
-        load_npc_templates(Path("data/npcs"))
+        npc_templates = load_npc_templates(Path("data/npcs"))
 
         with open("data/rooms/dark_cave.json") as f:
             data = json.load(f)
@@ -210,6 +210,7 @@ class TestRoomDataIntegration:
                 f"test_{sp['npc_key']}",
                 sp["x"],
                 sp["y"],
+                templates=npc_templates,
             )
             assert npc is not None, f"NPC template '{sp['npc_key']}' not found"
             assert npc.is_alive is True
@@ -224,7 +225,7 @@ class TestRoomDataIntegration:
         from server.room.models import Room
         from server.room.objects.npc import load_npc_templates
 
-        load_npc_templates(Path("data/npcs"))
+        npc_templates = load_npc_templates(Path("data/npcs"))
 
         with open("data/rooms/dark_cave.json") as f:
             data = json.load(f)
@@ -240,7 +241,7 @@ class TestRoomDataIntegration:
         mock_room.spawn_points = data["spawn_points"]
 
         manager = RoomManager()
-        room_instance = manager.load_room(mock_room)
+        room_instance = manager.load_room(mock_room, npc_templates=npc_templates)
         assert room_instance is not None
         # Should have spawned slime NPCs
         assert len(room_instance._npcs) >= 1

@@ -23,6 +23,23 @@ from server.net.handlers.party import (
 from server.party.manager import PartyManager
 
 
+from server.player.manager import PlayerManager
+from server.player.session import PlayerSession
+
+
+def _ps(d: dict) -> PlayerSession:
+    """Build a PlayerSession from a dict (test helper)."""
+    entity = d["entity"]
+    return PlayerSession(
+        entity=entity,
+        room_key=d["room_key"],
+        db_id=d.get("db_id") or getattr(entity, "player_db_id", 0),
+        inventory=d.get("inventory"),
+        visited_rooms=set(d.get("visited_rooms", [])),
+        pending_level_ups=d.get("pending_level_ups", 0),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -39,7 +56,7 @@ def _make_game():
     game.connection_manager.get_websocket = MagicMock(return_value=MagicMock())
     game.connection_manager.get_room = MagicMock(return_value="town_square")
     game.connection_manager.send_to_player = AsyncMock()
-    game.player_entities = {}
+    game.player_manager = PlayerManager()
     return game
 
 
@@ -54,7 +71,7 @@ def _register_player(game, entity_id: str, name: str):
     entity = MagicMock()
     entity.name = name
     entity.id = entity_id
-    game.player_entities[entity_id] = {"entity": entity, "room_key": "town_square"}
+    game.player_manager.set_session(entity_id, _ps({"entity": entity, "room_key": "town_square"}))
     game.connection_manager.get_entity_id_by_name.side_effect = (
         lambda n: entity_id if n.lower() == name.lower() else _orig_get_by_name(game, n)
     )
@@ -62,9 +79,9 @@ def _register_player(game, entity_id: str, name: str):
 
 
 def _orig_get_by_name(game, name):
-    """Fallback name lookup scanning player_entities."""
-    for eid, info in game.player_entities.items():
-        if info["entity"].name.lower() == name.lower():
+    """Fallback name lookup scanning player sessions."""
+    for eid, info in game.player_manager.all_sessions():
+        if info.entity.name.lower() == name.lower():
             return eid
     return None
 
@@ -72,8 +89,8 @@ def _orig_get_by_name(game, name):
 def _setup_name_resolver(game):
     """Set up name resolver that works across all registered players."""
     def resolver(name):
-        for eid, info in game.player_entities.items():
-            if info["entity"].name.lower() == name.lower():
+        for eid, info in game.player_manager.all_sessions():
+            if info.entity.name.lower() == name.lower():
                 return eid
         return None
     game.connection_manager.get_entity_id_by_name = MagicMock(side_effect=resolver)
@@ -824,7 +841,7 @@ class TestNotLoggedIn:
         game = _make_game()
         ws = _make_ws()
         game.connection_manager.get_entity_id.return_value = "player_1"
-        # Don't register player — player_entities is empty
+        # Don't register player — player_manager is empty
 
         await handle_party(ws, {"args": "invite @Bob"}, game=game)
 

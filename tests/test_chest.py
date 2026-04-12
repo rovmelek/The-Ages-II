@@ -5,12 +5,30 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from pathlib import Path
+
+from server.items.item_repo import load_loot_tables
 from server.net.handlers.interact import handle_interact
 from server.player.entity import PlayerEntity
-from server.items.loot import generate_loot
 from server.room.objects.chest import ChestObject
 from server.room.objects.registry import OBJECT_HANDLERS
 from server.room.room import RoomInstance
+
+
+from server.player.session import PlayerSession
+
+
+def _ps(d: dict) -> PlayerSession:
+    """Build a PlayerSession from a dict (test helper)."""
+    entity = d["entity"]
+    return PlayerSession(
+        entity=entity,
+        room_key=d["room_key"],
+        db_id=d.get("db_id") or getattr(entity, "player_db_id", 0),
+        inventory=d.get("inventory"),
+        visited_rooms=set(d.get("visited_rooms", [])),
+        pending_level_ups=d.get("pending_level_ups", 0),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -28,11 +46,15 @@ def _mock_transaction():
     return mock_factory, mock_session
 
 
+_LOOT_TABLES = load_loot_tables(Path("data/loot"))
+
+
 def _make_game():
     from server.app import Game
     game = Game()
     factory, _ = _mock_transaction()
     game.transaction = factory
+    game.loot_tables = _LOOT_TABLES
     return game
 
 
@@ -62,9 +84,9 @@ def _setup_player(game, room, entity_id="player_1", db_id=1):
 
     ws = AsyncMock()
     game.connection_manager.connect(entity_id, ws, room.room_key)
-    game.player_entities[entity_id] = {
+    game.player_manager.set_session(entity_id, _ps({
         "entity": entity, "room_key": room.room_key, "db_id": db_id,
-    }
+    }))
     return ws, entity
 
 
@@ -75,23 +97,6 @@ def _setup_player(game, room, entity_id="player_1", db_id=1):
 def test_chest_registered_in_object_handlers():
     assert "chest" in OBJECT_HANDLERS
     assert OBJECT_HANDLERS["chest"] is ChestObject
-
-
-# ---------------------------------------------------------------------------
-# Loot generation
-# ---------------------------------------------------------------------------
-
-def test_generate_loot_common():
-    items = generate_loot("common_chest")
-    assert len(items) == 2
-    keys = {i["item_key"] for i in items}
-    assert "healing_potion" in keys
-    assert "iron_shard" in keys
-
-
-def test_generate_loot_unknown_table():
-    items = generate_loot("nonexistent")
-    assert items == []
 
 
 # ---------------------------------------------------------------------------

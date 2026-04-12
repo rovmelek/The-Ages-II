@@ -31,13 +31,13 @@ async def handle_look(
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    player_info = game.player_entities.get(entity_id)
+    player_info = game.player_manager.get_session(entity_id)
     if player_info is None:
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    entity = player_info["entity"]
-    room = game.room_manager.get_room(player_info["room_key"])
+    entity = player_info.entity
+    room = game.room_manager.get_room(player_info.room_key)
     if room is None:
         await websocket.send_json({"type": "error", "detail": "Room not found"})
         return
@@ -47,13 +47,13 @@ async def handle_look(
         tx, ty = entity.x + dx, entity.y + dy
         if tx < 0 or ty < 0 or tx >= room.width or ty >= room.height:
             continue
-        for obj in room._interactive_objects.values():
-            if obj["x"] == tx and obj["y"] == ty:
-                objects.append({"id": obj["id"], "type": obj["type"], "direction": label})
-        for npc in room._npcs.values():
+        for obj in room.interactive_objects.values():
+            if obj.x == tx and obj.y == ty:
+                objects.append({"id": obj.id, "type": obj.type, "direction": label})
+        for npc in room.npcs.values():
             if npc.x == tx and npc.y == ty:
                 npcs.append({"name": npc.name, "alive": npc.is_alive, "direction": label})
-        for e in room._entities.values():
+        for e in room.entities.values():
             if e.id != entity_id and e.x == tx and e.y == ty:
                 players.append({"name": e.name, "direction": label})
 
@@ -74,12 +74,12 @@ async def handle_who(
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    player_info = game.player_entities.get(entity_id)
+    player_info = game.player_manager.get_session(entity_id)
     if player_info is None:
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    room_key = player_info["room_key"]
+    room_key = player_info.room_key
     room = game.room_manager.get_room(room_key)
     if room is None:
         await websocket.send_json({"type": "error", "detail": "Room not found"})
@@ -87,7 +87,7 @@ async def handle_who(
 
     players = [
         {"name": e.name, "x": e.x, "y": e.y}
-        for e in room._entities.values()
+        for e in room.entities.values()
     ]
 
     await websocket.send_json({
@@ -106,12 +106,12 @@ async def handle_stats(
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    player_info = game.player_entities.get(entity_id)
+    player_info = game.player_manager.get_session(entity_id)
     if player_info is None:
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    stats = player_info["entity"].stats
+    stats = player_info.entity.stats
     level = stats.get("level", 1)
     await websocket.send_json({
         "type": "stats_result",
@@ -121,6 +121,8 @@ async def handle_stats(
             "attack": stats.get("attack", settings.DEFAULT_ATTACK),
             "xp": stats.get("xp", 0),
             "xp_next": level * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
+            "xp_for_next_level": level * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
+            "xp_for_current_level": (level - 1) * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
             "level": level,
             "strength": stats.get("strength", settings.DEFAULT_STAT_VALUE),
             "dexterity": stats.get("dexterity", settings.DEFAULT_STAT_VALUE),
@@ -141,7 +143,7 @@ async def handle_help_actions(
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    player_info = game.player_entities.get(entity_id)
+    player_info = game.player_manager.get_session(entity_id)
     if player_info is None:
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
@@ -168,13 +170,12 @@ async def handle_map(
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    player_info = game.player_entities.get(entity_id)
+    player_info = game.player_manager.get_session(entity_id)
     if player_info is None:
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    visited_rooms = player_info.get("visited_rooms", [])
-    visited_set = set(visited_rooms)
+    visited_rooms = player_info.visited_rooms
 
     rooms = []
     connections = []
@@ -186,7 +187,7 @@ async def handle_map(
         rooms.append({"room_key": room.room_key, "name": room.name})
         for exit_info in room.exits:
             target_key = exit_info["target_room"]
-            if target_key in visited_set:
+            if target_key in visited_rooms:
                 target_room = game.room_manager.get_room(target_key)
                 to_name = target_room.name if target_room else "???"
             else:

@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-21
-last_updated: 2026-04-11 (Story 14.1 done)
+last_updated: 2026-04-11 (Epic 15 spec finalized — 8 stories, 6 rounds adversarial review, ISS-021-029 done, 807 tests passing)
 project: The-Ages-II
 project_key: NOKEY
 tracking_system: file-system
@@ -206,14 +206,40 @@ development_status:
   # Phase 2 (Soon): 14.4b → 14.4a → 14.5
   # Phase 3 (Later): 14.6, 14.7
   # Decision gate after Phase 1: evaluate continue cleanup vs pivot to content/Godot
-  epic-14: in-progress
+  epic-14: done
   14-1-centralize-game-parameters-in-config: done
-  14-2-data-driven-loot-tables: backlog
-  14-3a-core-message-enrichment: backlog
-  14-3b-xp-and-stats-display-enrichment: backlog
-  14-4b-room-accessors-and-interact-signature: backlog
-  14-4a-playersession-dataclass: backlog
-  14-5-decompose-handler-business-logic: backlog
-  14-6-concurrency-safety: backlog
-  14-7-database-migration-and-postgresql-readiness: backlog
-  epic-14-retrospective: optional
+  14-2-data-driven-loot-tables: done
+  14-3a-core-message-enrichment: done
+  14-3b-xp-and-stats-display-enrichment: done
+  14-4b-room-accessors-and-interact-signature: done
+  14-4a-playersession-dataclass: done
+  14-5-decompose-handler-business-logic: done
+  14-6-concurrency-safety: done
+  14-7-database-migration-and-postgresql-readiness: done
+  ISS-018-npc-templates-dual-access-pattern: done
+  ISS-019-lever-direct-grid-access: done
+  ISS-020-broken-tests-from-epic-14-refactors: done
+  epic-14-retrospective: done
+
+  # Codebase review findings (adversarial analysis, 2026-04-11)
+  ISS-021-client-hardcoded-fallback-stats: done      # Medium — web-demo had stale hp:105 fallback (server says 100)
+  ISS-022-room-chat-missing-length-check: done       # Medium — room chat lacked MAX_CHAT_MESSAGE_LENGTH enforcement
+  ISS-023-inventory-handler-hardcoded-hp: done        # Medium — inventory handler used hardcoded 100 instead of settings
+  ISS-024-combat-instance-hardcoded-mob-stats: done   # Low-Medium — CombatInstance fallback used hardcoded 50/10
+  ISS-025-client-hardcoded-levelup-cap: done          # Low — client hardcoded max 3 selections, now reads choose_stats from server
+  ISS-026-client-xp-threshold-formula: done            # Medium — client XP formula fallback + server login missing xp thresholds
+  ISS-027-client-stat-effect-descriptions: done        # Low-Medium — removed hardcoded formulas, uses server stat_effects
+  ISS-028-client-npc-proximity-matching: done          # Medium — removed client-side combat range logic
+  ISS-029-dead-code-web-and-websocket: done            # Low — deleted server/web/ and server/net/websocket.py
+
+  # Epic 15: Server Architecture Refinement
+  epic-15: in-progress
+  15-1-player-session-manager: done                 # Core — extract PlayerManager from raw dict on Game
+  15-2-relocate-player-cleanup: backlog                # Core — move _cleanup_player from auth.py to PlayerManager
+  15-3-handler-auth-middleware: backlog                 # Core — @requires_auth decorator eliminates 20x boilerplate
+  15-4-party-invite-state-to-manager: backlog          # Clean — move module-level globals to PartyManager
+  15-5a-extract-effect-targeting: backlog                # Clean — deduplicate effect source/target resolution
+  15-5b-npc-entity-and-dataclass-relocation: backlog    # Clean — relocate NpcEntity, split Trade/Party dataclasses
+  15-6-eventbus-resilience-config-gaps: backlog         # Clean — error isolation, _RARE_CHECK_INTERVAL to config
+  15-7-data-layer-consistency: backlog                  # Clean — SpawnCheckpoint repo, shared upsert utility
+  epic-15-retrospective: optional

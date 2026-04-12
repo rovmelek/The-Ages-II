@@ -5,41 +5,62 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from server.items.loot import LOOT_TABLES, generate_loot
+from pathlib import Path
+
+from server.items.item_repo import load_loot_tables
+
+
+from server.player.session import PlayerSession
+
+
+def _ps(d: dict) -> PlayerSession:
+    """Build a PlayerSession from a dict (test helper)."""
+    entity = d["entity"]
+    return PlayerSession(
+        entity=entity,
+        room_key=d["room_key"],
+        db_id=d.get("db_id") or getattr(entity, "player_db_id", 0),
+        inventory=d.get("inventory"),
+        visited_rooms=set(d.get("visited_rooms", [])),
+        pending_level_ups=d.get("pending_level_ups", 0),
+    )
 
 
 # ---------------------------------------------------------------------------
-# generate_loot unit tests
+# Loot table data validation (data/loot/loot_tables.json)
 # ---------------------------------------------------------------------------
 
-def test_generate_loot_slime():
-    items = generate_loot("slime_loot")
+_LOOT_TABLES = load_loot_tables(Path("data/loot"))
+
+
+def test_loot_table_slime():
+    items = _LOOT_TABLES["slime_loot"]
     assert len(items) == 1
     assert items[0]["item_key"] == "healing_potion"
     assert items[0]["quantity"] == 1
 
 
-def test_generate_loot_goblin():
-    items = generate_loot("goblin_loot")
+def test_loot_table_goblin():
+    items = _LOOT_TABLES["goblin_loot"]
     assert len(items) == 1
     assert items[0]["item_key"] == "iron_shard"
 
 
-def test_generate_loot_bat():
-    items = generate_loot("bat_loot")
+def test_loot_table_bat():
+    items = _LOOT_TABLES["bat_loot"]
     assert len(items) == 1
     assert items[0]["item_key"] == "antidote"
 
 
-def test_generate_loot_troll():
-    items = generate_loot("troll_loot")
+def test_loot_table_troll():
+    items = _LOOT_TABLES["troll_loot"]
     assert len(items) == 2
     keys = {i["item_key"] for i in items}
     assert keys == {"healing_potion", "iron_shard"}
 
 
-def test_generate_loot_dragon():
-    items = generate_loot("dragon_loot")
+def test_loot_table_dragon():
+    items = _LOOT_TABLES["dragon_loot"]
     assert len(items) == 2
     keys = {i["item_key"] for i in items}
     assert keys == {"fire_essence", "healing_potion"}
@@ -47,27 +68,8 @@ def test_generate_loot_dragon():
         assert item["quantity"] == 2
 
 
-def test_generate_loot_unknown_table():
-    items = generate_loot("nonexistent_table")
-    assert items == []
-
-
-def test_generate_loot_empty_string():
-    items = generate_loot("")
-    assert items == []
-
-
-def test_generate_loot_returns_list_copy():
-    """generate_loot returns a copy of the list, not a reference."""
-    items1 = generate_loot("slime_loot")
-    items2 = generate_loot("slime_loot")
-    assert items1 is not items2
-    assert items1 == items2
-
-
-def test_generate_loot_chest_tables_still_work():
-    """Chest loot tables are still available after extraction."""
-    items = generate_loot("common_chest")
+def test_loot_table_common_chest():
+    items = _LOOT_TABLES["common_chest"]
     assert len(items) == 2
     keys = {i["item_key"] for i in items}
     assert "healing_potion" in keys
@@ -78,8 +80,12 @@ def test_all_npc_loot_tables_present():
     """All NPC loot table keys referenced in base_npcs.json exist."""
     expected_keys = {"slime_loot", "goblin_loot", "bat_loot", "troll_loot", "dragon_loot"}
     for key in expected_keys:
-        assert key in LOOT_TABLES, f"Missing loot table: {key}"
-        assert len(LOOT_TABLES[key]) > 0, f"Empty loot table: {key}"
+        assert key in _LOOT_TABLES, f"Missing loot table: {key}"
+        assert len(_LOOT_TABLES[key]) > 0, f"Empty loot table: {key}"
+
+
+def test_loot_table_unknown_key():
+    assert _LOOT_TABLES.get("nonexistent_table") is None
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +107,7 @@ def _make_game():
     game = Game()
     factory, _ = _mock_transaction()
     game.transaction = factory
+    game.loot_tables = _LOOT_TABLES
     return game
 
 
@@ -153,10 +160,10 @@ async def test_combat_victory_includes_loot():
     entity = PlayerEntity(id="player_1", name="hero", x=2, y=2, player_db_id=1)
     entity.stats = {"hp": 80, "max_hp": 100, "attack": 10, "xp": 0}
     inventory = Inventory()
-    game.player_entities["player_1"] = {
+    game.player_manager.set_session("player_1", _ps({
         "entity": entity, "room_key": "test_room",
         "inventory": inventory, "db_id": 1,
-    }
+    }))
 
     ws = AsyncMock()
     game.connection_manager.connect("player_1", ws, "test_room")
@@ -225,10 +232,10 @@ async def test_combat_victory_no_loot_table():
     entity = PlayerEntity(id="player_1", name="hero", x=2, y=2, player_db_id=1)
     entity.stats = {"hp": 80, "max_hp": 100, "attack": 10, "xp": 0}
     inventory = Inventory()
-    game.player_entities["player_1"] = {
+    game.player_manager.set_session("player_1", _ps({
         "entity": entity, "room_key": "test_room",
         "inventory": inventory, "db_id": 1,
-    }
+    }))
 
     ws = AsyncMock()
     game.connection_manager.connect("player_1", ws, "test_room")
@@ -274,10 +281,10 @@ async def test_combat_victory_loot_updates_inventory():
     entity = PlayerEntity(id="player_1", name="hero", x=2, y=2, player_db_id=1)
     entity.stats = {"hp": 80, "max_hp": 100, "attack": 10, "xp": 0}
     inventory = Inventory()
-    game.player_entities["player_1"] = {
+    game.player_manager.set_session("player_1", _ps({
         "entity": entity, "room_key": "test_room",
         "inventory": inventory, "db_id": 1,
-    }
+    }))
 
     ws = AsyncMock()
     game.connection_manager.connect("player_1", ws, "test_room")
@@ -346,10 +353,10 @@ async def test_combat_victory_multi_player_same_loot():
     for eid, db_id, inv in [("player_1", 1, inv1), ("player_2", 2, inv2)]:
         entity = PlayerEntity(id=eid, name=f"hero_{db_id}", x=2, y=2, player_db_id=db_id)
         entity.stats = {"hp": 80, "max_hp": 100, "attack": 10, "xp": 0}
-        game.player_entities[eid] = {
+        game.player_manager.set_session(eid, _ps({
             "entity": entity, "room_key": "test_room",
             "inventory": inv, "db_id": db_id,
-        }
+        }))
         ws = AsyncMock()
         game.connection_manager.connect(eid, ws, "test_room")
 
@@ -402,7 +409,7 @@ async def test_combat_victory_multi_player_same_loot():
 
 @pytest.mark.asyncio
 async def test_combat_victory_disconnected_participant_skipped():
-    """A participant not in player_entities is silently skipped for loot."""
+    """A participant not in player_manager is silently skipped for loot."""
     from server.net.handlers.combat import _check_combat_end
     from server.player.entity import PlayerEntity
     from server.items.inventory import Inventory
@@ -422,14 +429,14 @@ async def test_combat_victory_disconnected_participant_skipped():
     game.room_manager._rooms = {"test_room": room}
     game.room_manager.get_room = MagicMock(return_value=room)
 
-    # Only player_1 is in player_entities — player_2 disconnected
+    # Only player_1 is in player_manager — player_2 disconnected
     inv1 = Inventory()
     entity = PlayerEntity(id="player_1", name="hero", x=2, y=2, player_db_id=1)
     entity.stats = {"hp": 80, "max_hp": 100, "attack": 10, "xp": 0}
-    game.player_entities["player_1"] = {
+    game.player_manager.set_session("player_1", _ps({
         "entity": entity, "room_key": "test_room",
         "inventory": inv1, "db_id": 1,
-    }
+    }))
     ws = AsyncMock()
     game.connection_manager.connect("player_1", ws, "test_room")
 
@@ -488,10 +495,10 @@ async def test_combat_defeat_no_loot():
     entity = PlayerEntity(id="player_1", name="hero", x=2, y=2, player_db_id=1)
     entity.stats = {"hp": 0, "max_hp": 100, "attack": 10, "xp": 0}
     inventory = Inventory()
-    game.player_entities["player_1"] = {
+    game.player_manager.set_session("player_1", _ps({
         "entity": entity, "room_key": "test_room",
         "inventory": inventory, "db_id": 1,
-    }
+    }))
 
     ws = AsyncMock()
     game.connection_manager.connect("player_1", ws, "test_room")

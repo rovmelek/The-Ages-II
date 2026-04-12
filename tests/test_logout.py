@@ -11,6 +11,22 @@ from server.player.entity import PlayerEntity
 from server.room.room import RoomInstance
 
 
+from server.player.session import PlayerSession
+
+
+def _ps(d: dict) -> PlayerSession:
+    """Build a PlayerSession from a dict (test helper)."""
+    entity = d["entity"]
+    return PlayerSession(
+        entity=entity,
+        room_key=d["room_key"],
+        db_id=d.get("db_id") or getattr(entity, "player_db_id", 0),
+        inventory=d.get("inventory"),
+        visited_rooms=set(d.get("visited_rooms", [])),
+        pending_level_ups=d.get("pending_level_ups", 0),
+    )
+
+
 def _mock_transaction():
     """Create a mock async context manager for game.transaction."""
     from unittest.mock import MagicMock
@@ -43,11 +59,11 @@ def _add_player(game, room, entity_id="player_1", name="hero", x=2, y=2, db_id=1
     room.add_entity(entity)
     ws = AsyncMock()
     game.connection_manager.connect(entity_id, ws, "test_room")
-    game.player_entities[entity_id] = {
+    game.player_manager.set_session(entity_id, _ps({
         "entity": entity,
         "room_key": "test_room",
         "db_id": db_id,
-    }
+    }))
     return entity, ws
 
 
@@ -74,7 +90,7 @@ async def test_logout_saves_state_and_removes_player():
     assert len(room._entities) == 0
 
     # Player removed from tracking
-    assert "player_1" not in game.player_entities
+    assert not game.player_manager.has_session("player_1")
     assert game.connection_manager.get_entity_id(ws) is None
 
     # Received logged_out message
@@ -284,7 +300,7 @@ async def test_relogin_same_socket_after_logout():
         # Logout first
         await handle_logout(ws, {}, game=game)
 
-        assert "player_1" not in game.player_entities
+        assert not game.player_manager.has_session("player_1")
         assert game.connection_manager.get_entity_id(ws) is None
 
         # Set up mock for login
@@ -305,7 +321,7 @@ async def test_relogin_same_socket_after_logout():
             await handle_login(ws, {"username": "hero", "password": "secret123"}, game=game)
 
     # Player is logged in again
-    assert "player_1" in game.player_entities
+    assert game.player_manager.has_session("player_1")
     assert game.connection_manager.get_entity_id(ws) == "player_1"
     # Received login_success
     login_calls = [
@@ -345,7 +361,7 @@ async def test_relogin_same_socket_without_logout():
             await handle_login(ws, {"username": "hero", "password": "secret123"}, game=game)
 
     # Player is re-logged in (not disconnected)
-    assert "player_1" in game.player_entities
+    assert game.player_manager.has_session("player_1")
     assert game.connection_manager.get_entity_id(ws) == "player_1"
     # WebSocket was NOT closed
     ws.close.assert_not_called()
@@ -389,9 +405,9 @@ async def test_logout_saves_inventory():
     game, room = _make_game()
     entity, ws = _add_player(game, room)
 
-    # Add inventory to player_entities
+    # Add inventory to player session
     inventory = Inventory()
-    game.player_entities["player_1"]["inventory"] = inventory
+    game.player_manager.get_session("player_1").inventory = inventory
 
     with patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
         await handle_logout(ws, {}, game=game)

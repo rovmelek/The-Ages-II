@@ -10,6 +10,22 @@ from server.player.entity import PlayerEntity
 from server.room.room import RoomInstance
 
 
+from server.player.session import PlayerSession
+
+
+def _ps(d: dict) -> PlayerSession:
+    """Build a PlayerSession from a dict (test helper)."""
+    entity = d["entity"]
+    return PlayerSession(
+        entity=entity,
+        room_key=d["room_key"],
+        db_id=d.get("db_id") or getattr(entity, "player_db_id", 0),
+        inventory=d.get("inventory"),
+        visited_rooms=set(d.get("visited_rooms", [])),
+        pending_level_ups=d.get("pending_level_ups", 0),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -33,8 +49,8 @@ def _setup_two_players(game):
     ws2 = AsyncMock()
     game.connection_manager.connect("player_1", ws1, "test")
     game.connection_manager.connect("player_2", ws2, "test")
-    game.player_entities["player_1"] = {"entity": e1, "room_key": "test", "db_id": 1}
-    game.player_entities["player_2"] = {"entity": e2, "room_key": "test", "db_id": 2}
+    game.player_manager.set_session("player_1", _ps({"entity": e1, "room_key": "test", "db_id": 1}))
+    game.player_manager.set_session("player_2", _ps({"entity": e2, "room_key": "test", "db_id": 2}))
 
     return ws1, ws2
 
@@ -102,7 +118,7 @@ async def test_whisper_not_sent_to_other_players():
     game.room_manager.get_room("test").add_entity(e3)
     ws3 = AsyncMock()
     game.connection_manager.connect("player_3", ws3, "test")
-    game.player_entities["player_3"] = {"entity": e3, "room_key": "test", "db_id": 3}
+    game.player_manager.set_session("player_3", _ps({"entity": e3, "room_key": "test", "db_id": 3}))
 
     await handle_chat(
         ws1,

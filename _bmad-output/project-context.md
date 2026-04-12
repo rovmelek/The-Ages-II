@@ -28,7 +28,7 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 **Constraints:**
 - All server code is async — never use blocking I/O
 - SQLite single-writer — no concurrent write transactions
-- No Alembic yet — schema changes require deleting `game.db` (Alembic planned in Epic 14 Story 14.7)
+- Alembic available — `make db-migrate` runs migrations; `create_all` still used at startup alongside Alembic (ADR-14-21)
 
 ---
 
@@ -50,7 +50,7 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 - DB access: `async with game.transaction() as session:` — auto-commits on success, rolls back on exception
 
 **Player State — Dual Storage:**
-- In-memory: `game.player_entities[entity_id]` → `{"entity": PlayerEntity, "room_key": str, "inventory": Inventory}`
+- In-memory: `game.player_manager.get_session(entity_id)` → `PlayerSession(entity, room_key, db_id, inventory, visited_rooms, pending_level_ups)`
 - DB: Persisted on disconnect, room transition, combat victory, shutdown
 - `PlayerEntity`: `@dataclass` with `id`, `name`, `x`, `y`, `player_db_id`, `stats` dict, `in_combat` bool
 
@@ -120,7 +120,7 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 **Object Hierarchy:**
 - `RoomObject` → `InteractiveObject` (adds `async interact()`) → `Chest`, `Lever`
 - `NpcEntity` is separate — stored in `room._npcs`, not `room.objects`
-- NPC templates: module-level `_NPC_TEMPLATES` dict loaded once at startup
+- NPC templates: `game.npc_templates` is the single source of truth (no module-level global); pass `templates` dict to `create_npc_from_template()`
 
 **Event/Message Patterns:**
 - `EventBus`: async callbacks with `**kwargs`
@@ -165,7 +165,7 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 - NEVER generate custom entity IDs — always `f"player_{db_id}"`
 - NEVER use `MagicMock` for async — always `AsyncMock`
 - NEVER call `session.commit()` outside `Game.transaction()` — repos and handlers must not commit directly
-- NEVER modify `_NPC_TEMPLATES` after startup
+- NEVER modify `game.npc_templates` after startup
 - NEVER use `==` for secret comparison — always `hmac.compare_digest()`
 - NEVER hardcode game balance values (HP, attack, stat defaults, spawn room, auth lengths, etc.) — always reference `settings.*` from `server/core/config.py` (Story 14.1)
 
@@ -240,4 +240,4 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 - Review periodically for outdated rules
 - Remove rules that become obvious over time
 
-Last Updated: 2026-04-11 (Story 14.1 done — All game balance values centralized in Settings class; never hardcode HP/attack/stat defaults/spawn room/auth lengths)
+Last Updated: 2026-04-11 (Epic 14 complete — Alembic migrations, async locks, PlayerSession dataclass, transaction consolidation, NPC templates single source, 807 tests passing)

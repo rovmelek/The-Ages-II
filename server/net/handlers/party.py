@@ -108,9 +108,9 @@ async def _send_party_update(
 
 def _get_entity_name(game: Game, entity_id: str) -> str:
     """Get display name for an entity_id, or the entity_id itself."""
-    info = game.player_entities.get(entity_id)
+    info = game.player_manager.get_session(entity_id)
     if info:
-        return info["entity"].name
+        return info.entity.name
     return entity_id
 
 
@@ -123,7 +123,7 @@ async def handle_party(
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    player_info = game.player_entities.get(entity_id)
+    player_info = game.player_manager.get_session(entity_id)
     if player_info is None:
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
@@ -186,8 +186,8 @@ async def _handle_invite(
         )
         return
 
-    # Validate target has player_entities entry
-    if target_id not in game.player_entities:
+    # Validate target has an active session
+    if not game.player_manager.has_session(target_id):
         await websocket.send_json(
             {"type": "error", "detail": "Player is not online"}
         )
@@ -578,7 +578,7 @@ async def handle_party_chat(
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
 
-    player_info = game.player_entities.get(entity_id)
+    player_info = game.player_manager.get_session(entity_id)
     if player_info is None:
         await websocket.send_json({"type": "error", "detail": "Not logged in"})
         return
@@ -603,7 +603,7 @@ async def handle_party_chat(
         )
         return
 
-    sender_name = player_info["entity"].name
+    sender_name = player_info.entity.name
     msg = {"type": "party_chat", "from": sender_name, "message": message}
 
     for mid in party.members:
