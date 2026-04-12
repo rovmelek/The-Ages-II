@@ -68,6 +68,7 @@ class Settings(BaseSettings):
 
     # --- Chat ---
     MAX_CHAT_MESSAGE_LENGTH: int = 500
+    CHAT_FORMAT: str = "markdown"
 
     # --- Room ---
     MAX_PLAYERS_PER_ROOM: int = 30

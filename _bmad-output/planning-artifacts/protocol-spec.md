@@ -183,6 +183,7 @@
 |-------|------|----------|---------|
 | `type` | `str` | No | `"announcement"` |
 | `message` | `str` | Yes | PydanticUndefined |
+| `format` | `str | None` | No | `"—"` |
 
 ### `combat_end` (CombatEndMessage)
 
@@ -390,6 +391,7 @@
 | `sender` | `str` | Yes | PydanticUndefined |
 | `message` | `str` | Yes | PydanticUndefined |
 | `whisper` | `bool` | Yes | PydanticUndefined |
+| `format` | `str | None` | No | `"—"` |
 
 ### `party_chat` (OutboundPartyChatMessage)
 
@@ -398,6 +400,7 @@
 | `type` | `str` | No | `"party_chat"` |
 | `from_` | `str` | Yes | PydanticUndefined |
 | `message` | `str` | Yes | PydanticUndefined |
+| `format` | `str | None` | No | `"—"` |
 
 ### `party_invite` (PartyInviteMessage)
 

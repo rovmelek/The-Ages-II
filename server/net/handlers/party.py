@@ -494,7 +494,7 @@ async def handle_party_chat(
         return
 
     sender_name = player_info.entity.name
-    msg = {"type": "party_chat", "from": sender_name, "message": message}
+    msg = {"type": "party_chat", "from": sender_name, "message": message, "format": settings.CHAT_FORMAT}
 
     for mid in party.members:
         try:

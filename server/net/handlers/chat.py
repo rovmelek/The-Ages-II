@@ -26,6 +26,11 @@ async def handle_chat(
     if not message:
         return  # Ignore empty messages
 
+    # Strip control characters (null bytes etc.) but keep \n and \r
+    message = message.translate({i: None for i in range(32) if i not in (10, 13)})
+    if not message:
+        return
+
     if len(message) > settings.MAX_CHAT_MESSAGE_LENGTH:
         await websocket.send_json({
             "type": "error",
@@ -49,6 +54,7 @@ async def handle_chat(
             "sender": entity.name,
             "message": message,
             "whisper": True,
+            "format": settings.CHAT_FORMAT,
         }
         await target_ws.send_json(msg)
         await websocket.send_json(msg)  # Copy to sender
@@ -59,5 +65,6 @@ async def handle_chat(
             "sender": entity.name,
             "message": message,
             "whisper": False,
+            "format": settings.CHAT_FORMAT,
         }
         await game.connection_manager.broadcast_to_room(room_key, msg)

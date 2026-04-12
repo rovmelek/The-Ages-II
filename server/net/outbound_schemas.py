@@ -189,6 +189,7 @@ class ServerShutdownMessage(BaseModel):
 class AnnouncementMessage(BaseModel):
     type: str = "announcement"
     message: str
+    format: str | None = None
 
 
 class RespawnMessage(BaseModel):
@@ -287,12 +288,14 @@ class OutboundChatMessage(BaseModel):
     sender: str
     message: str
     whisper: bool
+    format: str | None = None
 
 
 class OutboundPartyChatMessage(BaseModel):
     type: str = "party_chat"
     from_: str = Field(alias="from")
     message: str
+    format: str | None = None
 
     model_config = {"populate_by_name": True}
 

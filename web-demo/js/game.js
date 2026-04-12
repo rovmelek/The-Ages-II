@@ -587,7 +587,7 @@ function handlePartyInviteResponse(data) {
 }
 
 function handlePartyChat(data) {
-  appendChat(`[Party] ${data.from}: ${data.message}`, 'party');
+  appendChat(`[Party] ${data.from}: ${data.message}`, 'party', data.format);
 }
 
 function handleError(data) {
@@ -923,12 +923,12 @@ document.addEventListener('keydown', handleKeyDown);
 function handleChat(data) {
   const cls = data.whisper ? 'chat-whisper' : '';
   const prefix = data.whisper ? '[whisper] ' : '';
-  appendChat(`${prefix}${data.sender}: ${data.message}`, cls || 'chat');
+  appendChat(`${prefix}${data.sender}: ${data.message}`, cls || 'chat', data.format);
 }
 
 /** @param {Object} data */
 function handleAnnouncement(data) {
-  appendChat(`\u2605 ${data.message}`, 'announcement');
+  appendChat(`\u2605 ${data.message}`, 'announcement', data.format);
 }
 
 /** @param {{type: string, objects: Array<{id: string, type: string, direction: string}>}} data */
@@ -1020,10 +1020,41 @@ function handleMapData(data) {
  * @param {string} text
  * @param {string} [type]
  */
-function appendChat(text, type = 'chat') {
+/**
+ * Render safe markdown subset: bold, italic, code, strikethrough.
+ * HTML-escapes FIRST (XSS prevention), then applies markdown regex.
+ * Code spans processed first to prevent formatting inside code.
+ * NO links, NO images (eliminates javascript: URI XSS vectors).
+ */
+function renderSafeMarkdown(text) {
+  // 1. HTML-escape
+  let s = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  // 2. Extract code spans first (prevent formatting inside code)
+  const codeSpans = [];
+  s = s.replace(/`([^`]+)`/g, (_, code) => {
+    codeSpans.push(`<code>${code}</code>`);
+    return `\x00CODE${codeSpans.length - 1}\x00`;
+  });
+  // 3. Apply formatting (order matters: bold before italic)
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  s = s.replace(/~~(.+?)~~/g, '<del>$1</del>');
+  // 4. Reinsert code spans
+  s = s.replace(/\x00CODE(\d+)\x00/g, (_, i) => codeSpans[parseInt(i)]);
+  return s;
+}
+
+function appendChat(text, type = 'chat', format = null) {
   const div = document.createElement('div');
   div.className = `chat-msg chat-${type}`;
-  div.textContent = text;
+  if (format === 'markdown') {
+    div.innerHTML = renderSafeMarkdown(text);
+  } else {
+    div.textContent = text;
+  }
   $chatLog.appendChild(div);
   $chatLog.scrollTop = $chatLog.scrollHeight;
 }

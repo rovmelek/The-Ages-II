@@ -66,7 +66,7 @@ async def test_chat_broadcasts_to_room():
 
     await handle_chat(ws1, {"action": "chat", "message": "Hello!"}, game=game)
 
-    expected = {"type": "chat", "sender": "alice", "message": "Hello!", "whisper": False}
+    expected = {"type": "chat", "sender": "alice", "message": "Hello!", "whisper": False, "format": "markdown"}
     ws1.send_json.assert_called_with(expected)
     ws2.send_json.assert_called_with(expected)
 
@@ -100,7 +100,7 @@ async def test_whisper_to_specific_player():
         game=game,
     )
 
-    expected = {"type": "chat", "sender": "alice", "message": "Secret", "whisper": True}
+    expected = {"type": "chat", "sender": "alice", "message": "Secret", "whisper": True, "format": "markdown"}
     # Target receives whisper
     ws2.send_json.assert_called_with(expected)
     # Sender receives copy

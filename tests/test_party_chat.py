@@ -86,7 +86,7 @@ async def test_party_chat_delivers_to_all_members():
 
     await handle_party_chat(ws, {"message": "Hello team!"}, game=game)
 
-    expected_msg = {"type": "party_chat", "from": "Alice", "message": "Hello team!"}
+    expected_msg = {"type": "party_chat", "from": "Alice", "message": "Hello team!", "format": "markdown"}
     assert game.connection_manager.send_to_player.call_count == 3
     for call in game.connection_manager.send_to_player.call_args_list:
         assert call[0][1] == expected_msg

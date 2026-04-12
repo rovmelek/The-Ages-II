@@ -165,6 +165,7 @@ class TestRareSpawnAnnouncement:
         assert msg == {
             "type": "announcement",
             "message": "Test Dragon has appeared in Test Room!",
+            "format": "markdown",
         }
 
     @pytest.mark.asyncio

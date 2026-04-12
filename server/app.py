@@ -240,6 +240,7 @@ class Game:
                 {
                     "type": "announcement",
                     "message": f"{npc_name} has appeared in {room_name}!",
+                    "format": settings.CHAT_FORMAT,
                 }
             )
 

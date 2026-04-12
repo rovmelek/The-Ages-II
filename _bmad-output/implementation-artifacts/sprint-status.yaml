@@ -257,7 +257,7 @@ development_status:
   16-1-websocket-inbound-schemas: done
   16-2-websocket-outbound-schemas: done
   16-3-protocol-specification-document: done
-  16-12-chat-markdown-support: backlog
+  16-12-chat-markdown-support: done
 
   # Sprint 2 — Refactoring + turn timeout bug fix
   16-4a-refactor-grant-xp: done
