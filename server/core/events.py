@@ -1,8 +1,11 @@
 """EventBus — simple async pub-sub for global announcements and triggers."""
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from typing import Any, Callable, Coroutine
+
+logger = logging.getLogger(__name__)
 
 
 class EventBus:
@@ -18,4 +21,7 @@ class EventBus:
     async def emit(self, event_type: str, **data: Any) -> None:
         """Call all subscribers for *event_type* with keyword data."""
         for cb in self._subscribers.get(event_type, []):
-            await cb(**data)
+            try:
+                await cb(**data)
+            except Exception:
+                logger.exception("EventBus subscriber error on '%s'", event_type)

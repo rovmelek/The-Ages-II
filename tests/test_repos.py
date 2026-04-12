@@ -128,7 +128,6 @@ async def test_room_state_save_and_get(db_session):
 
     state = RoomState(
         room_key="cave",
-        mob_states={"goblin_1": {"alive": True}},
         dynamic_state={"lever_1": "on"},
     )
     saved = await room_repo.save_state(db_session, state)
@@ -136,7 +135,6 @@ async def test_room_state_save_and_get(db_session):
 
     found = await room_repo.get_state(db_session, "cave")
     assert found is not None
-    assert found.mob_states == {"goblin_1": {"alive": True}}
     assert found.dynamic_state == {"lever_1": "on"}
 
 

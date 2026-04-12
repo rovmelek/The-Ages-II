@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     NPC_DEFAULT_HP_MULTIPLIER: int = 10
     NPC_ATTACK_DICE_MULTIPLIER: int = 2
     MOB_RESPAWN_SECONDS: int = 60
+    RARE_CHECK_INTERVAL_SECONDS: int = 60
 
     # --- Auth ---
     MIN_USERNAME_LENGTH: int = 3

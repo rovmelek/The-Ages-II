@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
+from server.core.config import settings
 from server.room.npc import create_npc_from_template
 from server.room.spawn_models import SpawnCheckpoint
 
@@ -23,9 +24,6 @@ def _ensure_aware(dt: datetime | None) -> datetime | None:
     if dt is not None and dt.tzinfo is None:
         return dt.replace(tzinfo=UTC)
     return dt
-
-# How often the rare-spawn loop checks for due spawn rolls (seconds)
-_RARE_CHECK_INTERVAL = 60
 
 
 class Scheduler:
@@ -121,7 +119,7 @@ class Scheduler:
         try:
             while self._running:
                 await self._run_rare_spawn_checks()
-                await asyncio.sleep(_RARE_CHECK_INTERVAL)
+                await asyncio.sleep(settings.RARE_CHECK_INTERVAL_SECONDS)
         except asyncio.CancelledError:
             return
 

@@ -72,6 +72,24 @@ class TestEventBus:
         await bus.emit("event_x")
         assert results == ["x"]
 
+    @pytest.mark.asyncio
+    async def test_emit_subscriber_error_isolation(self):
+        """A failing subscriber must not prevent remaining subscribers from running."""
+        bus = EventBus()
+        calls = []
+
+        async def bad_handler(**data):
+            raise RuntimeError("boom")
+
+        async def good_handler(**data):
+            calls.append("ok")
+
+        bus.subscribe("evt", bad_handler)
+        bus.subscribe("evt", good_handler)
+        await bus.emit("evt")
+
+        assert calls == ["ok"]
+
 
 # ---------------------------------------------------------------------------
 # ConnectionManager.broadcast_to_all

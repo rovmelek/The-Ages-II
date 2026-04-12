@@ -25,7 +25,6 @@ class RoomState(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     room_key: Mapped[str] = mapped_column(String(50), unique=True, index=True)
-    mob_states: Mapped[dict] = mapped_column(JSON, default=dict)
     dynamic_state: Mapped[dict] = mapped_column(JSON, default=dict)
 
 

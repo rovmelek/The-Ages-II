@@ -79,7 +79,7 @@ async def set_room_object_state(
     )
     room_state = result.scalar_one_or_none()
     if room_state is None:
-        room_state = RoomState(room_key=room_key, mob_states={}, dynamic_state={})
+        room_state = RoomState(room_key=room_key, dynamic_state={})
         session.add(room_state)
 
     # Update the specific object's state within the JSON
