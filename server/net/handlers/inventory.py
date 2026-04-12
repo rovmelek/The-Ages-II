@@ -7,6 +7,7 @@ from fastapi import WebSocket
 
 from server.core.config import settings
 from server.net.auth_middleware import requires_auth
+from server.net.schemas import with_request_id
 from server.player import repo as player_repo
 from server.player.session import PlayerSession
 
@@ -22,13 +23,13 @@ async def handle_inventory(
     """Handle the 'inventory' action — return player's inventory."""
     inventory = player_info.inventory
     if inventory is None:
-        await websocket.send_json({"type": "inventory", "items": []})
+        await websocket.send_json(with_request_id({"type": "inventory", "items": []}, data))
         return
 
-    await websocket.send_json({
+    await websocket.send_json(with_request_id({
         "type": "inventory",
         "items": inventory.get_inventory(),
-    })
+    }, data))
 
 
 @requires_auth
@@ -42,7 +43,7 @@ async def handle_use_item(
     # Cannot use items this way during combat
     if entity.in_combat:
         await websocket.send_json(
-            {"type": "error", "detail": "Cannot use items this way during combat"}
+            with_request_id({"type": "error", "detail": "Cannot use items this way during combat"}, data)
         )
         return
 
@@ -50,12 +51,12 @@ async def handle_use_item(
 
     inventory = player_info.inventory
     if inventory is None or not inventory.has_item(item_key):
-        await websocket.send_json({"type": "error", "detail": "Item not in inventory"})
+        await websocket.send_json(with_request_id({"type": "error", "detail": "Item not in inventory"}, data))
         return
 
     item_def = inventory.get_item(item_key)
     if not item_def.usable_outside_combat:
-        await websocket.send_json({"type": "error", "detail": "This item cannot be used"})
+        await websocket.send_json(with_request_id({"type": "error", "detail": "This item cannot be used"}, data))
         return
 
     # Resolve effects through EffectRegistry
@@ -79,9 +80,9 @@ async def handle_use_item(
         await player_repo.update_inventory(session, db_id, inventory.to_dict())
         await player_repo.update_stats(session, db_id, entity.stats)
 
-    await websocket.send_json({
+    await websocket.send_json(with_request_id({
         "type": "item_used",
         "item_key": item_key,
         "item_name": item_def.name,
         "effect_results": effect_results,
-    })
+    }, data))

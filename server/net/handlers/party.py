@@ -8,6 +8,7 @@ from fastapi import WebSocket
 
 from server.core.config import settings
 from server.net.auth_middleware import requires_auth
+from server.net.schemas import with_request_id
 from server.player.session import PlayerSession
 
 if TYPE_CHECKING:
@@ -64,7 +65,7 @@ async def handle_party(
 
     if not args_str:
         # No subcommand — show status
-        await _handle_status(websocket, entity_id, game)
+        await _handle_status(websocket, data, entity_id, game)
         return
 
     parts = args_str.split()
@@ -72,17 +73,17 @@ async def handle_party(
     sub_args = parts[1:]
 
     if subcommand == "invite":
-        await _handle_invite(websocket, entity_id, sub_args, game)
+        await _handle_invite(websocket, data, entity_id, sub_args, game)
     elif subcommand == "accept":
-        await _handle_accept(websocket, entity_id, game)
+        await _handle_accept(websocket, data, entity_id, game)
     elif subcommand == "reject":
-        await _handle_reject(websocket, entity_id, game)
+        await _handle_reject(websocket, data, entity_id, game)
     elif subcommand == "leave":
-        await _handle_leave(websocket, entity_id, game)
+        await _handle_leave(websocket, data, entity_id, game)
     elif subcommand == "kick":
-        await _handle_kick(websocket, entity_id, sub_args, game)
+        await _handle_kick(websocket, data, entity_id, sub_args, game)
     elif subcommand == "disband":
-        await _handle_disband(websocket, entity_id, game)
+        await _handle_disband(websocket, data, entity_id, game)
     else:
         # Unknown subcommand — route to party chat if in a party
         if game.party_manager.is_in_party(entity_id):
@@ -92,24 +93,24 @@ async def handle_party(
             )
         else:
             await websocket.send_json(
-                {"type": "error", "detail": "You are not in a party"}
+                with_request_id({"type": "error", "detail": "You are not in a party"}, data)
             )
 
 
 async def _handle_invite(
-    websocket: WebSocket, entity_id: str, sub_args: list[str], game: Game
+    websocket: WebSocket, data: dict, entity_id: str, sub_args: list[str], game: Game
 ) -> None:
     """Handle /party invite @PlayerName."""
     if not sub_args:
         await websocket.send_json(
-            {"type": "error", "detail": "Usage: /party invite @playername"}
+            with_request_id({"type": "error", "detail": "Usage: /party invite @playername"}, data)
         )
         return
 
     target_name = sub_args[0].lstrip("@")
     if not target_name:
         await websocket.send_json(
-            {"type": "error", "detail": "Usage: /party invite @playername"}
+            with_request_id({"type": "error", "detail": "Usage: /party invite @playername"}, data)
         )
         return
 
@@ -117,45 +118,45 @@ async def _handle_invite(
     target_id = game.connection_manager.get_entity_id_by_name(target_name)
     if target_id is None:
         await websocket.send_json(
-            {"type": "error", "detail": "Player is not online"}
+            with_request_id({"type": "error", "detail": "Player is not online"}, data)
         )
         return
 
     # Validate target has an active session
     if not game.player_manager.has_session(target_id):
         await websocket.send_json(
-            {"type": "error", "detail": "Player is not online"}
+            with_request_id({"type": "error", "detail": "Player is not online"}, data)
         )
         return
 
     # Self-invite check
     if target_id == entity_id:
         await websocket.send_json(
-            {"type": "error", "detail": "Cannot invite yourself"}
+            with_request_id({"type": "error", "detail": "Cannot invite yourself"}, data)
         )
         return
 
     # Target already in a party
     if game.party_manager.is_in_party(target_id):
         await websocket.send_json(
-            {
+            with_request_id({
                 "type": "error",
                 "detail": "Player is already in a party \u2014 they must /party leave first",
-            }
+            }, data)
         )
         return
 
     # Target already has a pending invite
     if game.party_manager.has_pending_invite(target_id):
         await websocket.send_json(
-            {"type": "error", "detail": "Player already has a pending invite"}
+            with_request_id({"type": "error", "detail": "Player already has a pending invite"}, data)
         )
         return
 
     # Per-target cooldown
     if game.party_manager.check_cooldown(entity_id, target_id):
         await websocket.send_json(
-            {"type": "error", "detail": "Please wait before re-inviting this player"}
+            with_request_id({"type": "error", "detail": "Please wait before re-inviting this player"}, data)
         )
         return
 
@@ -163,7 +164,7 @@ async def _handle_invite(
     party = game.party_manager.get_party(entity_id)
     if party and len(party.members) >= settings.MAX_PARTY_SIZE:
         await websocket.send_json(
-            {"type": "error", "detail": "Party is full"}
+            with_request_id({"type": "error", "detail": "Party is full"}, data)
         )
         return
 
@@ -191,22 +192,22 @@ async def _handle_invite(
 
     # Confirm to inviter
     await websocket.send_json(
-        {
+        with_request_id({
             "type": "party_invite_response",
             "status": "sent",
             "target": target_display,
-        }
+        }, data)
     )
 
 
 async def _handle_accept(
-    websocket: WebSocket, entity_id: str, game: Game
+    websocket: WebSocket, data: dict, entity_id: str, game: Game
 ) -> None:
     """Handle /party accept."""
     inviter_id = game.party_manager.get_pending_invite(entity_id)
     if inviter_id is None:
         await websocket.send_json(
-            {"type": "error", "detail": "No pending party invite"}
+            with_request_id({"type": "error", "detail": "No pending party invite"}, data)
         )
         return
 
@@ -216,14 +217,14 @@ async def _handle_accept(
     # Reject if accepter is already in a party
     if game.party_manager.is_in_party(entity_id):
         await websocket.send_json(
-            {"type": "error", "detail": "You are already in a party"}
+            with_request_id({"type": "error", "detail": "You are already in a party"}, data)
         )
         return
 
     # Verify inviter still online
     if game.connection_manager.get_websocket(inviter_id) is None:
         await websocket.send_json(
-            {"type": "error", "detail": "Inviter is no longer online"}
+            with_request_id({"type": "error", "detail": "Inviter is no longer online"}, data)
         )
         return
 
@@ -235,7 +236,7 @@ async def _handle_accept(
         result = game.party_manager.create_party(inviter_id, entity_id)
 
     if isinstance(result, str):
-        await websocket.send_json({"type": "error", "detail": result})
+        await websocket.send_json(with_request_id({"type": "error", "detail": result}, data))
         return
 
     # Notify all party members
@@ -251,13 +252,13 @@ async def _handle_accept(
 
 
 async def _handle_reject(
-    websocket: WebSocket, entity_id: str, game: Game
+    websocket: WebSocket, data: dict, entity_id: str, game: Game
 ) -> None:
     """Handle /party reject."""
     inviter_id = game.party_manager.get_pending_invite(entity_id)
     if inviter_id is None:
         await websocket.send_json(
-            {"type": "error", "detail": "No pending party invite"}
+            with_request_id({"type": "error", "detail": "No pending party invite"}, data)
         )
         return
 
@@ -280,17 +281,17 @@ async def _handle_reject(
 
     # Confirm to rejecter
     await websocket.send_json(
-        {"type": "party_invite_response", "status": "rejected"}
+        with_request_id({"type": "party_invite_response", "status": "rejected"}, data)
     )
 
 
 async def _handle_leave(
-    websocket: WebSocket, entity_id: str, game: Game
+    websocket: WebSocket, data: dict, entity_id: str, game: Game
 ) -> None:
     """Handle /party leave."""
     if not game.party_manager.is_in_party(entity_id):
         await websocket.send_json(
-            {"type": "error", "detail": "You are not in a party"}
+            with_request_id({"type": "error", "detail": "You are not in a party"}, data)
         )
         return
 
@@ -310,37 +311,37 @@ async def _handle_leave(
             await game.connection_manager.send_to_player(mid, update_msg)
 
     await websocket.send_json(
-        {"type": "party_update", "action": "member_left", "entity_id": entity_id}
+        with_request_id({"type": "party_update", "action": "member_left", "entity_id": entity_id}, data)
     )
 
 
 async def _handle_kick(
-    websocket: WebSocket, entity_id: str, sub_args: list[str], game: Game
+    websocket: WebSocket, data: dict, entity_id: str, sub_args: list[str], game: Game
 ) -> None:
     """Handle /party kick @PlayerName."""
     if not game.party_manager.is_leader(entity_id):
         await websocket.send_json(
-            {"type": "error", "detail": "Only the party leader can kick members"}
+            with_request_id({"type": "error", "detail": "Only the party leader can kick members"}, data)
         )
         return
 
     if not sub_args:
         await websocket.send_json(
-            {"type": "error", "detail": "Usage: /party kick @playername"}
+            with_request_id({"type": "error", "detail": "Usage: /party kick @playername"}, data)
         )
         return
 
     target_name = sub_args[0].lstrip("@")
     if not target_name:
         await websocket.send_json(
-            {"type": "error", "detail": "Usage: /party kick @playername"}
+            with_request_id({"type": "error", "detail": "Usage: /party kick @playername"}, data)
         )
         return
 
     target_id = game.connection_manager.get_entity_id_by_name(target_name)
     if target_id is None:
         await websocket.send_json(
-            {"type": "error", "detail": "Player is not online"}
+            with_request_id({"type": "error", "detail": "Player is not online"}, data)
         )
         return
 
@@ -349,21 +350,21 @@ async def _handle_kick(
     target_party = game.party_manager.get_party(target_id)
     if my_party is None or target_party is None or my_party.party_id != target_party.party_id:
         await websocket.send_json(
-            {"type": "error", "detail": "Player is not in your party"}
+            with_request_id({"type": "error", "detail": "Player is not in your party"}, data)
         )
         return
 
     # Cannot kick self
     if target_id == entity_id:
         await websocket.send_json(
-            {"type": "error", "detail": "Cannot kick yourself. Use /party leave"}
+            with_request_id({"type": "error", "detail": "Cannot kick yourself. Use /party leave"}, data)
         )
         return
 
     # Shared combat check
     if _in_shared_combat(game, entity_id, target_id):
         await websocket.send_json(
-            {"type": "error", "detail": "Cannot kick a player during shared combat"}
+            with_request_id({"type": "error", "detail": "Cannot kick a player during shared combat"}, data)
         )
         return
 
@@ -396,26 +397,26 @@ async def _handle_kick(
 
 
 async def _handle_disband(
-    websocket: WebSocket, entity_id: str, game: Game
+    websocket: WebSocket, data: dict, entity_id: str, game: Game
 ) -> None:
     """Handle /party disband."""
     if not game.party_manager.is_leader(entity_id):
         await websocket.send_json(
-            {"type": "error", "detail": "Only the party leader can disband"}
+            with_request_id({"type": "error", "detail": "Only the party leader can disband"}, data)
         )
         return
 
     party = game.party_manager.get_party(entity_id)
     if party is None:
         await websocket.send_json(
-            {"type": "error", "detail": "You are not in a party"}
+            with_request_id({"type": "error", "detail": "You are not in a party"}, data)
         )
         return
 
     # Shared combat check
     if _members_share_combat(game, party.members):
         await websocket.send_json(
-            {"type": "error", "detail": "Cannot disband during active party combat"}
+            with_request_id({"type": "error", "detail": "Cannot disband during active party combat"}, data)
         )
         return
 
@@ -426,7 +427,7 @@ async def _handle_disband(
 
 
 async def _handle_status(
-    websocket: WebSocket, entity_id: str, game: Game
+    websocket: WebSocket, data: dict, entity_id: str, game: Game
 ) -> None:
     """Handle /party (no subcommand) — show party status or pending invite."""
     party = game.party_manager.get_party(entity_id)
@@ -444,26 +445,26 @@ async def _handle_status(
                 "room": room,
             })
 
-        await websocket.send_json({
+        await websocket.send_json(with_request_id({
             "type": "party_status",
             "party_id": party.party_id,
             "members": members_info,
-        })
+        }, data))
         return
 
     # Check for pending invite
     inviter_id = game.party_manager.get_pending_invite(entity_id)
     if inviter_id is not None:
         inviter_name = _get_entity_name(game, inviter_id)
-        await websocket.send_json({
+        await websocket.send_json(with_request_id({
             "type": "party_status",
             "pending_invite": True,
             "from_player": inviter_name,
-        })
+        }, data))
         return
 
     await websocket.send_json(
-        {"type": "error", "detail": "You are not in a party"}
+        with_request_id({"type": "error", "detail": "You are not in a party"}, data)
     )
 
 
@@ -479,17 +480,17 @@ async def handle_party_chat(
 
     if len(message) > settings.MAX_CHAT_MESSAGE_LENGTH:
         await websocket.send_json(
-            {
+            with_request_id({
                 "type": "error",
                 "detail": f"Message too long (max {settings.MAX_CHAT_MESSAGE_LENGTH} characters)",
-            }
+            }, data)
         )
         return
 
     party = game.party_manager.get_party(entity_id)
     if party is None:
         await websocket.send_json(
-            {"type": "error", "detail": "You are not in a party"}
+            with_request_id({"type": "error", "detail": "You are not in a party"}, data)
         )
         return
 

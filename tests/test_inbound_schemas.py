@@ -303,7 +303,7 @@ class TestModelDump:
     def test_login_dump(self):
         m = LoginMessage(action="login", username="hero", password="secret")
         d = m.model_dump()
-        assert d == {"action": "login", "username": "hero", "password": "secret"}
+        assert d == {"action": "login", "username": "hero", "password": "secret", "request_id": None}
 
     def test_chat_dump_no_whisper(self):
         m = ChatMessage(action="chat", message="hi")

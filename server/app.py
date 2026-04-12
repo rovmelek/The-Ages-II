@@ -15,7 +15,7 @@ from server.core.database import init_db
 from server.core import database as _database
 from server.net.connection_manager import ConnectionManager
 from server.net.message_router import MessageRouter
-from server.net.schemas import ACTION_SCHEMAS
+from server.net.schemas import ACTION_SCHEMAS, with_request_id
 from server.player import repo as player_repo
 from server.combat.manager import CombatManager
 from server.core.effects import create_default_registry
@@ -400,7 +400,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 continue
             if "action" not in data:
                 await websocket.send_json(
-                    {"type": "error", "detail": "Missing action field"}
+                    with_request_id(
+                        {"type": "error", "detail": "Missing action field"},
+                        data,
+                    )
                 )
                 continue
             action = data["action"]
@@ -411,7 +414,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     data = validated.model_dump()
                 except ValidationError as e:
                     await websocket.send_json(
-                        {"type": "error", "detail": str(e)}
+                        with_request_id(
+                            {"type": "error", "detail": str(e)}, data
+                        )
                     )
                     continue
             await game.router.route(websocket, data)

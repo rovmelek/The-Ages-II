@@ -933,7 +933,7 @@ class TestRoomTransitionCancelsTrade:
 
         exit_info = {"target_room": "test_room", "entry_x": 5, "entry_y": 5}
         await _handle_exit_transition(
-            ws, game, "player_1", entity, player_info,
+            ws, {}, game, "player_1", entity, player_info,
             old_room, "town_square", exit_info, 0, 0,
         )
 

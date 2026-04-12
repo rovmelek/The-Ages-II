@@ -93,7 +93,7 @@ class TestAuth:
 
     def test_logged_out(self):
         m = LoggedOutMessage()
-        assert m.model_dump() == {"type": "logged_out"}
+        assert m.model_dump() == {"type": "logged_out", "request_id": None}
 
     def test_kicked(self):
         m = KickedMessage(reason="Logged in from another location")
@@ -108,7 +108,7 @@ class TestAuth:
 class TestSystem:
     def test_error(self):
         m = ErrorMessage(detail="Something went wrong")
-        assert m.model_dump() == {"type": "error", "detail": "Something went wrong"}
+        assert m.model_dump() == {"type": "error", "detail": "Something went wrong", "request_id": None}
 
     def test_server_shutdown(self):
         m = ServerShutdownMessage(reason="Maintenance")
@@ -217,7 +217,7 @@ class TestCombat:
 
     def test_combat_fled(self):
         m = CombatFledMessage()
-        assert m.model_dump() == {"type": "combat_fled"}
+        assert m.model_dump() == {"type": "combat_fled", "request_id": None}
 
     def test_combat_update(self):
         m = CombatUpdateMessage(**_sample_combat_state())

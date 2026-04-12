@@ -8,6 +8,7 @@ from fastapi import WebSocket
 from server.core.config import settings
 from server.core.xp import get_pending_level_ups, send_level_up_available
 from server.net.auth_middleware import requires_auth
+from server.net.schemas import with_request_id
 from server.player import repo as player_repo
 from server.player.session import PlayerSession
 
@@ -29,14 +30,14 @@ async def handle_level_up(
     entity = player_info.entity
     if entity.in_combat:
         await websocket.send_json(
-            {"type": "error", "detail": "Cannot level up during combat"}
+            with_request_id({"type": "error", "detail": "Cannot level up during combat"}, data)
         )
         return
 
     pending = player_info.pending_level_ups
     if pending <= 0:
         await websocket.send_json(
-            {"type": "error", "detail": "No level-up available"}
+            with_request_id({"type": "error", "detail": "No level-up available"}, data)
         )
         return
 
@@ -46,13 +47,13 @@ async def handle_level_up(
     unique_stats = list(dict.fromkeys(chosen_stats))[:settings.LEVEL_UP_STAT_CHOICES]
     if not unique_stats:
         await websocket.send_json(
-            {"type": "error", "detail": "Must choose at least 1 stat"}
+            with_request_id({"type": "error", "detail": "Must choose at least 1 stat"}, data)
         )
         return
     for s in unique_stats:
         if s not in _VALID_LEVEL_UP_STATS:
             await websocket.send_json(
-                {"type": "error", "detail": f"Invalid stat: {s}"}
+                with_request_id({"type": "error", "detail": f"Invalid stat: {s}"}, data)
             )
             return
 
@@ -89,7 +90,7 @@ async def handle_level_up(
     }
     if skipped:
         response["skipped_at_cap"] = skipped
-    await websocket.send_json(response)
+    await websocket.send_json(with_request_id(response, data))
 
     # Check for queued level-ups
     remaining = get_pending_level_ups(stats)

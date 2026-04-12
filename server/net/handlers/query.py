@@ -8,6 +8,7 @@ from fastapi import WebSocket
 
 from server.core.config import settings
 from server.net.auth_middleware import requires_auth
+from server.net.schemas import with_request_id
 from server.player.session import PlayerSession
 
 if TYPE_CHECKING:
@@ -33,7 +34,7 @@ async def handle_look(
     entity = player_info.entity
     room = game.room_manager.get_room(player_info.room_key)
     if room is None:
-        await websocket.send_json({"type": "error", "detail": "Room not found"})
+        await websocket.send_json(with_request_id({"type": "error", "detail": "Room not found"}, data))
         return
 
     objects, npcs, players = [], [], []
@@ -51,12 +52,12 @@ async def handle_look(
             if e.id != entity_id and e.x == tx and e.y == ty:
                 players.append({"name": e.name, "direction": label})
 
-    await websocket.send_json({
+    await websocket.send_json(with_request_id({
         "type": "look_result",
         "objects": objects,
         "npcs": npcs,
         "players": players,
-    })
+    }, data))
 
 
 @requires_auth
@@ -68,7 +69,7 @@ async def handle_who(
     room_key = player_info.room_key
     room = game.room_manager.get_room(room_key)
     if room is None:
-        await websocket.send_json({"type": "error", "detail": "Room not found"})
+        await websocket.send_json(with_request_id({"type": "error", "detail": "Room not found"}, data))
         return
 
     players = [
@@ -76,11 +77,11 @@ async def handle_who(
         for e in room.entities.values()
     ]
 
-    await websocket.send_json({
+    await websocket.send_json(with_request_id({
         "type": "who_result",
         "room": room_key,
         "players": players,
-    })
+    }, data))
 
 
 @requires_auth
@@ -91,7 +92,7 @@ async def handle_stats(
     """Handle the 'stats' action — return the player's current stats."""
     stats = player_info.entity.stats
     level = stats.get("level", 1)
-    await websocket.send_json({
+    await websocket.send_json(with_request_id({
         "type": "stats_result",
         "stats": {
             "hp": stats.get("hp", settings.DEFAULT_BASE_HP),
@@ -109,7 +110,7 @@ async def handle_stats(
             "wisdom": stats.get("wisdom", settings.DEFAULT_STAT_VALUE),
             "charisma": stats.get("charisma", settings.DEFAULT_STAT_VALUE),
         },
-    })
+    }, data))
 
 
 @requires_auth
@@ -125,10 +126,10 @@ async def handle_help_actions(
         "Social": ["chat", "trade", "party", "logout"],
         "Info": ["look", "who", "stats", "map", "help_actions", "level_up"],
     }
-    await websocket.send_json({
+    await websocket.send_json(with_request_id({
         "type": "help_result",
         "categories": categories,
-    })
+    }, data))
 
 
 @requires_auth
@@ -160,8 +161,8 @@ async def handle_map(
                 "direction": exit_info["direction"],
             })
 
-    await websocket.send_json({
+    await websocket.send_json(with_request_id({
         "type": "map_data",
         "rooms": rooms,
         "connections": connections,
-    })
+    }, data))

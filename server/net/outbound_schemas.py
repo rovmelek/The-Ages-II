@@ -160,10 +160,12 @@ class LoginSuccessMessage(BaseModel):
     entity_id: str
     username: str
     stats: PlayerStatsPayload
+    request_id: str | None = None
 
 
 class LoggedOutMessage(BaseModel):
     type: str = "logged_out"
+    request_id: str | None = None
 
 
 class KickedMessage(BaseModel):
@@ -179,6 +181,7 @@ class KickedMessage(BaseModel):
 class ErrorMessage(BaseModel):
     type: str = "error"
     detail: str
+    request_id: str | None = None
 
 
 class ServerShutdownMessage(BaseModel):
@@ -217,6 +220,7 @@ class RoomStateMessage(BaseModel):
     npcs: list[NpcPayload]
     exits: list[dict[str, Any]]
     objects: list[dict[str, Any]]
+    request_id: str | None = None
 
 
 class EntityEnteredMessage(BaseModel):
@@ -239,6 +243,7 @@ class EntityMovedMessage(BaseModel):
 class NearbyObjectsMessage(BaseModel):
     type: str = "nearby_objects"
     objects: list[NearbyObjectPayload]
+    request_id: str | None = None
 
 
 class TileChangedMessage(BaseModel):
@@ -272,6 +277,7 @@ class CombatEndMessage(BaseModel):
 
 class CombatFledMessage(BaseModel):
     type: str = "combat_fled"
+    request_id: str | None = None
 
 
 class CombatUpdateMessage(CombatStatePayload):
@@ -289,6 +295,7 @@ class OutboundChatMessage(BaseModel):
     message: str
     whisper: bool
     format: str | None = None
+    request_id: str | None = None  # present on whisper echo to sender
 
 
 class OutboundPartyChatMessage(BaseModel):
@@ -308,6 +315,7 @@ class OutboundPartyChatMessage(BaseModel):
 class InventoryListMessage(BaseModel):
     type: str = "inventory"
     items: list[InventoryItemPayload]
+    request_id: str | None = None
 
 
 class ItemUsedMessage(BaseModel):
@@ -315,6 +323,7 @@ class ItemUsedMessage(BaseModel):
     item_key: str
     item_name: str
     effect_results: list[dict[str, Any]]
+    request_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +335,7 @@ class InteractResultMessage(BaseModel):
     type: str = "interact_result"
     object_id: str
     result: dict[str, Any]
+    request_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +365,7 @@ class TradeResultMessage(BaseModel):
     status: str
     reason: str
     inventory: list[InventoryItemPayload] | None = None
+    request_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -372,6 +383,7 @@ class PartyInviteResponseMessage(BaseModel):
     type: str = "party_invite_response"
     status: str
     target: str | None = None
+    request_id: str | None = None
 
 
 class PartyUpdateMessage(BaseModel):
@@ -391,6 +403,7 @@ class PartyStatusMessage(BaseModel):
     # Pending-invite shape
     pending_invite: bool | None = None
     from_player: str | None = None
+    request_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -424,6 +437,7 @@ class LevelUpCompleteMessage(BaseModel):
     new_max_hp: int
     new_hp: int
     skipped_at_cap: list[str] | None = None
+    request_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -436,28 +450,33 @@ class LookResultMessage(BaseModel):
     objects: list[LookObjectPayload]
     npcs: list[LookNpcPayload]
     players: list[LookPlayerPayload]
+    request_id: str | None = None
 
 
 class WhoResultMessage(BaseModel):
     type: str = "who_result"
     room: str
     players: list[WhoPlayerPayload]
+    request_id: str | None = None
 
 
 class StatsResultMessage(BaseModel):
     type: str = "stats_result"
     stats: StatsResultPayload
+    request_id: str | None = None
 
 
 class HelpResultMessage(BaseModel):
     type: str = "help_result"
     categories: dict[str, list[str]]
+    request_id: str | None = None
 
 
 class MapDataMessage(BaseModel):
     type: str = "map_data"
     rooms: list[RoomPayload]
     connections: list[ConnectionPayload]
+    request_id: str | None = None
 
 
 # ---------------------------------------------------------------------------

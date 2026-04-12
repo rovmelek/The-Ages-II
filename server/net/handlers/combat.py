@@ -9,6 +9,7 @@ from fastapi import WebSocket
 
 from server.combat import service
 from server.net.auth_middleware import requires_auth
+from server.net.schemas import with_request_id
 from server.player import repo as player_repo
 from server.player.session import PlayerSession
 
@@ -98,7 +99,7 @@ async def handle_play_card(
     """Handle the 'play_card' action during combat."""
     instance = game.combat_manager.get_player_instance(entity_id)
     if instance is None:
-        await websocket.send_json({"type": "error", "detail": "Not in combat"})
+        await websocket.send_json(with_request_id({"type": "error", "detail": "Not in combat"}, data))
         return
 
     card_key = data.get("card_key", "")
@@ -106,7 +107,7 @@ async def handle_play_card(
     try:
         result = await instance.play_card(entity_id, card_key)
     except ValueError as e:
-        await websocket.send_json({"type": "error", "detail": str(e)})
+        await websocket.send_json(with_request_id({"type": "error", "detail": str(e)}, data))
         return
 
     # Broadcast updated combat state with action result to all participants
@@ -124,20 +125,20 @@ async def handle_flee(
     """Handle the 'flee' action during combat."""
     instance = game.combat_manager.get_player_instance(entity_id)
     if instance is None:
-        await websocket.send_json({"type": "error", "detail": "Not in combat"})
+        await websocket.send_json(with_request_id({"type": "error", "detail": "Not in combat"}, data))
         return
 
     # Dead players cannot flee
     stats = instance.participant_stats.get(entity_id)
     if stats and stats["hp"] <= 0:
-        await websocket.send_json({"type": "error", "detail": "You are dead"})
+        await websocket.send_json(with_request_id({"type": "error", "detail": "You are dead"}, data))
         return
 
     # Delegate business logic to service
     outcome = service.handle_flee_outcome(instance, entity_id, player_info, game)
 
     # Notify the fleeing player
-    await websocket.send_json({"type": "combat_fled"})
+    await websocket.send_json(with_request_id({"type": "combat_fled"}, data))
 
     # If participants remain, broadcast updated state
     if outcome.participants_remain:
@@ -156,27 +157,27 @@ async def handle_use_item_combat(
     """Handle 'use_item' action during combat — uses item as turn action."""
     instance = game.combat_manager.get_player_instance(entity_id)
     if instance is None:
-        await websocket.send_json({"type": "error", "detail": "Not in combat"})
+        await websocket.send_json(with_request_id({"type": "error", "detail": "Not in combat"}, data))
         return
 
     item_key = data.get("item_key", "")
 
     inventory = player_info.inventory
     if inventory is None or not inventory.has_item(item_key):
-        await websocket.send_json({"type": "error", "detail": "Item not in inventory"})
+        await websocket.send_json(with_request_id({"type": "error", "detail": "Item not in inventory"}, data))
         return
 
     item_def = inventory.get_item(item_key)
     if not item_def.usable_in_combat:
         await websocket.send_json(
-            {"type": "error", "detail": "This item cannot be used in combat"}
+            with_request_id({"type": "error", "detail": "This item cannot be used in combat"}, data)
         )
         return
 
     try:
         result = await instance.use_item(entity_id, item_def)
     except ValueError as e:
-        await websocket.send_json({"type": "error", "detail": str(e)})
+        await websocket.send_json(with_request_id({"type": "error", "detail": str(e)}, data))
         return
 
     # Consume one charge from inventory and persist
@@ -200,13 +201,13 @@ async def handle_pass_turn(
     """Handle the 'pass_turn' action during combat."""
     instance = game.combat_manager.get_player_instance(entity_id)
     if instance is None:
-        await websocket.send_json({"type": "error", "detail": "Not in combat"})
+        await websocket.send_json(with_request_id({"type": "error", "detail": "Not in combat"}, data))
         return
 
     try:
         result = await instance.pass_turn(entity_id)
     except ValueError as e:
-        await websocket.send_json({"type": "error", "detail": str(e)})
+        await websocket.send_json(with_request_id({"type": "error", "detail": str(e)}, data))
         return
 
     # Broadcast updated combat state with action result to all participants

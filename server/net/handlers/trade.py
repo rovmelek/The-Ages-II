@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import WebSocket
 from server.net.auth_middleware import requires_auth
+from server.net.schemas import with_request_id
 from server.player import repo as player_repo
 from server.player.session import PlayerSession
 
@@ -66,7 +67,7 @@ async def handle_trade(
         trade = game.trade_manager.get_trade(entity_id)
         if trade is None:
             await websocket.send_json(
-                {"type": "error", "detail": "You are not in a trade session"}
+                with_request_id({"type": "error", "detail": "You are not in a trade session"}, data)
             )
             return
         await _send_trade_update(trade, game)
@@ -81,14 +82,14 @@ async def handle_trade(
         target_name = subcommand[1:]  # strip @
         if not target_name:
             await websocket.send_json(
-                {"type": "error", "detail": "Usage: /trade @playername"}
+                with_request_id({"type": "error", "detail": "Usage: /trade @playername"}, data)
             )
             return
 
         target_entity_id = game.connection_manager.get_entity_id_by_name(target_name)
         if target_entity_id is None:
             await websocket.send_json(
-                {"type": "error", "detail": f"Player '{target_name}' is not online"}
+                with_request_id({"type": "error", "detail": f"Player '{target_name}' is not online"}, data)
             )
             return
 
@@ -97,21 +98,21 @@ async def handle_trade(
         target_room = game.connection_manager.get_room(target_entity_id)
         if my_room != target_room:
             await websocket.send_json(
-                {"type": "error", "detail": "Player is not in your room"}
+                with_request_id({"type": "error", "detail": "Player is not in your room"}, data)
             )
             return
 
         # Check not in combat
         if entity.in_combat:
             await websocket.send_json(
-                {"type": "error", "detail": "Cannot trade while in combat"}
+                with_request_id({"type": "error", "detail": "Cannot trade while in combat"}, data)
             )
             return
 
         target_info = game.player_manager.get_session(target_entity_id)
         if target_info and target_info.entity.in_combat:
             await websocket.send_json(
-                {"type": "error", "detail": "Target player is in combat"}
+                with_request_id({"type": "error", "detail": "Target player is in combat"}, data)
             )
             return
 
@@ -120,13 +121,13 @@ async def handle_trade(
         target_db_id = target_info.db_id if target_info else None
         if target_entity_id == entity_id or (my_db_id is not None and my_db_id == target_db_id):
             await websocket.send_json(
-                {"type": "error", "detail": "Cannot trade with yourself"}
+                with_request_id({"type": "error", "detail": "Cannot trade with yourself"}, data)
             )
             return
 
         result = game.trade_manager.initiate_trade(entity_id, target_entity_id)
         if isinstance(result, str):
-            await websocket.send_json({"type": "error", "detail": result})
+            await websocket.send_json(with_request_id({"type": "error", "detail": result}, data))
             return
 
         # Notify target
@@ -139,18 +140,18 @@ async def handle_trade(
             },
         )
         await websocket.send_json(
-            {
+            with_request_id({
                 "type": "trade_result",
                 "status": "request_sent",
                 "reason": f"Trade request sent to {target_name}",
-            }
+            }, data)
         )
         return
 
     if subcommand == "accept":
         result = game.trade_manager.accept_trade(entity_id)
         if isinstance(result, str):
-            await websocket.send_json({"type": "error", "detail": result})
+            await websocket.send_json(with_request_id({"type": "error", "detail": result}, data))
             return
         await _send_trade_update(result, game)
         return
@@ -159,16 +160,16 @@ async def handle_trade(
         trade = game.trade_manager.get_trade(entity_id)
         if trade is None:
             await websocket.send_json(
-                {"type": "error", "detail": "No pending trade request"}
+                with_request_id({"type": "error", "detail": "No pending trade request"}, data)
             )
             return
         other_id = trade.player_a if trade.player_b == entity_id else trade.player_b
         result = game.trade_manager.reject_trade(entity_id)
         if isinstance(result, str):
-            await websocket.send_json({"type": "error", "detail": result})
+            await websocket.send_json(with_request_id({"type": "error", "detail": result}, data))
             return
         await websocket.send_json(
-            {"type": "trade_result", "status": "rejected", "reason": "Trade rejected"}
+            with_request_id({"type": "trade_result", "status": "rejected", "reason": "Trade rejected"}, data)
         )
         await game.connection_manager.send_to_player(
             other_id,
@@ -183,14 +184,14 @@ async def handle_trade(
     if subcommand == "offer":
         if not sub_args:
             await websocket.send_json(
-                {"type": "error", "detail": "Usage: /trade offer <item> [qty] [item qty ...]"}
+                with_request_id({"type": "error", "detail": "Usage: /trade offer <item> [qty] [item qty ...]"}, data)
             )
             return
 
         inventory = player_info.inventory
         if inventory is None:
             await websocket.send_json(
-                {"type": "error", "detail": "No inventory"}
+                with_request_id({"type": "error", "detail": "No inventory"}, data)
             )
             return
 
@@ -212,21 +213,21 @@ async def handle_trade(
 
             if qty <= 0:
                 await websocket.send_json(
-                    {"type": "error", "detail": "Quantity must be positive"}
+                    with_request_id({"type": "error", "detail": "Quantity must be positive"}, data)
                 )
                 return
 
             item_key = _resolve_item_key(inventory, item_input)
             if item_key is None:
                 await websocket.send_json(
-                    {"type": "error", "detail": f"Item '{item_input}' not found in inventory"}
+                    with_request_id({"type": "error", "detail": f"Item '{item_input}' not found in inventory"}, data)
                 )
                 return
 
             item_def = inventory.get_item(item_key)
             if item_def and not item_def.tradeable:
                 await websocket.send_json(
-                    {"type": "error", "detail": f"{item_def.name} is not tradeable"}
+                    with_request_id({"type": "error", "detail": f"{item_def.name} is not tradeable"}, data)
                 )
                 return
 
@@ -243,10 +244,10 @@ async def handle_trade(
             if available - already_offered < qty:
                 name = item_def.name if item_def else item_key
                 await websocket.send_json(
-                    {
+                    with_request_id({
                         "type": "error",
                         "detail": f"You only have {available - already_offered} of {name}",
-                    }
+                    }, data)
                 )
                 return
 
@@ -256,7 +257,7 @@ async def handle_trade(
         for item_key, qty in items_to_offer:
             result = game.trade_manager.add_offer(entity_id, item_key, qty)
             if isinstance(result, str):
-                await websocket.send_json({"type": "error", "detail": result})
+                await websocket.send_json(with_request_id({"type": "error", "detail": result}, data))
                 return
 
         trade = game.trade_manager.get_trade(entity_id)
@@ -267,7 +268,7 @@ async def handle_trade(
     if subcommand == "remove":
         if not sub_args:
             await websocket.send_json(
-                {"type": "error", "detail": "Usage: /trade remove <item>"}
+                with_request_id({"type": "error", "detail": "Usage: /trade remove <item>"}, data)
             )
             return
 
@@ -287,13 +288,13 @@ async def handle_trade(
                     item_key = item_input
         if item_key is None:
             await websocket.send_json(
-                {"type": "error", "detail": f"Item '{item_input}' not found"}
+                with_request_id({"type": "error", "detail": f"Item '{item_input}' not found"}, data)
             )
             return
 
         result = game.trade_manager.remove_offer(entity_id, item_key)
         if isinstance(result, str):
-            await websocket.send_json({"type": "error", "detail": result})
+            await websocket.send_json(with_request_id({"type": "error", "detail": result}, data))
             return
         await _send_trade_update(result, game)
         return
@@ -301,7 +302,7 @@ async def handle_trade(
     if subcommand == "ready":
         result = game.trade_manager.set_ready(entity_id)
         if isinstance(result, str):
-            await websocket.send_json({"type": "error", "detail": result})
+            await websocket.send_json(with_request_id({"type": "error", "detail": result}, data))
             return
 
         await _send_trade_update(result, game)
@@ -315,16 +316,16 @@ async def handle_trade(
         trade = game.trade_manager.get_trade(entity_id)
         if trade is None:
             await websocket.send_json(
-                {"type": "error", "detail": "You are not in a trade session"}
+                with_request_id({"type": "error", "detail": "You are not in a trade session"}, data)
             )
             return
         other_id = trade.player_a if entity_id != trade.player_a else trade.player_b
         result = game.trade_manager.cancel_trade(entity_id)
         if isinstance(result, str):
-            await websocket.send_json({"type": "error", "detail": result})
+            await websocket.send_json(with_request_id({"type": "error", "detail": result}, data))
             return
         await websocket.send_json(
-            {"type": "trade_result", "status": "cancelled", "reason": "Trade cancelled"}
+            with_request_id({"type": "trade_result", "status": "cancelled", "reason": "Trade cancelled"}, data)
         )
         await game.connection_manager.send_to_player(
             other_id,
@@ -338,7 +339,7 @@ async def handle_trade(
 
     # Unknown subcommand
     await websocket.send_json(
-        {"type": "error", "detail": "Unknown trade command. Use /help for options"}
+        with_request_id({"type": "error", "detail": "Unknown trade command. Use /help for options"}, data)
     )
 
 

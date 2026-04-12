@@ -9,6 +9,7 @@ class InboundMessage(BaseModel):
     """Base class for all inbound WebSocket messages."""
 
     action: str
+    request_id: str | None = None
 
 
 # --- Auth ---
@@ -149,6 +150,17 @@ class TradeMessage(InboundMessage):
 class PartyMessage(InboundMessage):
     action: str = "party"
     args: str = ""
+
+
+# --- Utility ---
+
+
+def with_request_id(response: dict, data: dict) -> dict:
+    """Echo request_id from inbound data to outbound response if present."""
+    rid = data.get("request_id")
+    if rid is not None:
+        response["request_id"] = rid
+    return response
 
 
 # --- Action-to-schema mapping ---

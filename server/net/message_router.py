@@ -5,6 +5,8 @@ from typing import Callable
 
 from fastapi import WebSocket
 
+from server.net.schemas import with_request_id
+
 
 class MessageRouter:
     """Routes JSON messages to registered action handlers."""
@@ -22,7 +24,10 @@ class MessageRouter:
         handler = self._handlers.get(action)
         if handler is None:
             await websocket.send_json(
-                {"type": "error", "detail": f"Unknown action: {action}"}
+                with_request_id(
+                    {"type": "error", "detail": f"Unknown action: {action}"},
+                    data,
+                )
             )
             return
         await handler(websocket, data)

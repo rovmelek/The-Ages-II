@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-21
-last_updated: 2026-04-12 (Story 16.1 ready-for-dev)
+last_updated: 2026-04-12 (Story 16.7 done)
 project: The-Ages-II
 project_key: NOKEY
 tracking_system: file-system
@@ -267,7 +267,7 @@ development_status:
   16-10a-combat-turn-timeout-enforcement: done
 
   # Sprint 3a — Client polish (lightweight, independent)
-  16-7-request-response-correlation: backlog
+  16-7-request-response-correlation: done
   16-8-heartbeat-connection-health: backlog
 
   # Sprint 3b — Resilience (sequential chain)

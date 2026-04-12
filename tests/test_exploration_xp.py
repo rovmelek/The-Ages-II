@@ -87,7 +87,7 @@ class TestExplorationXP:
             mock_repo.update_visited_rooms = AsyncMock()
 
             await _handle_exit_transition(
-                ws, game, entity.id, entity, player_info,
+                ws, {}, game, entity.id, entity, player_info,
                 old_room, "town_square", exit_info, 0, 0,
             )
 
@@ -119,7 +119,7 @@ class TestExplorationXP:
             mock_repo.update_position = AsyncMock()
 
             await _handle_exit_transition(
-                ws, game, entity.id, entity, player_info,
+                ws, {}, game, entity.id, entity, player_info,
                 old_room, "town_square", exit_info, 0, 0,
             )
 

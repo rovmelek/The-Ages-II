@@ -8,6 +8,7 @@ from fastapi import WebSocket
 from server.core.config import settings
 from server.core.xp import grant_xp
 from server.net.auth_middleware import requires_auth
+from server.net.schemas import with_request_id
 from server.player.session import PlayerSession
 import server.room.objects  # noqa: F401 — triggers type registration
 from server.room.objects.base import InteractiveObject
@@ -31,7 +32,7 @@ async def handle_interact(
     # Get room
     room = game.room_manager.get_room(room_key)
     if room is None:
-        await websocket.send_json({"type": "error", "detail": "Room not found"})
+        await websocket.send_json(with_request_id({"type": "error", "detail": "Room not found"}, data))
         return
 
     # Resolve target object from either target_id or direction
@@ -42,20 +43,20 @@ async def handle_interact(
         # Existing path: lookup by ID
         obj_dict = room.get_object(target_id)
         if obj_dict is None:
-            await websocket.send_json({"type": "error", "detail": "Object not found"})
+            await websocket.send_json(with_request_id({"type": "error", "detail": "Object not found"}, data))
             return
 
         # Adjacency check — player must be within Manhattan distance 1
         obj_x, obj_y = obj_dict.x, obj_dict.y
         if abs(entity.x - obj_x) + abs(entity.y - obj_y) > 1:
-            await websocket.send_json({"type": "error", "detail": "Too far to interact"})
+            await websocket.send_json(with_request_id({"type": "error", "detail": "Too far to interact"}, data))
             return
 
     elif direction:
         # New path: resolve from direction
         if direction not in DIRECTION_DELTAS:
             await websocket.send_json(
-                {"type": "error", "detail": f"Invalid direction: {direction}"}
+                with_request_id({"type": "error", "detail": f"Invalid direction: {direction}"}, data)
             )
             return
 
@@ -64,7 +65,7 @@ async def handle_interact(
 
         if tx < 0 or ty < 0 or tx >= room.width or ty >= room.height:
             await websocket.send_json(
-                {"type": "error", "detail": "Nothing to interact with in that direction"}
+                with_request_id({"type": "error", "detail": "Nothing to interact with in that direction"}, data)
             )
             return
 
@@ -77,7 +78,7 @@ async def handle_interact(
 
         if obj_dict is None:
             await websocket.send_json(
-                {"type": "error", "detail": "Nothing to interact with in that direction"}
+                with_request_id({"type": "error", "detail": "Nothing to interact with in that direction"}, data)
             )
             return
 
@@ -87,13 +88,13 @@ async def handle_interact(
     else:
         # Schema rejects both-empty at framework level; guard for direct calls
         await websocket.send_json(
-            {"type": "error", "detail": "Missing target_id or direction"}
+            with_request_id({"type": "error", "detail": "Missing target_id or direction"}, data)
         )
         return
 
     # Check if the pre-created object is interactive
     if not isinstance(obj_dict, InteractiveObject):
-        await websocket.send_json({"type": "error", "detail": "Object not interactable"})
+        await websocket.send_json(with_request_id({"type": "error", "detail": "Object not interactable"}, data))
         return
 
     # Check if this is first interaction (before interact modifies state)
@@ -121,8 +122,8 @@ async def handle_interact(
                     session, player_db_id, room_key, target_id, {"interacted": True},
                 )
 
-    await websocket.send_json({
+    await websocket.send_json(with_request_id({
         "type": "interact_result",
         "object_id": target_id,
         "result": result,
-    })
+    }, data))

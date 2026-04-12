@@ -9,6 +9,7 @@ from fastapi import WebSocket
 from server.core.config import settings
 from server.core.xp import grant_xp
 from server.net.auth_middleware import requires_auth
+from server.net.schemas import with_request_id
 from server.player import repo as player_repo
 from server.player.session import PlayerSession
 from server.room import repo as room_repo
@@ -45,7 +46,7 @@ async def handle_move(
     # Cannot move while in combat
     if entity.in_combat:
         await websocket.send_json(
-            {"type": "error", "detail": "Cannot move while in combat"}
+            with_request_id({"type": "error", "detail": "Cannot move while in combat"}, data)
         )
         return
 
@@ -53,7 +54,7 @@ async def handle_move(
 
     room = game.room_manager.get_room(room_key)
     if room is None:
-        await websocket.send_json({"type": "error", "detail": "Room not found"})
+        await websocket.send_json(with_request_id({"type": "error", "detail": "Room not found"}, data))
         return
 
     # Save old position for revert on failed exit transition
@@ -71,14 +72,14 @@ async def handle_move(
             detail = "Out of bounds"
         else:
             detail = "Move failed"
-        await websocket.send_json({"type": "error", "detail": detail})
+        await websocket.send_json(with_request_id({"type": "error", "detail": detail}, data))
         return
 
     # Check for exit transition
     exit_info = result.get("exit")
     if exit_info:
         await _handle_exit_transition(
-            websocket, game, entity_id, entity, player_info,
+            websocket, data, game, entity_id, entity, player_info,
             room, room_key, exit_info, old_x, old_y,
         )
         return
@@ -97,7 +98,7 @@ async def handle_move(
     # Proximity notification — notify mover of nearby interactive objects
     nearby = _find_nearby_objects(room, result["x"], result["y"])
     if nearby:
-        await websocket.send_json({"type": "nearby_objects", "objects": nearby})
+        await websocket.send_json(with_request_id({"type": "nearby_objects", "objects": nearby}, data))
 
     # Check for mob encounter — initiate combat
     mob_encounter = result.get("mob_encounter")
@@ -238,6 +239,7 @@ async def _handle_mob_encounter(
 
 async def _handle_exit_transition(
     websocket: WebSocket,
+    data: dict,
     game: Game,
     entity_id: str,
     entity,
@@ -260,7 +262,7 @@ async def _handle_exit_transition(
             # Revert position and send error
             entity.x, entity.y = old_x, old_y
             await websocket.send_json(
-                {"type": "error", "detail": "Exit leads nowhere"}
+                with_request_id({"type": "error", "detail": "Exit leads nowhere"}, data)
             )
             return
         target_room = game.room_manager.load_room(room_db)
@@ -321,7 +323,7 @@ async def _handle_exit_transition(
         )
 
     # Send new room state to transitioning player
-    await websocket.send_json({"type": "room_state", **target_room.get_state()})
+    await websocket.send_json(with_request_id({"type": "room_state", **target_room.get_state()}, data))
 
     # Exploration XP — first visit to this room
     visited_rooms = player_info.visited_rooms

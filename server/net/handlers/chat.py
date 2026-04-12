@@ -7,6 +7,7 @@ from fastapi import WebSocket
 
 from server.core.config import settings
 from server.net.auth_middleware import requires_auth
+from server.net.schemas import with_request_id
 from server.player.session import PlayerSession
 
 if TYPE_CHECKING:
@@ -32,10 +33,10 @@ async def handle_chat(
         return
 
     if len(message) > settings.MAX_CHAT_MESSAGE_LENGTH:
-        await websocket.send_json({
+        await websocket.send_json(with_request_id({
             "type": "error",
             "detail": f"Message too long (max {settings.MAX_CHAT_MESSAGE_LENGTH} characters)",
-        })
+        }, data))
         return
 
     whisper_to = data.get("whisper_to")
@@ -45,7 +46,7 @@ async def handle_chat(
         target_ws = game.connection_manager.get_websocket(whisper_to)
         if target_ws is None:
             await websocket.send_json(
-                {"type": "error", "detail": "Player not found"}
+                with_request_id({"type": "error", "detail": "Player not found"}, data)
             )
             return
 
@@ -57,7 +58,7 @@ async def handle_chat(
             "format": settings.CHAT_FORMAT,
         }
         await target_ws.send_json(msg)
-        await websocket.send_json(msg)  # Copy to sender
+        await websocket.send_json(with_request_id(msg, data))  # Copy to sender
     else:
         # Room broadcast
         msg = {

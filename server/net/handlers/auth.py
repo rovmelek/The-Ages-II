@@ -10,6 +10,7 @@ from server.items import item_repo
 from server.items.inventory import Inventory
 from server.items.item_def import ItemDef
 from server.net.auth_middleware import requires_auth
+from server.net.schemas import with_request_id
 from server.player import repo as player_repo
 from server.core.config import settings
 from server.core.xp import get_pending_level_ups, send_level_up_available
@@ -146,7 +147,7 @@ async def handle_logout(
 
     # Send confirmation via raw websocket (connection_manager already cleared)
     try:
-        await websocket.send_json({"type": "logged_out"})
+        await websocket.send_json(with_request_id({"type": "logged_out"}, data))
     except Exception:
         pass  # Network dropped — cleanup already done
 
@@ -158,12 +159,12 @@ async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> No
 
     if len(username) < settings.MIN_USERNAME_LENGTH:
         await websocket.send_json(
-            {"type": "error", "detail": f"Username must be at least {settings.MIN_USERNAME_LENGTH} characters"}
+            with_request_id({"type": "error", "detail": f"Username must be at least {settings.MIN_USERNAME_LENGTH} characters"}, data)
         )
         return
     if len(password) < settings.MIN_PASSWORD_LENGTH:
         await websocket.send_json(
-            {"type": "error", "detail": f"Password must be at least {settings.MIN_PASSWORD_LENGTH} characters"}
+            with_request_id({"type": "error", "detail": f"Password must be at least {settings.MIN_PASSWORD_LENGTH} characters"}, data)
         )
         return
 
@@ -171,7 +172,7 @@ async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> No
         existing = await player_repo.get_by_username(session, username)
         if existing:
             await websocket.send_json(
-                {"type": "error", "detail": "Username already taken"}
+                with_request_id({"type": "error", "detail": "Username already taken"}, data)
             )
             return
 
@@ -180,7 +181,7 @@ async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> No
 
         default_max_hp = settings.DEFAULT_BASE_HP + settings.DEFAULT_STAT_VALUE * settings.CON_HP_PER_POINT
         await websocket.send_json(
-            {
+            with_request_id({
                 "type": "login_success",
                 "player_id": player.id,
                 "entity_id": f"player_{player.id}",
@@ -200,7 +201,7 @@ async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> No
                     "wisdom": settings.DEFAULT_STAT_VALUE,
                     "charisma": settings.DEFAULT_STAT_VALUE,
                 },
-            }
+            }, data)
         )
 
 
@@ -228,7 +229,7 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
     async with game.transaction() as session:
         player = await player_repo.get_by_username(session, username)
         if player is None or not verify_password(password, player.password_hash):
-            await websocket.send_json({"type": "error", "detail": "Invalid username or password"})
+            await websocket.send_json(with_request_id({"type": "error", "detail": "Invalid username or password"}, data))
             return
         entity_id = f"player_{player.id}"
         # Handle existing session for this account
@@ -248,7 +249,7 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
         try:
             room_key, room = await _resolve_room_and_place(entity, player, room_key, game, session)
         except ValueError:
-            await websocket.send_json({"type": "error", "detail": "Room not found"})
+            await websocket.send_json(with_request_id({"type": "error", "detail": "Room not found"}, data))
             return
         room.add_entity(entity)
         game.connection_manager.connect(entity_id, websocket, room_key, name=player.username)
@@ -260,7 +261,7 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
             entity=entity, room_key=room_key, db_id=player.id,
             inventory=inventory, visited_rooms=set(visited_rooms), pending_level_ups=0,
         ))
-        await websocket.send_json(_build_login_response(player.id, entity_id, player.username, stats))
+        await websocket.send_json(with_request_id(_build_login_response(player.id, entity_id, player.username, stats), data))
         await websocket.send_json({"type": "room_state", **room.get_state()})
         await game.connection_manager.broadcast_to_room(
             room_key,
