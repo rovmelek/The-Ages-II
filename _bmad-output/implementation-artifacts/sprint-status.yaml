@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-21
-last_updated: 2026-04-12 (Story 15.7 done — SpawnCheckpoint repo extraction)
+last_updated: 2026-04-12 (Epic 15 done, retrospective complete)
 project: The-Ages-II
 project_key: NOKEY
 tracking_system: file-system
@@ -233,7 +233,7 @@ development_status:
   ISS-029-dead-code-web-and-websocket: done            # Low — deleted server/web/ and server/net/websocket.py
 
   # Epic 15: Server Architecture Refinement
-  epic-15: in-progress
+  epic-15: done
   15-1-player-session-manager: done                 # Core — extract PlayerManager from raw dict on Game
   15-2-relocate-player-cleanup: done                      # Core — move _cleanup_player from auth.py to PlayerManager
   15-3-handler-auth-middleware: done                       # Core — @requires_auth decorator eliminates 20x boilerplate
@@ -242,4 +242,4 @@ development_status:
   15-5b-npc-entity-and-dataclass-relocation: done    # Clean — relocate NpcEntity, split Trade/Party dataclasses
   15-6-eventbus-resilience-config-gaps: done         # Clean — error isolation, _RARE_CHECK_INTERVAL to config
   15-7-data-layer-consistency: done                       # Clean — SpawnCheckpoint repo, shared upsert utility
-  epic-15-retrospective: optional
+  epic-15-retrospective: done

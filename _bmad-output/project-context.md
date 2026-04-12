@@ -201,7 +201,7 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 - Duplicate login: kick old session (save → combat cleanup → room cleanup → close WS)
 - Inventory: `Inventory.from_dict(db_data, item_lookup)` — requires loaded item defs
 
-### Epic 12: Social Systems (In-Progress — All 8 Stories Done)
+### Epic 12: Social Systems (Complete)
 
 **New Managers (owned by `Game` class):**
 - `TradeManager` (`server/trade/manager.py`) — mutual exchange trade sessions, async lock, state machine
@@ -244,4 +244,21 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 - Review periodically for outdated rules
 - Remove rules that become obvious over time
 
-Last Updated: 2026-04-11 (Story 15.4 done — party invite state moved to PartyManager, 807 tests passing)
+### Epic 15: Server Architecture Refinement (Complete)
+
+**Refactoring patterns established:**
+- `PlayerManager` (`server/player/manager.py`) — owns session lifecycle (get/set/remove/has/iterate) and cleanup orchestration. Access via `game.player_manager`, never raw dict
+- `@requires_auth` decorator (`server/net/auth_middleware.py`) — wraps all WebSocket handlers except login/register; injects `entity_id` and `player_info` kwargs. Outer function retains `(websocket, data, *, game)` signature
+- Party invite state (pending, outgoing, timeouts, cooldowns) lives on `PartyManager` — handler is stateless. `PartyManager(connection_manager=...)` constructor injection
+- `NpcEntity` and template functions at `server/room/npc.py` — NOT in `objects/` (NpcEntity doesn't extend RoomObject/InteractiveObject)
+- `Trade` dataclass at `server/trade/session.py`, `Party` dataclass at `server/party/party.py` — separated from manager files
+- `EventBus.emit()` wraps each subscriber in try/except — one failing callback doesn't crash the loop
+- `RARE_CHECK_INTERVAL_SECONDS` in Settings — environment-overridable
+- `SpawnCheckpoint` access via `server/room/spawn_repo.py` — never inline queries in scheduler
+- `CombatInstance._resolve_effect_targets()` — single method for effect source/target resolution (no duplication)
+- `RoomState.mob_states` column removed (never used) — Alembic migration drops it
+
+**Config Values (added in Epic 15):**
+- `RARE_CHECK_INTERVAL_SECONDS = 60`
+
+Last Updated: 2026-04-12 (Epic 15 complete — all 7 stories done, 808 tests passing)

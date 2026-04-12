@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **The-Ages-II** is a multiplayer room-based dungeon game with turn-based card combat. The project combines:
 - A **BMAD framework** (v6.2.0) for AI-assisted design, planning, and project management workflows
-- A **Python game server** (Epics 1-14 complete; 807 tests passing) built with FastAPI + WebSockets
+- A **Python game server** (Epics 1-15 complete; 808 tests passing) built with FastAPI + WebSockets
 - A **web demo client** (`web-demo/`) — vanilla HTML/CSS/JS proof-of-concept for testing and demos; production client planned in Godot
 
 **Key reference documents:**
@@ -57,7 +57,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Alembic** for schema migrations (`make db-migrate`); `create_all` still used at startup alongside Alembic
 - **Pydantic** for message schemas and settings
 - **bcrypt** for password hashing
-- **pytest** + **pytest-asyncio** for testing (807 tests)
+- **pytest** + **pytest-asyncio** for testing (808 tests)
 
 ### Commands
 ```bash
@@ -80,10 +80,11 @@ open http://localhost:8000     # web demo client (requires server running)
 - **CombatManager** (`server/combat/manager.py`) — creates/tracks `CombatInstance` objects for turn-based card combat (multi-player party combat complete in Epic 12)
 - **ConnectionManager** (`server/net/connection_manager.py`) — maps WebSocket connections ↔ player entity IDs + room tracking + name → entity_id index
 - **TradeManager** (`server/trade/manager.py`) — mutual exchange trade sessions with state machine, async locks, timeouts
-- **PartyManager** (`server/party/manager.py`) — in-memory party groups with leader/member tracking, invite system, succession, party chat
+- **PlayerManager** (`server/player/manager.py`) — player session lifecycle (create, lookup, remove, iterate) + disconnect cleanup orchestration
+- **PartyManager** (`server/party/manager.py`) — in-memory party groups with leader/member tracking, invite system (state on manager, handler is stateless), succession, party chat
 - **MessageRouter** (`server/net/message_router.py`) — routes incoming JSON by `action` field to handler modules in `server/net/handlers/`
 - **Scheduler** (`server/core/scheduler.py`) — async scheduling for mob respawns and rare spawn checks
-- **EventBus** (`server/core/events.py`) — global announcements, cross-system triggers
+- **EventBus** (`server/core/events.py`) — global announcements, cross-system triggers (error-isolated: one failing subscriber doesn't crash the emit loop)
 - **EffectRegistry** (`server/core/effects/`) — shared card + item effect resolution (damage, heal, shield, dot, draw)
 
 ### Key Server Features
@@ -98,8 +99,9 @@ open http://localhost:8000     # web demo client (requires server running)
 - **Vertical Exits**: Stairs tiles (`STAIRS_UP`/`STAIRS_DOWN`) with `"ascend"`/`"descend"` exit directions (distinct from movement `"up"`/`"down"`)
 - **Admin REST API**: Authenticated endpoints (`/admin/status`, `/admin/shutdown`, `/admin/restart`) protected by `ADMIN_SECRET` env var with `hmac.compare_digest`
 - **Centralized Config**: All game balance values must reference `settings.*` from `server/core/config.py` — never hardcode HP, attack, stat defaults, spawn room, auth lengths, etc.
-- **NPC Templates**: `game.npc_templates` is the single source of truth — no module-level global. Pass `templates` dict to `create_npc_from_template()`.
+- **NPC Templates**: `game.npc_templates` is the single source of truth — no module-level global. Pass `templates` dict to `create_npc_from_template()`. NPC entity and template functions live in `server/room/npc.py` (not in `objects/`).
 - **Tile Modification**: Use `RoomInstance.set_tile(x, y, tile_type)` — never access `_grid` directly from outside `room.py`.
+- **SpawnCheckpoint Repo**: All spawn checkpoint DB access goes through `server/room/spawn_repo.py` (get_checkpoint, upsert_checkpoint, get_all_checkpoints) — never inline `select(SpawnCheckpoint)` in scheduler or elsewhere.
 - **Handler Auth Middleware**: All WebSocket handlers (except `handle_login`/`handle_register`) use `@requires_auth` decorator from `server/net/auth_middleware.py`. The decorator injects `entity_id: str` and `player_info: PlayerSession` as keyword arguments. Never duplicate the auth-check boilerplate manually.
 - **Party Invite State**: All invite tracking (pending, outgoing, timeouts, cooldowns) lives on `PartyManager` — the party handler (`server/net/handlers/party.py`) is stateless. `PartyManager` takes `connection_manager` via constructor injection. Never add module-level mutable state to handler files.
 
@@ -109,14 +111,14 @@ server/
 ├── core/          # Config, database, scheduler, event bus, shared effect registry
 ├── net/           # WebSocket connection manager, message router, auth middleware
 │   └── handlers/  # auth, movement, chat, combat, inventory, interact, trade, party, admin
-├── player/        # Player model, repo (stats whitelist), entity, auth (bcrypt)
-├── room/          # Room model, repo, tile system, room instance, manager, provider
-│   └── objects/   # NPC entity, chest, lever, base classes, registry, state
+├── player/        # Player model, repo (stats whitelist), entity, auth (bcrypt), manager (session lifecycle + cleanup)
+├── room/          # Room model, repo, tile system, room instance, manager, provider, npc entity, spawn repo
+│   └── objects/   # Chest, lever, base classes, registry, state
 ├── combat/        # Combat instance (DoT ticking, turn resolution), manager
 │   └── cards/     # Card definitions, hand management, card repo
 ├── items/         # Item definitions, item repo, inventory (serialization)
-├── trade/         # TradeManager, trade session state machine
-├── party/         # PartyManager, party dataclass, leader succession
+├── trade/         # TradeManager, trade session dataclass, state machine
+├── party/         # PartyManager, party dataclass, leader succession, invite tracking
 data/
 ├── rooms/         # Room definitions (4 rooms: town_square, dark_cave, test_room, other_room)
 ├── cards/         # Card set definitions (JSON)
