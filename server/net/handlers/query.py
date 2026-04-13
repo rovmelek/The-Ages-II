@@ -10,7 +10,7 @@ from server.core.config import settings
 from server.core.constants import STAT_NAMES
 from server.net.auth_middleware import requires_auth
 from server.room.room import DIRECTION_DELTAS
-from server.net.schemas import with_request_id
+from server.net.schemas import build_help_categories, with_request_id
 from server.player.session import PlayerSession
 
 if TYPE_CHECKING:
@@ -112,16 +112,9 @@ async def handle_help_actions(
     entity_id: str, player_info: PlayerSession,
 ) -> None:
     """Handle the 'help_actions' action — return actions grouped by category."""
-    categories = {
-        "Movement": ["move"],
-        "Combat": ["play_card", "pass_turn", "flee", "use_item_combat"],
-        "Items": ["inventory", "use_item", "interact"],
-        "Social": ["chat", "trade", "party", "logout"],
-        "Info": ["look", "who", "stats", "map", "help_actions", "level_up"],
-    }
     await websocket.send_json(with_request_id({
         "type": "help_result",
-        "categories": categories,
+        "categories": build_help_categories(),
     }, data))
 
 

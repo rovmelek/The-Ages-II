@@ -148,6 +148,7 @@ class HelpMessage(InboundMessage):
 
 class MapMessage(InboundMessage):
     action: str = "map"
+    help_category: ClassVar[str | None] = "Info"
 
 
 # --- Level-up ---
@@ -156,6 +157,7 @@ class MapMessage(InboundMessage):
 class LevelUpMessage(InboundMessage):
     action: str = "level_up"
     stats: list[str]
+    help_category: ClassVar[str | None] = "Info"
 
 
 # --- Social ---
@@ -164,11 +166,13 @@ class LevelUpMessage(InboundMessage):
 class TradeMessage(InboundMessage):
     action: str = "trade"
     args: str = ""
+    help_category: ClassVar[str | None] = "Social"
 
 
 class PartyMessage(InboundMessage):
     action: str = "party"
     args: str = ""
+    help_category: ClassVar[str | None] = "Social"
 
 
 # --- Heartbeat ---
@@ -196,6 +200,16 @@ def with_request_id(response: dict, data: dict) -> dict:
     if rid is not None:
         response["request_id"] = rid
     return response
+
+
+def build_help_categories() -> dict[str, list[str]]:
+    """Build help categories from ACTION_SCHEMAS using each schema's help_category."""
+    categories: dict[str, list[str]] = {}
+    for action, schema_cls in ACTION_SCHEMAS.items():
+        cat = schema_cls.help_category
+        if cat is not None:
+            categories.setdefault(cat, []).append(action)
+    return categories
 
 
 # --- Action-to-schema mapping ---
