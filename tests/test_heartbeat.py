@@ -7,6 +7,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from server.core.config import settings
+from server.net.heartbeat import _heartbeat_loop
 from tests.conftest import make_bare_game
 
 
@@ -130,7 +131,7 @@ class TestHeartbeatLoop:
                 # Remove event to break loop
                 game._pong_events.pop("player_1", None)
 
-            task = asyncio.create_task(game._heartbeat_loop("player_1"))
+            task = asyncio.create_task(_heartbeat_loop(game, "player_1"))
             helper = asyncio.create_task(_set_and_clear())
 
             await asyncio.wait_for(task, timeout=1.0)
@@ -153,7 +154,7 @@ class TestHeartbeatLoop:
 
         with patch.object(settings, "HEARTBEAT_INTERVAL_SECONDS", 0.01), \
              patch.object(settings, "HEARTBEAT_TIMEOUT_SECONDS", 0.01):
-            task = asyncio.create_task(game._heartbeat_loop("player_1"))
+            task = asyncio.create_task(_heartbeat_loop(game, "player_1"))
             await asyncio.wait_for(task, timeout=1.0)
 
         # Should have closed the WebSocket

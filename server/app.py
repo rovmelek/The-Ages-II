@@ -13,7 +13,8 @@ from pydantic import ValidationError
 from starlette.responses import FileResponse
 
 from server.core.config import settings
-from server.core.constants import SPAWN_PERSISTENT
+from server.net import heartbeat as _heartbeat
+from server.player import service as player_service
 from server.core.database import init_db
 from server.core import database as _database
 from server.net.connection_manager import ConnectionManager
@@ -21,7 +22,6 @@ from server.net.message_router import MessageRouter
 from server.net.errors import ErrorCode, send_error, sanitize_validation_error
 from server.net.schemas import ACTION_SCHEMAS
 from server.player import repo as player_repo
-from server.player.service import find_spawn_point
 from server.combat.manager import CombatManager
 from server.core.effects import create_default_registry
 from server.core.events import EventBus
@@ -232,97 +232,11 @@ class Game:
 
     async def kill_npc(self, room_key: str, npc_id: str) -> None:
         """Mark an NPC as dead and schedule respawn if persistent."""
-        room = self.room_manager.get_room(room_key)
-        if room is None:
-            return
-        npc = room.get_npc(npc_id)
-        if npc is None or not npc.is_alive:
-            return
-
-        npc.is_alive = False
-        npc.in_combat = False
-
-        # Schedule respawn for persistent NPCs
-        tmpl = self.npc_templates.get(npc.npc_key)
-        if tmpl and tmpl.get("spawn_type") == SPAWN_PERSISTENT:
-            respawn_seconds = tmpl.get("spawn_config", {}).get("respawn_seconds", settings.MOB_RESPAWN_SECONDS)
-            self.scheduler.schedule_respawn(room_key, npc_id, respawn_seconds)
-
-    @staticmethod
-    def _reset_player_stats(entity) -> None:
-        """Clear combat flags and restore HP to max for respawn."""
-        entity.in_combat = False
-        entity.stats["hp"] = entity.stats.get("max_hp", settings.DEFAULT_BASE_HP)
-        entity.stats.pop("shield", None)
+        await player_service.kill_npc(self, room_key, npc_id)
 
     async def respawn_player(self, entity_id: str) -> None:
         """Respawn a defeated player in town_square with full HP."""
-        player_info = self.player_manager.get_session(entity_id)
-        if player_info is None:
-            return
-
-        entity = player_info.entity
-        old_room_key = player_info.room_key
-
-        self._reset_player_stats(entity)
-
-        spawn_room_key = settings.DEFAULT_SPAWN_ROOM
-        spawn_room = self.room_manager.get_room(spawn_room_key)
-        if spawn_room is None:
-            return  # Cannot respawn without town_square
-
-        sx, sy = find_spawn_point(spawn_room, spawn_room_key, entity.name)
-
-        # Save to DB FIRST (crash recovery: player placed correctly on re-login)
-        try:
-            async with self.transaction() as session:
-                await player_repo.update_position(
-                    session, entity.player_db_id, spawn_room_key, sx, sy
-                )
-                await player_repo.update_stats(
-                    session, entity.player_db_id, entity.stats
-                )
-        except Exception:
-            pass  # Best-effort DB save
-
-        # In-memory room transfer
-        old_room = self.room_manager.get_room(old_room_key)
-        if old_room and old_room_key != spawn_room_key:
-            old_room.remove_entity(entity_id)
-            await self.connection_manager.broadcast_to_room(
-                old_room_key,
-                {"type": "entity_left", "entity_id": entity_id},
-                exclude=entity_id,
-            )
-
-        entity.x = sx
-        entity.y = sy
-        spawn_room.add_entity(entity)
-        player_info.room_key = spawn_room_key
-        self.connection_manager.update_room(entity_id, spawn_room_key)
-
-        # Send respawn + new room state to player
-        ws = self.connection_manager.get_websocket(entity_id)
-        if ws:
-            await ws.send_json({
-                "type": "respawn",
-                "room_key": spawn_room_key,
-                "x": sx,
-                "y": sy,
-                "hp": entity.stats["hp"],
-                "max_hp": entity.stats["max_hp"],
-            })
-            await ws.send_json({"type": "room_state", **spawn_room.get_state()})
-
-        # Notify town_square players
-        await self.connection_manager.broadcast_to_room(
-            spawn_room_key,
-            {
-                "type": "entity_entered",
-                "entity": {"id": entity.id, "name": entity.name, "x": sx, "y": sy},
-            },
-            exclude=entity_id,
-        )
+        await player_service.respawn_player(self, entity_id)
 
     async def handle_disconnect(self, websocket: WebSocket) -> None:
         """Handle a player disconnecting: deferred cleanup with grace period."""
@@ -384,49 +298,11 @@ class Game:
 
     def _start_heartbeat(self, entity_id: str) -> None:
         """Start a heartbeat task for a connected player."""
-        self._cancel_heartbeat(entity_id)  # Cancel any existing task first
-        event = asyncio.Event()
-        self._pong_events[entity_id] = event
-        task = asyncio.create_task(self._heartbeat_loop(entity_id))
-        self._heartbeat_tasks[entity_id] = task
+        _heartbeat.start_heartbeat(self, entity_id)
 
     def _cancel_heartbeat(self, entity_id: str) -> None:
         """Cancel and remove heartbeat task and pong event for an entity."""
-        task = self._heartbeat_tasks.pop(entity_id, None)
-        if task and not task.done():
-            task.cancel()
-        self._pong_events.pop(entity_id, None)
-
-    async def _heartbeat_loop(self, entity_id: str) -> None:
-        """Send periodic pings and close connection if pong not received."""
-        try:
-            while True:
-                await asyncio.sleep(settings.HEARTBEAT_INTERVAL_SECONDS)
-                ws = self.connection_manager.get_websocket(entity_id)
-                if ws is None:
-                    break
-                try:
-                    await ws.send_json({"type": "ping"})
-                except Exception:
-                    break
-                event = self._pong_events.get(entity_id)
-                if event is None:
-                    break
-                event.clear()
-                try:
-                    await asyncio.wait_for(
-                        event.wait(),
-                        timeout=settings.HEARTBEAT_TIMEOUT_SECONDS,
-                    )
-                except asyncio.TimeoutError:
-                    # No pong received — close WebSocket
-                    try:
-                        await ws.close(code=1001)
-                    except Exception:
-                        pass
-                    break
-        except asyncio.CancelledError:
-            pass
+        _heartbeat.cancel_heartbeat(self, entity_id)
 
 
 # ---------------------------------------------------------------------------

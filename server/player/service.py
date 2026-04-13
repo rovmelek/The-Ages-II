@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from fastapi import WebSocket
 
 from server.core.config import settings
-from server.core.constants import PROTOCOL_VERSION, STAT_NAMES
+from server.core.constants import PROTOCOL_VERSION, SPAWN_PERSISTENT, STAT_NAMES
 from server.core.xp import get_pending_level_ups
 from server.net.xp_notifications import send_level_up_available
 from server.items import item_repo
@@ -211,3 +211,104 @@ async def setup_full_session(
         await send_level_up_available(entity_id, entity, game)
     game._start_heartbeat(entity_id)
     return True
+
+
+# ---------------------------------------------------------------------------
+# NPC and respawn — moved from Game class (Story 17.8)
+# ---------------------------------------------------------------------------
+
+
+async def kill_npc(game: Game, room_key: str, npc_id: str) -> None:
+    """Mark an NPC as dead and schedule respawn if persistent."""
+    room = game.room_manager.get_room(room_key)
+    if room is None:
+        return
+    npc = room.get_npc(npc_id)
+    if npc is None or not npc.is_alive:
+        return
+
+    npc.is_alive = False
+    npc.in_combat = False
+
+    # Schedule respawn for persistent NPCs
+    tmpl = game.npc_templates.get(npc.npc_key)
+    if tmpl and tmpl.get("spawn_type") == SPAWN_PERSISTENT:
+        respawn_seconds = tmpl.get("spawn_config", {}).get("respawn_seconds", settings.MOB_RESPAWN_SECONDS)
+        game.scheduler.schedule_respawn(room_key, npc_id, respawn_seconds)
+
+
+def _reset_player_stats(entity) -> None:
+    """Clear combat flags and restore HP to max for respawn."""
+    entity.in_combat = False
+    entity.stats["hp"] = entity.stats.get("max_hp", settings.DEFAULT_BASE_HP)
+    entity.stats.pop("shield", None)
+
+
+async def respawn_player(game: Game, entity_id: str) -> None:
+    """Respawn a defeated player in town_square with full HP."""
+    player_info = game.player_manager.get_session(entity_id)
+    if player_info is None:
+        return
+
+    entity = player_info.entity
+    old_room_key = player_info.room_key
+
+    _reset_player_stats(entity)
+
+    spawn_room_key = settings.DEFAULT_SPAWN_ROOM
+    spawn_room = game.room_manager.get_room(spawn_room_key)
+    if spawn_room is None:
+        return  # Cannot respawn without town_square
+
+    sx, sy = find_spawn_point(spawn_room, spawn_room_key, entity.name)
+
+    # Save to DB FIRST (crash recovery: player placed correctly on re-login)
+    try:
+        async with game.transaction() as session:
+            await player_repo.update_position(
+                session, entity.player_db_id, spawn_room_key, sx, sy
+            )
+            await player_repo.update_stats(
+                session, entity.player_db_id, entity.stats
+            )
+    except Exception:
+        pass  # Best-effort DB save
+
+    # In-memory room transfer
+    old_room = game.room_manager.get_room(old_room_key)
+    if old_room and old_room_key != spawn_room_key:
+        old_room.remove_entity(entity_id)
+        await game.connection_manager.broadcast_to_room(
+            old_room_key,
+            {"type": "entity_left", "entity_id": entity_id},
+            exclude=entity_id,
+        )
+
+    entity.x = sx
+    entity.y = sy
+    spawn_room.add_entity(entity)
+    player_info.room_key = spawn_room_key
+    game.connection_manager.update_room(entity_id, spawn_room_key)
+
+    # Send respawn + new room state to player
+    ws = game.connection_manager.get_websocket(entity_id)
+    if ws:
+        await ws.send_json({
+            "type": "respawn",
+            "room_key": spawn_room_key,
+            "x": sx,
+            "y": sy,
+            "hp": entity.stats["hp"],
+            "max_hp": entity.stats["max_hp"],
+        })
+        await ws.send_json({"type": "room_state", **spawn_room.get_state()})
+
+    # Notify town_square players
+    await game.connection_manager.broadcast_to_room(
+        spawn_room_key,
+        {
+            "type": "entity_entered",
+            "entity": {"id": entity.id, "name": entity.name, "x": sx, "y": sy},
+        },
+        exclude=entity_id,
+    )
