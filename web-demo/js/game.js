@@ -1752,6 +1752,8 @@ function toggleStatsPanel(forceOpen) {
 function handleXpGained(data) {
   if (!gameState.player?.stats) return;
   gameState.player.stats.xp = data.new_total_xp ?? ((gameState.player.stats.xp || 0) + (data.amount || 0));
+  if (data.xp_for_next_level != null) gameState.player.stats.xp_for_next_level = data.xp_for_next_level;
+  if (data.xp_for_current_level != null) gameState.player.stats.xp_for_current_level = data.xp_for_current_level;
   updateStatsPanel();
   if (data.source !== 'combat') {
     appendChat(`+${data.amount} XP (${data.source}: ${data.detail})`, 'system');
@@ -1776,6 +1778,8 @@ function handleLevelUpComplete(data) {
   stats.hp = data.new_hp || data.new_max_hp;
   if (data.new_max_energy != null) stats.max_energy = data.new_max_energy;
   if (data.new_energy != null) stats.energy = data.new_energy;
+  if (data.xp_for_next_level != null) stats.xp_for_next_level = data.xp_for_next_level;
+  if (data.xp_for_current_level != null) stats.xp_for_current_level = data.xp_for_current_level;
   if (data.stat_changes) {
     for (const [key, val] of Object.entries(data.stat_changes)) {
       stats[key] = val;

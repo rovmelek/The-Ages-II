@@ -30,4 +30,4 @@ SPAWN_PERSISTENT = "persistent"
 SPAWN_RARE = "rare"
 
 # Protocol version included in login_success responses
-PROTOCOL_VERSION = "1.1"
+PROTOCOL_VERSION = "1.2"

@@ -447,6 +447,8 @@ class XpGainedMessage(BaseModel):
     source: str
     detail: str
     new_total_xp: int
+    xp_for_next_level: int
+    xp_for_current_level: int
     seq: int | None = None
 
 
@@ -471,6 +473,8 @@ class LevelUpCompleteMessage(BaseModel):
     new_hp: int
     new_max_energy: int | None = None
     new_energy: int | None = None
+    xp_for_next_level: int
+    xp_for_current_level: int
     skipped_at_cap: list[str] | None = None
     request_id: str | None = None
 

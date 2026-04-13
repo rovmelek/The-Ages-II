@@ -335,3 +335,5 @@ development_status:
 issues:
   ISS-031-fragile-token-error-string-matching: done    # AUTH_TOKEN_EXPIRED + AUTH_TOKEN_MISSING error codes
   ISS-032-movement-spawn-point-duplication: done       # Deduplicate spawn logic via find_spawn_point()
+  ISS-035-combat-energy-regen-too-high: done           # Reduce combat regen (BASE 2→1, FACTOR 0.5→0.2), increase OOC regen (2→4/tick)
+  ISS-036-xp-bar-thresholds-stale-after-levelup: done  # Add xp_for_next/current_level to xp_gained + level_up_complete messages

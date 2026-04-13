@@ -33,13 +33,13 @@ class Settings(BaseSettings):
     DEFAULT_BASE_ENERGY: int = 20
     INT_ENERGY_PER_POINT: int = 3
     WIS_ENERGY_PER_POINT: int = 2
-    BASE_COMBAT_ENERGY_REGEN: int = 2
-    COMBAT_ENERGY_REGEN_FACTOR: float = 0.5
+    BASE_COMBAT_ENERGY_REGEN: int = 1
+    COMBAT_ENERGY_REGEN_FACTOR: float = 0.2
 
     # --- Out-of-Combat Regen ---
     REGEN_INTERVAL_SECONDS: int = 10
     REGEN_HP_PER_TICK: int = 3
-    REGEN_ENERGY_PER_TICK: int = 2
+    REGEN_ENERGY_PER_TICK: int = 4
     REGEN_PERSIST_INTERVAL: int = 6
 
     # --- NPC ---

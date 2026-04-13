@@ -373,9 +373,12 @@ class TestParty:
 
 class TestXpLevel:
     def test_xp_gained(self):
-        m = XpGainedMessage(amount=50, source="combat", detail="Defeated Goblin", new_total_xp=150)
+        m = XpGainedMessage(amount=50, source="combat", detail="Defeated Goblin", new_total_xp=150,
+                            xp_for_next_level=1000, xp_for_current_level=0)
         d = m.model_dump()
         assert d["amount"] == 50
+        assert d["xp_for_next_level"] == 1000
+        assert d["xp_for_current_level"] == 0
 
     def test_level_up_available(self):
         m = LevelUpAvailableMessage(
@@ -392,12 +395,16 @@ class TestXpLevel:
         assert d["choose_stats"] == 3
 
     def test_level_up_complete(self):
-        m = LevelUpCompleteMessage(level=2, stat_changes={"strength": 1}, new_max_hp=105, new_hp=105)
+        m = LevelUpCompleteMessage(level=2, stat_changes={"strength": 1}, new_max_hp=105, new_hp=105,
+                                   xp_for_next_level=2000, xp_for_current_level=1000)
         d = m.model_dump(exclude_none=True)
         assert "skipped_at_cap" not in d
+        assert d["xp_for_next_level"] == 2000
+        assert d["xp_for_current_level"] == 1000
 
     def test_level_up_complete_with_skipped(self):
         m = LevelUpCompleteMessage(level=2, stat_changes={"strength": 1}, new_max_hp=105, new_hp=105,
+                                   xp_for_next_level=2000, xp_for_current_level=1000,
                                    skipped_at_cap=["dexterity"])
         d = m.model_dump(exclude_none=True)
         assert d["skipped_at_cap"] == ["dexterity"]

@@ -400,15 +400,15 @@ async def test_cycle_regenerates_energy():
     # Set energy low to observe regen
     instance.participant_stats["player_1"]["energy"] = 0
     instance.participant_stats["player_2"]["energy"] = 0
-    # Default stats: INT=0, WIS=0 → regen = floor(2 + 0*0.5) = 2
+    # Default stats: INT=0, WIS=0 → regen = floor(1 + 0*0.2) = 1
     card_key1 = instance.hands["player_1"].hand[0].card_key
     await instance.play_card("player_1", card_key1)
 
     card_key2 = instance.hands["player_2"].hand[0].card_key
     await instance.play_card("player_2", card_key2)
-    # Cycle complete — energy regen (+2 at default stats)
-    assert instance.participant_stats["player_1"]["energy"] == 2
-    assert instance.participant_stats["player_2"]["energy"] == 2
+    # Cycle complete — energy regen (+1 at default stats)
+    assert instance.participant_stats["player_1"]["energy"] == 1
+    assert instance.participant_stats["player_2"]["energy"] == 1
 
 
 @pytest.mark.asyncio
@@ -456,21 +456,21 @@ async def test_dead_player_skipped_in_turn_order():
 
 
 def test_compute_energy_regen_default_stats():
-    """Default stats (INT=0, WIS=0) → regen = floor(2 + 0*0.5) = 2."""
+    """Default stats (INT=0, WIS=0) → regen = floor(1 + 0*0.2) = 1."""
     from server.combat.instance import compute_energy_regen
-    assert compute_energy_regen({"intelligence": 0, "wisdom": 0}) == 2
+    assert compute_energy_regen({"intelligence": 0, "wisdom": 0}) == 1
 
 
 def test_compute_energy_regen_high_stats():
-    """INT=5, WIS=5 → regen = floor(2 + 10*0.5) = 7."""
+    """INT=5, WIS=5 → regen = floor(1 + 10*0.2) = 3."""
     from server.combat.instance import compute_energy_regen
-    assert compute_energy_regen({"intelligence": 5, "wisdom": 5}) == 7
+    assert compute_energy_regen({"intelligence": 5, "wisdom": 5}) == 3
 
 
 def test_compute_energy_regen_starting_stats():
-    """INT=1, WIS=1 → regen = floor(2 + 2*0.5) = 3 (matches old default)."""
+    """INT=1, WIS=1 → regen = floor(1 + 2*0.2) = 1."""
     from server.combat.instance import compute_energy_regen
-    assert compute_energy_regen({"intelligence": 1, "wisdom": 1}) == 3
+    assert compute_energy_regen({"intelligence": 1, "wisdom": 1}) == 1
 
 
 def test_compute_max_energy_default():

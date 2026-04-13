@@ -87,15 +87,18 @@ async def handle_level_up(
         await player_repo.update_stats(session, entity.player_db_id, stats)
 
     # Build response
+    new_level = stats["level"]
     response: dict = {
         "type": "level_up_complete",
-        "level": stats["level"],
+        "level": new_level,
         "stat_changes": stat_changes,
         "stat_increases": stat_increases,
         "new_max_hp": stats["max_hp"],
         "new_hp": stats["hp"],
         "new_max_energy": stats["max_energy"],
         "new_energy": stats["energy"],
+        "xp_for_next_level": new_level * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
+        "xp_for_current_level": (new_level - 1) * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
     }
     if skipped:
         response["skipped_at_cap"] = skipped

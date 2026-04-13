@@ -375,6 +375,8 @@
 | `new_hp` | `int` | Yes | PydanticUndefined |
 | `new_max_energy` | `int | None` | No | `"—"` |
 | `new_energy` | `int | None` | No | `"—"` |
+| `xp_for_next_level` | `int` | Yes | PydanticUndefined |
+| `xp_for_current_level` | `int` | Yes | PydanticUndefined |
 | `skipped_at_cap` | `list[str] | None` | No | `"—"` |
 | `request_id` | `str | None` | No | `"—"` |
 
@@ -626,6 +628,8 @@
 | `source` | `str` | Yes | PydanticUndefined |
 | `detail` | `str` | Yes | PydanticUndefined |
 | `new_total_xp` | `int` | Yes | PydanticUndefined |
+| `xp_for_next_level` | `int` | Yes | PydanticUndefined |
+| `xp_for_current_level` | `int` | Yes | PydanticUndefined |
 | `seq` | `int | None` | No | `"—"` |
 
 ## 5. Delivery Scopes

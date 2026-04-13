@@ -53,6 +53,14 @@ Follow these rules in every interaction. They are non-negotiable.
     5. Minimum 2 full passes. Print "Pass N: X findings" after each.
     6. Exit only after a pass prints "0 findings."
 
+### Pre-Output Gate
+
+Before presenting any analysis, evaluation, review, or implementation to the user, verify:
+
+- [ ] **Rule 11 applied?** If this output contains analysis, evaluation, or review — did the adversarial review loop run with "Pass N: X findings" printed, exiting only at 0 findings?
+- [ ] **Rule 6 (protocol)?** If any inbound/outbound message schema changed → `PROTOCOL_VERSION` bumped, `make protocol-doc` + `make check-protocol` run
+- [ ] **All tests passing?** If code was changed → `make test` passes
+
 ## BMAD System
 
 - **Agents**: Persona-based AI roles defined in `_bmad/*/agents/`
@@ -195,9 +203,10 @@ Invoke BMAD workflows through slash commands:
 When fixing any bug, warning, or issue (whether found during testing, code review, or user report):
 
 1. **Document first**: Create `_bmad-output/implementation-artifacts/issues/ISS-NNN-<slug>.md` with severity, root cause, proposed fix, and impact. Find the next ISS number by checking existing files in that directory.
-2. **Review**: Verify the issue doc's claims (file paths, function names, root cause) against the actual codebase before implementing.
+2. **Review (Pre-Output Gate)**: The ISS doc is analysis — apply the Pre-Output Gate before implementing. This includes the Rule 11 adversarial review loop.
 3. **Fix**: Implement the fix.
-4. **Track**: Add entry to `_bmad-output/implementation-artifacts/sprint-status.yaml` with status `done`.
+4. **Verify (Pre-Output Gate)**: Apply the Pre-Output Gate again. Additionally verify the ISS doc is updated with actual files changed and that root cause and proposed fix are still accurate.
+5. **Track**: Add entry to `_bmad-output/implementation-artifacts/sprint-status.yaml` with status `done`.
 
 **Never fix a bug without creating the ISS doc first.** This applies even for trivial fixes.
 

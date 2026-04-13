@@ -45,12 +45,15 @@ async def notify_xp(
     game: Game,
 ) -> None:
     """Send xp_gained and optional level_up_available messages."""
+    current_level = player_entity.stats.get("level", 1)
     await game.connection_manager.send_to_player_seq(entity_id, {
         "type": "xp_gained",
         "amount": result.final_xp,
         "source": result.source,
         "detail": result.detail,
         "new_total_xp": result.new_total_xp,
+        "xp_for_next_level": current_level * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
+        "xp_for_current_level": (current_level - 1) * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
     })
     if result.level_up_available:
         await send_level_up_available(entity_id, player_entity, game)
