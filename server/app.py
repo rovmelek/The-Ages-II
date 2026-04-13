@@ -184,79 +184,36 @@ class Game:
             handle_who,
         )
 
-        self.router.register(
-            "login", lambda ws, d: handle_login(ws, d, game=self)
-        )
-        self.router.register(
-            "register", lambda ws, d: handle_register(ws, d, game=self)
-        )
-        self.router.register(
-            "logout", lambda ws, d: handle_logout(ws, d, game=self)
-        )
-        self.router.register(
-            "move", lambda ws, d: handle_move(ws, d, game=self)
-        )
-        self.router.register(
-            "chat", lambda ws, d: handle_chat(ws, d, game=self)
-        )
-        self.router.register(
-            "interact", lambda ws, d: handle_interact(ws, d, game=self)
-        )
-        self.router.register(
-            "play_card", lambda ws, d: handle_play_card(ws, d, game=self)
-        )
-        self.router.register(
-            "pass_turn", lambda ws, d: handle_pass_turn(ws, d, game=self)
-        )
-        self.router.register(
-            "flee", lambda ws, d: handle_flee(ws, d, game=self)
-        )
-        self.router.register(
-            "inventory", lambda ws, d: handle_inventory(ws, d, game=self)
-        )
-        self.router.register(
-            "use_item", lambda ws, d: handle_use_item(ws, d, game=self)
-        )
-        self.router.register(
-            "use_item_combat",
-            lambda ws, d: handle_use_item_combat(ws, d, game=self),
-        )
-        self.router.register(
-            "look", lambda ws, d: handle_look(ws, d, game=self)
-        )
-        self.router.register(
-            "who", lambda ws, d: handle_who(ws, d, game=self)
-        )
-        self.router.register(
-            "stats", lambda ws, d: handle_stats(ws, d, game=self)
-        )
-        self.router.register(
-            "help_actions",
-            lambda ws, d: handle_help_actions(ws, d, game=self),
-        )
-        self.router.register(
-            "map", lambda ws, d: handle_map(ws, d, game=self)
-        )
-        self.router.register(
-            "level_up",
-            lambda ws, d: handle_level_up(ws, d, game=self),
-        )
-        self.router.register(
-            "trade", lambda ws, d: handle_trade(ws, d, game=self)
-        )
-        self.router.register(
-            "party", lambda ws, d: handle_party(ws, d, game=self)
-        )
-        self.router.register(
-            "party_chat",
-            lambda ws, d: handle_party_chat(ws, d, game=self),
-        )
-        self.router.register(
-            "pong", lambda ws, d: handle_pong(ws, d, game=self)
-        )
-        self.router.register(
-            "reconnect", lambda ws, d: handle_reconnect(ws, d, game=self)
-        )
+        handlers: dict[str, object] = {
+            "login": handle_login,
+            "register": handle_register,
+            "logout": handle_logout,
+            "move": handle_move,
+            "chat": handle_chat,
+            "interact": handle_interact,
+            "play_card": handle_play_card,
+            "pass_turn": handle_pass_turn,
+            "flee": handle_flee,
+            "inventory": handle_inventory,
+            "use_item": handle_use_item,
+            "use_item_combat": handle_use_item_combat,
+            "look": handle_look,
+            "who": handle_who,
+            "stats": handle_stats,
+            "help_actions": handle_help_actions,
+            "map": handle_map,
+            "level_up": handle_level_up,
+            "trade": handle_trade,
+            "party": handle_party,
+            "party_chat": handle_party_chat,
+            "pong": handle_pong,
+            "reconnect": handle_reconnect,
+        }
+
+        for action, handler in handlers.items():
+            self.router.register(
+                action, lambda ws, d, h=handler: h(ws, d, game=self)
+            )
 
     def _register_events(self) -> None:
         """Register event bus subscribers."""

@@ -308,7 +308,7 @@ development_status:
   17-12-sanitize-pydantic-validation-errors: done                  # FR148 — e.errors() extraction, uses send_error()
   17-13-protocol-versioning: done                                 # FR138 — PROTOCOL_VERSION in login_success/reconnect, spec generator
   17-14-auto-generate-help-categories: done                        # FR145 — help_category ClassVar on InboundMessage
-  17-15-handler-registration-data-driven-dict: ready-for-dev     # FR147 — HANDLERS dict + loop replaces 23 lambdas
+  17-15-handler-registration-data-driven-dict: done               # FR147 — HANDLERS dict + loop replaces 23 lambdas
   17-16-fix-markdown-line-break-rendering: ready-for-dev         # FR151 — \n → <br> in renderSafeMarkdown, white-space: pre-wrap CSS
 
   epic-17-retrospective: optional
