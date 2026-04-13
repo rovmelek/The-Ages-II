@@ -312,3 +312,8 @@ development_status:
   17-16-fix-markdown-line-break-rendering: done                   # FR151 — \n → <br> in renderSafeMarkdown, white-space: pre-wrap CSS
 
   epic-17-retrospective: done
+
+# Post-Epic Issues
+issues:
+  ISS-031-fragile-token-error-string-matching: done    # AUTH_TOKEN_EXPIRED + AUTH_TOKEN_MISSING error codes
+  ISS-032-movement-spawn-point-duplication: done       # Deduplicate spawn logic via find_spawn_point()

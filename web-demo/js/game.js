@@ -602,7 +602,7 @@ function handlePartyChat(data) {
 
 function handleError(data) {
   // Token reconnect failed — fall back to credential login
-  if (data.detail === 'Invalid or expired token' && gameState.credentials) {
+  if (data.code === 'AUTH_TOKEN_EXPIRED' && gameState.credentials) {
     sessionToken = null;
     sendAction('login', gameState.credentials);
     return;

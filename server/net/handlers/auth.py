@@ -9,6 +9,7 @@ from fastapi import WebSocket
 from server.core.config import settings
 from server.core.constants import PROTOCOL_VERSION
 from server.net.auth_middleware import requires_auth
+from server.net.errors import ErrorCode, send_error
 from server.net.schemas import with_request_id
 from server.player import repo as player_repo
 from server.player.auth import hash_password, verify_password
@@ -160,16 +161,12 @@ async def handle_reconnect(websocket: WebSocket, data: dict, *, game: Game) -> N
     """Handle the 'reconnect' action: validate token, restore session."""
     token = data.get("session_token", "")
     if not token:
-        await websocket.send_json(
-            with_request_id({"type": "error", "detail": "Missing session_token"}, data)
-        )
+        await send_error(websocket, ErrorCode.AUTH_TOKEN_MISSING, "Missing session_token", data)
         return
 
     db_id = game.token_store.validate(token)
     if db_id is None:
-        await websocket.send_json(
-            with_request_id({"type": "error", "detail": "Invalid or expired token"}, data)
-        )
+        await send_error(websocket, ErrorCode.AUTH_TOKEN_EXPIRED, "Invalid or expired token", data)
         return
 
     # Consume old token, issue new one

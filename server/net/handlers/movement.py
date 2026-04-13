@@ -11,6 +11,7 @@ from server.net.xp_notifications import grant_xp
 from server.net.auth_middleware import requires_auth
 from server.net.schemas import with_request_id
 from server.player import repo as player_repo
+from server.player.service import find_spawn_point
 from server.player.session import PlayerSession
 from server.room import repo as room_repo
 from server.room.room import DIRECTION_DELTAS
@@ -212,14 +213,7 @@ async def _handle_exit_transition(
     entry_x = exit_info.get("entry_x")
     entry_y = exit_info.get("entry_y")
     if entry_x is None or entry_y is None or not target_room.is_walkable(entry_x, entry_y):
-        entry_x, entry_y = target_room.get_player_spawn()
-    if not target_room.is_walkable(entry_x, entry_y):
-        entry_x, entry_y = target_room.find_first_walkable()
-    if not target_room.is_walkable(entry_x, entry_y):
-        logger.warning(
-            "Room %s has no walkable tile; placing %s at (%d, %d)",
-            target_room_key, entity.name, entry_x, entry_y,
-        )
+        entry_x, entry_y = find_spawn_point(target_room, target_room_key, entity.name)
 
     # Place entity in new room
     entity.x = entry_x

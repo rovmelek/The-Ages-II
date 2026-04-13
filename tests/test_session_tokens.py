@@ -230,6 +230,7 @@ class TestHandleReconnect:
         ws.send_json.assert_called_once()
         msg = ws.send_json.call_args[0][0]
         assert msg["type"] == "error"
+        assert msg["code"] == "AUTH_TOKEN_EXPIRED"
         assert "Invalid or expired token" in msg["detail"]
 
     @pytest.mark.asyncio
@@ -246,6 +247,7 @@ class TestHandleReconnect:
         ws.send_json.assert_called_once()
         msg = ws.send_json.call_args[0][0]
         assert msg["type"] == "error"
+        assert msg["code"] == "AUTH_TOKEN_EXPIRED"
         assert "Invalid or expired token" in msg["detail"]
 
     @pytest.mark.asyncio
@@ -290,6 +292,7 @@ class TestHandleReconnect:
             await handle_reconnect(ws, {"action": "reconnect", "session_token": token}, game=game)
             msg = ws.send_json.call_args[0][0]
             assert msg["type"] == "error"
+            assert msg["code"] == "AUTH_TOKEN_EXPIRED"
             assert "Invalid or expired token" in msg["detail"]
 
     @pytest.mark.asyncio
