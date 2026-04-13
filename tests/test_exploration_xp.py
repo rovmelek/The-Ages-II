@@ -187,9 +187,11 @@ class TestExplorationXP:
 
         room = _make_room(room_key="town_square", name="Town Square")
 
-        with patch("server.net.handlers.auth.player_repo") as mock_repo, \
+        mock_repo = AsyncMock()
+        with patch("server.net.handlers.auth.player_repo", mock_repo), \
+             patch("server.player.service.player_repo", mock_repo), \
              patch("server.net.handlers.auth.verify_password", return_value=True), \
-             patch("server.net.handlers.auth.room_repo") as mock_room_repo:
+             patch("server.player.service.room_repo") as mock_room_repo:
             mock_repo.get_by_username = AsyncMock(return_value=player_db)
             mock_repo.update_stats = AsyncMock()
             mock_repo.update_position = AsyncMock()

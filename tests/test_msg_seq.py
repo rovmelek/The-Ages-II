@@ -245,8 +245,10 @@ class TestReconnectLastSeq:
         sent = []
         ws.send_json = AsyncMock(side_effect=lambda m: sent.append(m))
 
-        with patch("server.net.handlers.auth.player_repo") as mock_repo, \
-             patch("server.net.handlers.auth.item_repo"):
+        mock_repo = AsyncMock()
+        with patch("server.net.handlers.auth.player_repo", mock_repo), \
+             patch("server.player.service.player_repo", mock_repo), \
+             patch("server.player.service.item_repo"):
             mock_repo.get_by_id = AsyncMock(return_value=mock_player)
             mock_repo.update_stats = AsyncMock()
             mock_repo.update_position = AsyncMock()

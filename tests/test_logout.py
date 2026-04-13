@@ -296,8 +296,10 @@ async def test_relogin_same_socket_after_logout():
     game, room = _make_game()
     entity, ws = _add_player(game, room)
 
+    mock_repo = AsyncMock()
     with patch("server.player.manager.player_repo", new_callable=AsyncMock), \
-         patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
+         patch("server.net.handlers.auth.player_repo", mock_repo), \
+         patch("server.player.service.player_repo", mock_repo):
         # Logout first
         await handle_logout(ws, {}, game=game)
 
@@ -318,7 +320,7 @@ async def test_relogin_same_socket_after_logout():
         mock_repo.get_by_username.return_value = mock_player
 
         with patch("server.net.handlers.auth.verify_password", return_value=True), \
-             patch("server.net.handlers.auth.room_repo"):
+             patch("server.player.service.room_repo"):
             await handle_login(ws, {"username": "hero", "password": "secret123"}, game=game)
 
     # Player is logged in again
@@ -344,8 +346,10 @@ async def test_relogin_same_socket_without_logout():
     game, room = _make_game()
     entity, ws = _add_player(game, room)
 
+    mock_repo = AsyncMock()
     with patch("server.player.manager.player_repo", new_callable=AsyncMock), \
-         patch("server.net.handlers.auth.player_repo", new_callable=AsyncMock) as mock_repo:
+         patch("server.net.handlers.auth.player_repo", mock_repo), \
+         patch("server.player.service.player_repo", mock_repo):
         mock_player = AsyncMock()
         mock_player.id = 1
         mock_player.username = "hero"
@@ -359,7 +363,7 @@ async def test_relogin_same_socket_without_logout():
         mock_repo.get_by_username.return_value = mock_player
 
         with patch("server.net.handlers.auth.verify_password", return_value=True), \
-             patch("server.net.handlers.auth.room_repo"):
+             patch("server.player.service.room_repo"):
             await handle_login(ws, {"username": "hero", "password": "secret123"}, game=game)
 
     # Player is re-logged in (not disconnected)

@@ -21,6 +21,7 @@ from server.net.message_router import MessageRouter
 from server.net.errors import ErrorCode, send_error, sanitize_validation_error
 from server.net.schemas import ACTION_SCHEMAS
 from server.player import repo as player_repo
+from server.player.service import find_spawn_point
 from server.combat.manager import CombatManager
 from server.core.effects import create_default_registry
 from server.core.events import EventBus
@@ -254,19 +255,6 @@ class Game:
         entity.stats["hp"] = entity.stats.get("max_hp", settings.DEFAULT_BASE_HP)
         entity.stats.pop("shield", None)
 
-    @staticmethod
-    def _find_spawn_point(spawn_room, spawn_room_key: str, entity_name: str) -> tuple[int, int]:
-        """Find a walkable spawn point in the given room."""
-        sx, sy = spawn_room.get_player_spawn()
-        if not spawn_room.is_walkable(sx, sy):
-            sx, sy = spawn_room.find_first_walkable()
-        if not spawn_room.is_walkable(sx, sy):
-            logger.warning(
-                "Room %s has no walkable tile; placing %s at (%d, %d)",
-                spawn_room_key, entity_name, sx, sy,
-            )
-        return sx, sy
-
     async def respawn_player(self, entity_id: str) -> None:
         """Respawn a defeated player in town_square with full HP."""
         player_info = self.player_manager.get_session(entity_id)
@@ -283,7 +271,7 @@ class Game:
         if spawn_room is None:
             return  # Cannot respawn without town_square
 
-        sx, sy = self._find_spawn_point(spawn_room, spawn_room_key, entity.name)
+        sx, sy = find_spawn_point(spawn_room, spawn_room_key, entity.name)
 
         # Save to DB FIRST (crash recovery: player placed correctly on re-login)
         try:

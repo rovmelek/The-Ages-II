@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-21
-last_updated: 2026-04-12 (Story 17.1 ready-for-dev)
+last_updated: 2026-04-12 (Story 17.7 ready-for-dev)
 project: The-Ages-II
 project_key: NOKEY
 tracking_system: file-system
@@ -296,7 +296,7 @@ development_status:
   # Sprint 2 — Service Extraction
   # Ordering: 17.7 first (creates player/service.py + _make_mock_game) → 17.6, 17.9, 17.10 (any order) → 17.8 last (depends on 17.7)
   # Sprints 2 and 3 have zero code dependencies — parallelizable for teams
-  17-7-extract-auth-service-deduplicate-login-reconnect: backlog  # FR140 — player/service.py, setup_full_session(), build_stats_payload()
+  17-7-extract-auth-service-deduplicate-login-reconnect: done  # FR140 — player/service.py, setup_full_session(), build_stats_payload()
   17-6-move-xp-notifications-to-net-layer: backlog              # FR139 — grant_xp/notify_xp/send_level_up_available → net/xp_notifications.py
   17-9-extract-combat-initiation-cleanup-to-service: backlog    # FR141, FR150 — initiate_combat() + cleanup_participant() in combat/service.py
   17-10-extract-trade-execution-to-service: backlog             # FR142 — _execute_trade() → trade/service.py

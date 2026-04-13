@@ -263,9 +263,11 @@ class TestHandleLoginGracePeriod:
 
         ws = AsyncMock()
 
-        with patch("server.net.handlers.auth.player_repo") as mock_repo, \
+        mock_repo = AsyncMock()
+        with patch("server.net.handlers.auth.player_repo", mock_repo), \
+             patch("server.player.service.player_repo", mock_repo), \
              patch("server.net.handlers.auth.verify_password", return_value=True), \
-             patch("server.net.handlers.auth.item_repo"):
+             patch("server.player.service.item_repo"):
             mock_repo.get_by_username = AsyncMock(return_value=mock_player)
             mock_repo.update_stats = AsyncMock()
             mock_repo.update_position = AsyncMock()

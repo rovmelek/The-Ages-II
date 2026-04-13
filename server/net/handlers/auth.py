@@ -7,126 +7,24 @@ from typing import TYPE_CHECKING
 from fastapi import WebSocket
 
 from server.core.config import settings
-from server.core.constants import PROTOCOL_VERSION, STAT_NAMES
-from server.items import item_repo
-from server.items.inventory import Inventory
-from server.items.item_def import ItemDef
+from server.core.constants import PROTOCOL_VERSION
 from server.net.auth_middleware import requires_auth
 from server.net.schemas import with_request_id
 from server.player import repo as player_repo
-from server.core.xp import get_pending_level_ups, send_level_up_available
 from server.player.auth import hash_password, verify_password
+from server.core.xp import get_pending_level_ups, send_level_up_available
+from server.player.service import (
+    _build_login_response,
+    _default_stats,
+    build_stats_payload,
+    setup_full_session,
+)
 from server.player.session import PlayerSession
-from server.player.entity import PlayerEntity
-from server.room import repo as room_repo
 
 if TYPE_CHECKING:
     from server.app import Game
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Login helpers
-# ---------------------------------------------------------------------------
-
-
-def _default_stats() -> dict[str, int]:
-    """Build default stats from current settings.
-
-    Function (not constant) to support test monkeypatching — reads settings.*
-    on each call so patched values are always reflected (ADR-16-7).
-    """
-    result = {
-        "hp": settings.DEFAULT_BASE_HP, "max_hp": settings.DEFAULT_BASE_HP,
-        "attack": settings.DEFAULT_ATTACK, "xp": 0, "level": 1,
-    }
-    for s in STAT_NAMES:
-        result[s] = settings.DEFAULT_STAT_VALUE
-    return result
-
-
-async def _resolve_stats(player, session) -> dict:
-    """Resolve player stats: apply defaults for first-time, restore for returning."""
-    db_stats = player.stats or {}
-    if not db_stats:
-        stats = _default_stats()
-        stats["max_hp"] = settings.DEFAULT_BASE_HP + stats["constitution"] * settings.CON_HP_PER_POINT
-        stats["hp"] = stats["max_hp"]
-        await player_repo.update_stats(session, player.id, stats)
-    else:
-        stats = {**_default_stats(), **db_stats}
-    return stats
-
-
-async def _resolve_room_and_place(entity, player, room_key: str, game, session):
-    """Load room if needed, find safe spawn position, update DB if relocated.
-
-    Raises ValueError if the room cannot be found.
-    """
-    room = game.room_manager.get_room(room_key)
-    if room is None:
-        room_db = await room_repo.get_by_key(session, room_key)
-        if room_db is None:
-            raise ValueError("Room not found")
-        room = game.room_manager.load_room(room_db)
-
-    is_first_login = player.current_room_id is None
-    needs_relocation = is_first_login or not room.is_walkable(entity.x, entity.y)
-    if needs_relocation:
-        sx, sy = room.get_player_spawn()
-        if not room.is_walkable(sx, sy):
-            sx, sy = room.find_first_walkable()
-        if not room.is_walkable(sx, sy):
-            logger.warning(
-                "Room %s has no walkable tile; placing %s at (%d, %d)",
-                room_key, entity.name, sx, sy,
-            )
-        entity.x = sx
-        entity.y = sy
-        await player_repo.update_position(session, player.id, room_key, sx, sy)
-    return room_key, room
-
-
-async def _hydrate_inventory(player, session) -> Inventory:
-    """Rebuild runtime Inventory from DB state."""
-    db_inventory = player.inventory or {}
-    if db_inventory:
-        all_items = await item_repo.get_all(session)
-        item_defs = {i.item_key: ItemDef.from_db(i) for i in all_items}
-        return Inventory.from_dict(db_inventory, lambda k: item_defs.get(k))
-    return Inventory()
-
-
-def _build_login_response(
-    db_id: int, entity_id: str, username: str, stats: dict,
-    session_token: str | None = None,
-) -> dict:
-    """Construct the login_success JSON payload.
-
-    Takes field parameters (not Player DB model) so it works for both
-    handle_login and future handle_reconnect (Story 16.9).
-    """
-    result = {
-        "type": "login_success",
-        "protocol_version": PROTOCOL_VERSION,
-        "player_id": db_id,
-        "entity_id": entity_id,
-        "username": username,
-        "stats": {
-            "hp": stats.get("hp", settings.DEFAULT_BASE_HP),
-            "max_hp": stats.get("max_hp", settings.DEFAULT_BASE_HP),
-            "attack": stats.get("attack", settings.DEFAULT_ATTACK),
-            "xp": stats.get("xp", 0),
-            "level": stats.get("level", 1),
-            "xp_for_next_level": stats.get("level", 1) * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
-            "xp_for_current_level": (stats.get("level", 1) - 1) * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
-            **{s: stats.get(s, settings.DEFAULT_STAT_VALUE) for s in STAT_NAMES},
-        },
-    }
-    if session_token is not None:
-        result["session_token"] = session_token
-    return result
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +88,9 @@ async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> No
         player = await player_repo.create(session, username, hashed)
 
         default_max_hp = settings.DEFAULT_BASE_HP + settings.DEFAULT_STAT_VALUE * settings.CON_HP_PER_POINT
+        stats = _default_stats()
+        stats["hp"] = default_max_hp
+        stats["max_hp"] = default_max_hp
         await websocket.send_json(
             with_request_id({
                 "type": "login_success",
@@ -197,16 +98,7 @@ async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> No
                 "player_id": player.id,
                 "entity_id": f"player_{player.id}",
                 "username": player.username,
-                "stats": {
-                    "hp": default_max_hp,
-                    "max_hp": default_max_hp,
-                    "attack": settings.DEFAULT_ATTACK,
-                    "xp": 0,
-                    "level": 1,
-                    "xp_for_next_level": 1 * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
-                    "xp_for_current_level": 0,
-                    **{s: settings.DEFAULT_STAT_VALUE for s in STAT_NAMES},
-                },
+                "stats": build_stats_payload(stats),
             }, data)
         )
 
@@ -254,47 +146,13 @@ async def handle_login(websocket: WebSocket, data: dict, *, game: Game) -> None:
                 await game.player_manager.cleanup_session(entity_id, game)
             else:
                 await _kick_old_session(entity_id, old_ws, game)
-        stats = await _resolve_stats(player, session)
-        entity = PlayerEntity(
-            id=entity_id, name=player.username,
-            x=player.position_x, y=player.position_y,
-            player_db_id=player.id, stats=stats,
-        )
-        room_key = player.current_room_id or settings.DEFAULT_SPAWN_ROOM
-        try:
-            room_key, room = await _resolve_room_and_place(entity, player, room_key, game, session)
-        except ValueError:
-            await websocket.send_json(with_request_id({"type": "error", "detail": "Room not found"}, data))
-            return
-        room.add_entity(entity)
-        game.connection_manager.connect(entity_id, websocket, room_key, name=player.username)
-        inventory = await _hydrate_inventory(player, session)
-        visited_rooms = player.visited_rooms or []
-        if room_key not in visited_rooms:
-            visited_rooms.append(room_key)
-        game.player_manager.set_session(entity_id, PlayerSession(
-            entity=entity, room_key=room_key, db_id=player.id,
-            inventory=inventory, visited_rooms=set(visited_rooms), pending_level_ups=0,
-        ))
+
         token = game.token_store.issue(player.id)
-        await websocket.send_json(with_request_id(_build_login_response(player.id, entity_id, player.username, stats, session_token=token), data))
-        await websocket.send_json({"type": "room_state", **room.get_state()})
-        await game.connection_manager.broadcast_to_room(
-            room_key,
-            {"type": "entity_entered", "entity": {
-                "id": entity.id, "name": entity.name,
-                "x": entity.x, "y": entity.y, "level": stats.get("level", 1),
-            }},
-            exclude=entity_id,
-        )
-        pending = get_pending_level_ups(stats)
-        if pending > 0:
-            player_session = game.player_manager.get_session(entity_id)
-            if player_session:
-                player_session.pending_level_ups = pending
-            await send_level_up_available(entity_id, entity, game)
-        # Start heartbeat after successful login (AC #1, #11)
-        game._start_heartbeat(entity_id)
+        if not await setup_full_session(
+            websocket=websocket, player=player, session=session,
+            game=game, session_token=token, data=data,
+        ):
+            return
 
 
 async def handle_reconnect(websocket: WebSocket, data: dict, *, game: Game) -> None:
@@ -409,60 +267,8 @@ async def handle_reconnect(websocket: WebSocket, data: dict, *, game: Game) -> N
             else:
                 await _kick_old_session(entity_id, old_ws, game)
 
-        stats = await _resolve_stats(player, session)
-        entity = PlayerEntity(
-            id=entity_id, name=player.username,
-            x=player.position_x, y=player.position_y,
-            player_db_id=player.id, stats=stats,
-        )
-        room_key = player.current_room_id or settings.DEFAULT_SPAWN_ROOM
-        try:
-            room_key, room = await _resolve_room_and_place(
-                entity, player, room_key, game, session
-            )
-        except ValueError:
-            await websocket.send_json(
-                with_request_id({"type": "error", "detail": "Room not found"}, data)
-            )
+        if not await setup_full_session(
+            websocket=websocket, player=player, session=session,
+            game=game, session_token=new_token, data=data,
+        ):
             return
-        room.add_entity(entity)
-        game.connection_manager.connect(
-            entity_id, websocket, room_key, name=player.username
-        )
-        inventory = await _hydrate_inventory(player, session)
-        visited_rooms = player.visited_rooms or []
-        if room_key not in visited_rooms:
-            visited_rooms.append(room_key)
-        game.player_manager.set_session(entity_id, PlayerSession(
-            entity=entity, room_key=room_key, db_id=player.id,
-            inventory=inventory, visited_rooms=set(visited_rooms),
-            pending_level_ups=0,
-        ))
-        await websocket.send_json(
-            with_request_id(
-                _build_login_response(
-                    player.id, entity_id, player.username, stats,
-                    session_token=new_token,
-                ),
-                data,
-            )
-        )
-        await websocket.send_json({"type": "room_state", **room.get_state()})
-        await game.connection_manager.broadcast_to_room(
-            room_key,
-            {"type": "entity_entered", "entity": {
-                "id": entity.id, "name": entity.name,
-                "x": entity.x, "y": entity.y,
-                "level": stats.get("level", 1),
-            }},
-            exclude=entity_id,
-        )
-        pending = get_pending_level_ups(stats)
-        if pending > 0:
-            player_session = game.player_manager.get_session(entity_id)
-            if player_session:
-                player_session.pending_level_ups = pending
-            await send_level_up_available(entity_id, entity, game)
-        # Note: No last_seq check in Case 2 — seq counter was reset during cleanup,
-        # so there's no continuity. Full resync (room_state) already sent above.
-        game._start_heartbeat(entity_id)

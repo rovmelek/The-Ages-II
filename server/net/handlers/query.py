@@ -6,11 +6,10 @@ from typing import TYPE_CHECKING
 
 from fastapi import WebSocket
 
-from server.core.config import settings
-from server.core.constants import STAT_NAMES
 from server.net.auth_middleware import requires_auth
 from server.room.room import DIRECTION_DELTAS
 from server.net.schemas import build_help_categories, with_request_id
+from server.player.service import build_stats_payload
 from server.player.session import PlayerSession
 
 if TYPE_CHECKING:
@@ -89,20 +88,11 @@ async def handle_stats(
 ) -> None:
     """Handle the 'stats' action — return the player's current stats."""
     stats = player_info.entity.stats
-    level = stats.get("level", 1)
+    payload = build_stats_payload(stats)
+    payload["xp_next"] = payload["xp_for_next_level"]  # legacy key
     await websocket.send_json(with_request_id({
         "type": "stats_result",
-        "stats": {
-            "hp": stats.get("hp", settings.DEFAULT_BASE_HP),
-            "max_hp": stats.get("max_hp", settings.DEFAULT_BASE_HP),
-            "attack": stats.get("attack", settings.DEFAULT_ATTACK),
-            "xp": stats.get("xp", 0),
-            "xp_next": level * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
-            "xp_for_next_level": level * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
-            "xp_for_current_level": (level - 1) * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
-            "level": level,
-            **{s: stats.get(s, settings.DEFAULT_STAT_VALUE) for s in STAT_NAMES},
-        },
+        "stats": payload,
     }, data))
 
 
