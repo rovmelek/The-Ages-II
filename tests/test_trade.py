@@ -349,7 +349,7 @@ class TestTradeHandler:
         game = _make_game()
         game.connection_manager.get_entity_id.return_value = None
         await handle_trade(ws, {"args": ""}, game=game)
-        ws.send_json.assert_called_with({"type": "error", "detail": "Not logged in"})
+        ws.send_json.assert_called_with({"type": "error", "code": "AUTH_REQUIRED", "detail": "Not logged in"})
 
     @pytest.mark.asyncio
     async def test_no_args_no_trade(self):

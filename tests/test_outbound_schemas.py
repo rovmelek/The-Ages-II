@@ -108,7 +108,7 @@ class TestAuth:
 class TestSystem:
     def test_error(self):
         m = ErrorMessage(detail="Something went wrong")
-        assert m.model_dump() == {"type": "error", "detail": "Something went wrong", "request_id": None}
+        assert m.model_dump() == {"type": "error", "code": None, "detail": "Something went wrong", "request_id": None}
 
     def test_server_shutdown(self):
         m = ServerShutdownMessage(reason="Maintenance")

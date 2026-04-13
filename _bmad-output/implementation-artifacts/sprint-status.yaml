@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-21
-last_updated: 2026-04-12 (Epic 16 done, retrospective complete)
+last_updated: 2026-04-12 (Story 17.1 ready-for-dev)
 project: The-Ages-II
 project_key: NOKEY
 tracking_system: file-system
@@ -277,3 +277,38 @@ development_status:
 
   ISS-030-game-new-fragile-test-pattern: done   # Medium — replaced 11 Game.__new__ instances with shared make_bare_game() helper
   epic-16-retrospective: done
+
+  # Epic 17: Codebase Hardening & Constant Centralization
+  # Source: Adversarial codebase review (33 findings, 30 addressed, 3 deferred)
+  # ADRs: 8 (ADR-17-1 through ADR-17-8)
+  # Hardened: 6 Red Team rounds, ADR formalization, First Principles analysis
+  # No Alembic migrations required
+  epic-17: in-progress
+
+  # Sprint 1 — Constants, Config & Dependencies
+  # Ordering: 17.1 first → 17.2 (depends on 17.1) → 17.3, 17.4, 17.5 (parallel)
+  17-1-centralize-type-constants: ready-for-dev                  # FR135, FR144 — STAT_NAMES, EffectType StrEnum, spawn/behavior constants
+  17-2-replace-hardcoded-game-balance-fallbacks: backlog        # FR133, FR134 — NPC/mob/card fallbacks → settings.*
+  17-3-unify-direction-strings: backlog                         # FR136 — query.py + schemas.py import DIRECTION_DELTAS from room.py
+  17-4-trade-state-machine-strenum: backlog                     # FR137 — TradeState StrEnum in trade/session.py
+  17-5-postgresql-dependency-alembic-portability: backlog        # FR146 — asyncpg optional dep, sa.JSON() in Alembic downgrade
+
+  # Sprint 2 — Service Extraction
+  # Ordering: 17.7 first (creates player/service.py + _make_mock_game) → 17.6, 17.9, 17.10 (any order) → 17.8 last (depends on 17.7)
+  # Sprints 2 and 3 have zero code dependencies — parallelizable for teams
+  17-7-extract-auth-service-deduplicate-login-reconnect: backlog  # FR140 — player/service.py, setup_full_session(), build_stats_payload()
+  17-6-move-xp-notifications-to-net-layer: backlog              # FR139 — grant_xp/notify_xp/send_level_up_available → net/xp_notifications.py
+  17-9-extract-combat-initiation-cleanup-to-service: backlog    # FR141, FR150 — initiate_combat() + cleanup_participant() in combat/service.py
+  17-10-extract-trade-execution-to-service: backlog             # FR142 — _execute_trade() → trade/service.py
+  17-8-decompose-game-class: backlog                            # FR149 — kill_npc/respawn → player/service, heartbeat → net/heartbeat.py, Game ≤320 lines
+
+  # Sprint 3 — Protocol, Error & Polish
+  # Ordering: 17.11 first (creates ErrorCode + send_error) → 17.12 (uses send_error) → 17.13-17.16 (parallel)
+  17-11-structured-error-codes: done                              # FR143 — ErrorCode StrEnum + send_error() helper, 5 protocol/auth errors
+  17-12-sanitize-pydantic-validation-errors: backlog            # FR148 — e.errors() extraction, uses send_error()
+  17-13-protocol-versioning: backlog                            # FR138 — PROTOCOL_VERSION in login_success/reconnect, spec generator
+  17-14-auto-generate-help-categories: backlog                  # FR145 — help_category ClassVar on InboundMessage
+  17-15-handler-registration-data-driven-dict: backlog          # FR147 — HANDLERS dict + loop replaces 23 lambdas
+  17-16-fix-markdown-line-break-rendering: backlog              # FR151 — \n → <br> in renderSafeMarkdown, white-space: pre-wrap CSS
+
+  epic-17-retrospective: optional

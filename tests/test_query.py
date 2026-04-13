@@ -300,4 +300,4 @@ async def test_query_not_logged_in():
     for handler in [handle_look, handle_who, handle_stats, handle_help_actions]:
         ws.reset_mock()
         await handler(ws, {"action": "test"}, game=game)
-        ws.send_json.assert_called_once_with({"type": "error", "detail": "Not logged in"})
+        ws.send_json.assert_called_once_with({"type": "error", "code": "AUTH_REQUIRED", "detail": "Not logged in"})

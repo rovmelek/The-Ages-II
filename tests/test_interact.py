@@ -115,7 +115,7 @@ async def test_interact_not_logged_in():
 
     await handle_interact(mock_ws, {"action": "interact", "target_id": "obj_1"}, game=game)
 
-    mock_ws.send_json.assert_called_with({"type": "error", "detail": "Not logged in"})
+    mock_ws.send_json.assert_called_with({"type": "error", "code": "AUTH_REQUIRED", "detail": "Not logged in"})
 
 
 @pytest.mark.asyncio

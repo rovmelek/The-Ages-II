@@ -29,13 +29,14 @@
 
 ## 3. Inbound Messages (Client → Server)
 
-**21 actions** defined.
+**23 actions** defined.
 
 ### `chat`
 
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"chat"` |
+| `request_id` | `str | None` | No | `"—"` |
 | `message` | `str` | Yes | PydanticUndefined |
 | `whisper_to` | `str | None` | No | `"—"` |
 
@@ -44,18 +45,21 @@
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"flee"` |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `help_actions`
 
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"help_actions"` |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `interact`
 
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"interact"` |
+| `request_id` | `str | None` | No | `"—"` |
 | `target_id` | `str` | No | `""` |
 | `direction` | `str` | No | `""` |
 
@@ -64,12 +68,14 @@
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"inventory"` |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `level_up`
 
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"level_up"` |
+| `request_id` | `str | None` | No | `"—"` |
 | `stats` | `list` | Yes | PydanticUndefined |
 
 ### `login`
@@ -77,6 +83,7 @@
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"login"` |
+| `request_id` | `str | None` | No | `"—"` |
 | `username` | `str` | Yes | PydanticUndefined |
 | `password` | `str` | Yes | PydanticUndefined |
 
@@ -85,24 +92,28 @@
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"logout"` |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `look`
 
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"look"` |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `map`
 
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"map"` |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `move`
 
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"move"` |
+| `request_id` | `str | None` | No | `"—"` |
 | `direction` | `str` | Yes | PydanticUndefined |
 
 ### `party`
@@ -110,6 +121,7 @@
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"party"` |
+| `request_id` | `str | None` | No | `"—"` |
 | `args` | `str` | No | `""` |
 
 ### `party_chat`
@@ -117,6 +129,7 @@
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"party_chat"` |
+| `request_id` | `str | None` | No | `"—"` |
 | `message` | `str` | Yes | PydanticUndefined |
 
 ### `pass_turn`
@@ -124,19 +137,38 @@
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"pass_turn"` |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `play_card`
 
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"play_card"` |
+| `request_id` | `str | None` | No | `"—"` |
 | `card_key` | `str` | Yes | PydanticUndefined |
+
+### `pong`
+
+| Field | Type | Required | Default |
+|-------|------|----------|---------|
+| `action` | `str` | No | `"pong"` |
+| `request_id` | `str | None` | No | `"—"` |
+
+### `reconnect`
+
+| Field | Type | Required | Default |
+|-------|------|----------|---------|
+| `action` | `str` | No | `"reconnect"` |
+| `request_id` | `str | None` | No | `"—"` |
+| `session_token` | `str` | Yes | PydanticUndefined |
+| `last_seq` | `int | None` | No | `"—"` |
 
 ### `register`
 
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"register"` |
+| `request_id` | `str | None` | No | `"—"` |
 | `username` | `str` | Yes | PydanticUndefined |
 | `password` | `str` | Yes | PydanticUndefined |
 
@@ -145,12 +177,14 @@
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"stats"` |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `trade`
 
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"trade"` |
+| `request_id` | `str | None` | No | `"—"` |
 | `args` | `str` | No | `""` |
 
 ### `use_item`
@@ -158,6 +192,7 @@
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"use_item"` |
+| `request_id` | `str | None` | No | `"—"` |
 | `item_key` | `str` | Yes | PydanticUndefined |
 
 ### `use_item_combat`
@@ -165,6 +200,7 @@
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"use_item_combat"` |
+| `request_id` | `str | None` | No | `"—"` |
 | `item_key` | `str` | Yes | PydanticUndefined |
 
 ### `who`
@@ -172,10 +208,11 @@
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `action` | `str` | No | `"who"` |
+| `request_id` | `str | None` | No | `"—"` |
 
 ## 4. Outbound Messages (Server → Client)
 
-**40 message types** defined.
+**42 message types** defined.
 
 ### `announcement` (AnnouncementMessage)
 
@@ -194,12 +231,14 @@
 | `rewards` | `dict` | Yes | PydanticUndefined |
 | `loot` | `list[dict[str, Any]] | None` | No | `"—"` |
 | `defeated_npc_id` | `str | None` | No | `"—"` |
+| `seq` | `int | None` | No | `"—"` |
 
 ### `combat_fled` (CombatFledMessage)
 
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `type` | `str` | No | `"combat_fled"` |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `combat_start` (CombatStartMessage)
 
@@ -223,6 +262,7 @@
 | `hands` | `dict` | Yes | PydanticUndefined |
 | `type` | `str` | No | `"combat_turn"` |
 | `result` | `dict` | Yes | PydanticUndefined |
+| `seq` | `int | None` | No | `"—"` |
 
 ### `combat_update` (CombatUpdateMessage)
 
@@ -263,7 +303,9 @@
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `type` | `str` | No | `"error"` |
+| `code` | `str | None` | No | `"—"` |
 | `detail` | `str` | Yes | PydanticUndefined |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `help_result` (HelpResultMessage)
 
@@ -271,6 +313,7 @@
 |-------|------|----------|---------|
 | `type` | `str` | No | `"help_result"` |
 | `categories` | `dict` | Yes | PydanticUndefined |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `interact_result` (InteractResultMessage)
 
@@ -279,6 +322,7 @@
 | `type` | `str` | No | `"interact_result"` |
 | `object_id` | `str` | Yes | PydanticUndefined |
 | `result` | `dict` | Yes | PydanticUndefined |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `inventory` (InventoryListMessage)
 
@@ -286,6 +330,7 @@
 |-------|------|----------|---------|
 | `type` | `str` | No | `"inventory"` |
 | `items` | `list` | Yes | PydanticUndefined |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `item_used` (ItemUsedMessage)
 
@@ -295,6 +340,7 @@
 | `item_key` | `str` | Yes | PydanticUndefined |
 | `item_name` | `str` | Yes | PydanticUndefined |
 | `effect_results` | `list` | Yes | PydanticUndefined |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `kicked` (KickedMessage)
 
@@ -315,6 +361,7 @@
 | `xp_for_next_level` | `int` | Yes | PydanticUndefined |
 | `xp_for_current_level` | `int` | Yes | PydanticUndefined |
 | `stat_effects` | `dict` | Yes | PydanticUndefined |
+| `seq` | `int | None` | No | `"—"` |
 
 ### `level_up_complete` (LevelUpCompleteMessage)
 
@@ -326,12 +373,14 @@
 | `new_max_hp` | `int` | Yes | PydanticUndefined |
 | `new_hp` | `int` | Yes | PydanticUndefined |
 | `skipped_at_cap` | `list[str] | None` | No | `"—"` |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `logged_out` (LoggedOutMessage)
 
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `type` | `str` | No | `"logged_out"` |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `login_success` (LoginSuccessMessage)
 
@@ -342,6 +391,8 @@
 | `entity_id` | `str` | Yes | PydanticUndefined |
 | `username` | `str` | Yes | PydanticUndefined |
 | `stats` | `PlayerStatsPayload` | Yes | PydanticUndefined |
+| `session_token` | `str | None` | No | `"—"` |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `PydanticUndefined` (LookObjectPayload)
 
@@ -359,6 +410,7 @@
 | `objects` | `list` | Yes | PydanticUndefined |
 | `npcs` | `list` | Yes | PydanticUndefined |
 | `players` | `list` | Yes | PydanticUndefined |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `map_data` (MapDataMessage)
 
@@ -367,6 +419,7 @@
 | `type` | `str` | No | `"map_data"` |
 | `rooms` | `list` | Yes | PydanticUndefined |
 | `connections` | `list` | Yes | PydanticUndefined |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `PydanticUndefined` (NearbyObjectPayload)
 
@@ -382,6 +435,7 @@
 |-------|------|----------|---------|
 | `type` | `str` | No | `"nearby_objects"` |
 | `objects` | `list` | Yes | PydanticUndefined |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `chat` (OutboundChatMessage)
 
@@ -392,6 +446,7 @@
 | `message` | `str` | Yes | PydanticUndefined |
 | `whisper` | `bool` | Yes | PydanticUndefined |
 | `format` | `str | None` | No | `"—"` |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `party_chat` (OutboundPartyChatMessage)
 
@@ -417,6 +472,7 @@
 | `type` | `str` | No | `"party_invite_response"` |
 | `status` | `str` | Yes | PydanticUndefined |
 | `target` | `str | None` | No | `"—"` |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `party_status` (PartyStatusMessage)
 
@@ -427,6 +483,7 @@
 | `members` | `list[PartyMemberPayload] | None` | No | `"—"` |
 | `pending_invite` | `bool | None` | No | `"—"` |
 | `from_player` | `str | None` | No | `"—"` |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `party_update` (PartyUpdateMessage)
 
@@ -438,6 +495,12 @@
 | `members` | `list[str] | None` | No | `"—"` |
 | `leader` | `str | None` | No | `"—"` |
 | `new_leader` | `str | None` | No | `"—"` |
+
+### `ping` (PingMessage)
+
+| Field | Type | Required | Default |
+|-------|------|----------|---------|
+| `type` | `str` | No | `"ping"` |
 
 ### `respawn` (RespawnMessage)
 
@@ -464,6 +527,14 @@
 | `npcs` | `list` | Yes | PydanticUndefined |
 | `exits` | `list` | Yes | PydanticUndefined |
 | `objects` | `list` | Yes | PydanticUndefined |
+| `request_id` | `str | None` | No | `"—"` |
+
+### `seq_status` (SeqStatusMessage)
+
+| Field | Type | Required | Default |
+|-------|------|----------|---------|
+| `type` | `str` | No | `"seq_status"` |
+| `status` | `str` | Yes | PydanticUndefined |
 
 ### `server_shutdown` (ServerShutdownMessage)
 
@@ -478,6 +549,7 @@
 |-------|------|----------|---------|
 | `type` | `str` | No | `"stats_result"` |
 | `stats` | `StatsResultPayload` | Yes | PydanticUndefined |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `tile_changed` (TileChangedMessage)
 
@@ -504,6 +576,7 @@
 | `status` | `str` | Yes | PydanticUndefined |
 | `reason` | `str` | Yes | PydanticUndefined |
 | `inventory` | `list[InventoryItemPayload] | None` | No | `"—"` |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `trade_update` (TradeUpdateMessage)
 
@@ -517,6 +590,7 @@
 | `ready_a` | `bool` | Yes | PydanticUndefined |
 | `ready_b` | `bool` | Yes | PydanticUndefined |
 | `state` | `str` | Yes | PydanticUndefined |
+| `seq` | `int | None` | No | `"—"` |
 
 ### `who_result` (WhoResultMessage)
 
@@ -525,6 +599,7 @@
 | `type` | `str` | No | `"who_result"` |
 | `room` | `str` | Yes | PydanticUndefined |
 | `players` | `list` | Yes | PydanticUndefined |
+| `request_id` | `str | None` | No | `"—"` |
 
 ### `xp_gained` (XpGainedMessage)
 
@@ -535,6 +610,7 @@
 | `source` | `str` | Yes | PydanticUndefined |
 | `detail` | `str` | Yes | PydanticUndefined |
 | `new_total_xp` | `int` | Yes | PydanticUndefined |
+| `seq` | `int | None` | No | `"—"` |
 
 ## 5. Delivery Scopes
 

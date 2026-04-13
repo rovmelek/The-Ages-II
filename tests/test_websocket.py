@@ -29,7 +29,7 @@ def test_websocket_unknown_action():
     with client.websocket_connect("/ws/game") as ws:
         ws.send_json({"action": "nonexistent"})
         resp = ws.receive_json()
-        assert resp == {"type": "error", "detail": "Unknown action: nonexistent"}
+        assert resp == {"type": "error", "code": "UNKNOWN_ACTION", "detail": "Unknown action: nonexistent"}
 
 
 def test_websocket_malformed_json():
@@ -38,7 +38,7 @@ def test_websocket_malformed_json():
     with client.websocket_connect("/ws/game") as ws:
         ws.send_text("not valid json {{{")
         resp = ws.receive_json()
-        assert resp == {"type": "error", "detail": "Invalid JSON"}
+        assert resp == {"type": "error", "code": "INVALID_JSON", "detail": "Invalid JSON"}
 
 
 def test_websocket_missing_action():
@@ -47,7 +47,7 @@ def test_websocket_missing_action():
     with client.websocket_connect("/ws/game") as ws:
         ws.send_json({"username": "hero"})
         resp = ws.receive_json()
-        assert resp == {"type": "error", "detail": "Missing action field"}
+        assert resp == {"type": "error", "code": "MISSING_ACTION", "detail": "Missing action field"}
 
 
 def test_websocket_routes_to_handler():
@@ -91,7 +91,7 @@ async def test_router_unknown_action():
     mock_ws = AsyncMock()
     await router.route(mock_ws, {"action": "unknown_thing"})
     mock_ws.send_json.assert_called_once_with(
-        {"type": "error", "detail": "Unknown action: unknown_thing"}
+        {"type": "error", "code": "UNKNOWN_ACTION", "detail": "Unknown action: unknown_thing"}
     )
 
 

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import WebSocket
 
+from server.net.errors import ErrorCode, send_error
 from server.player.session import PlayerSession
 
 if TYPE_CHECKING:
@@ -24,11 +25,11 @@ def requires_auth(fn):
     async def wrapper(websocket: WebSocket, data: dict, *, game: Game) -> None:
         entity_id = game.connection_manager.get_entity_id(websocket)
         if entity_id is None:
-            await websocket.send_json({"type": "error", "detail": "Not logged in"})
+            await send_error(websocket, ErrorCode.AUTH_REQUIRED, "Not logged in")
             return
         player_info = game.player_manager.get_session(entity_id)
         if player_info is None:
-            await websocket.send_json({"type": "error", "detail": "Not logged in"})
+            await send_error(websocket, ErrorCode.AUTH_REQUIRED, "Not logged in")
             return
         await fn(websocket, data, game=game, entity_id=entity_id, player_info=player_info)
 

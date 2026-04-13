@@ -809,7 +809,7 @@ class TestNotLoggedIn:
         await handle_party(ws, {"args": "invite @Bob"}, game=game)
 
         ws.send_json.assert_called_with(
-            {"type": "error", "detail": "Not logged in"}
+            {"type": "error", "code": "AUTH_REQUIRED", "detail": "Not logged in"}
         )
 
     async def test_not_logged_in_no_player_info(self):
@@ -821,5 +821,5 @@ class TestNotLoggedIn:
         await handle_party(ws, {"args": "invite @Bob"}, game=game)
 
         ws.send_json.assert_called_with(
-            {"type": "error", "detail": "Not logged in"}
+            {"type": "error", "code": "AUTH_REQUIRED", "detail": "Not logged in"}
         )

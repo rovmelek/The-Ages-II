@@ -257,7 +257,7 @@ async def test_logout_not_logged_in_returns_error():
     await handle_logout(ws, {}, game=game)
 
     ws.send_json.assert_called_with(
-        {"type": "error", "detail": "Not logged in"}
+        {"type": "error", "code": "AUTH_REQUIRED", "detail": "Not logged in"}
     )
 
 
@@ -280,7 +280,7 @@ async def test_double_logout_returns_error():
         await handle_logout(ws, {}, game=game)
 
     ws.send_json.assert_called_with(
-        {"type": "error", "detail": "Not logged in"}
+        {"type": "error", "code": "AUTH_REQUIRED", "detail": "Not logged in"}
     )
 
 

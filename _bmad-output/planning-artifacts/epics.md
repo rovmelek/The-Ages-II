@@ -1,5 +1,5 @@
 ---
-stepsCompleted: ["step-01-validate-prerequisites", "step-02-design-epics", "step-03-create-stories", "step-04-final-validation", "step-01-epic10-prerequisites", "step-02-epic10-design", "step-03-epic10-stories", "step-04-epic10-validation", "step-01-epic11-prerequisites", "step-02-epic11-design", "step-03-epic11-stories", "step-04-epic11-validation", "step-01-epic12-prerequisites", "step-02-epic12-design", "step-03-epic12-stories", "step-04-epic12-validation", "step-01-epic14-prerequisites", "step-02-epic14-design", "step-03-epic14-stories", "step-04-epic14-validation", "step-01-epic16-prerequisites", "step-02-epic16-design", "step-03-epic16-stories", "step-04-epic16-validation"]
+stepsCompleted: ["step-01-validate-prerequisites", "step-02-design-epics", "step-03-create-stories", "step-04-final-validation", "step-01-epic10-prerequisites", "step-02-epic10-design", "step-03-epic10-stories", "step-04-epic10-validation", "step-01-epic11-prerequisites", "step-02-epic11-design", "step-03-epic11-stories", "step-04-epic11-validation", "step-01-epic12-prerequisites", "step-02-epic12-design", "step-03-epic12-stories", "step-04-epic12-validation", "step-01-epic14-prerequisites", "step-02-epic14-design", "step-03-epic14-stories", "step-04-epic14-validation", "step-01-epic16-prerequisites", "step-02-epic16-design", "step-03-epic16-stories", "step-04-epic16-validation", "step-01-epic17-prerequisites", "step-02-epic17-design", "step-03-epic17-stories", "step-04-epic17-validation"]
 inputDocuments:
   - "THE_AGES_SERVER_PLAN.md"
   - "_bmad-output/planning-artifacts/architecture.md"
@@ -11,6 +11,7 @@ inputDocuments:
   - "_bmad-output/planning-artifacts/epic-16-tech-spec.md"
   - "_bmad-output/implementation-artifacts/codebase-review-2026-04-12.md"
   - "_bmad-output/implementation-artifacts/epic-16-gap-analysis.md"
+  - "_bmad-output/implementation-artifacts/codebase-adversarial-review-2026-04-12.md"
 ---
 
 # The-Ages-II - Epic Breakdown
@@ -155,6 +156,25 @@ FR129: Add message sequence numbers (`seq`) to critical outbound messages via `C
 FR130: Add configurable `CHAT_FORMAT` metadata field to chat/party_chat/announcement messages; client-side markdown rendering (server client-agnostic)
 FR131: Refactor `grant_xp` into `apply_xp` (business + DB, returns `XpResult`) + `notify_xp` (WebSocket messaging) with backward-compatible `grant_xp` wrapper
 FR132: Implement combat turn timeout enforcement using `COMBAT_TURN_TIMEOUT_SECONDS` with `turn_timeout_at` timestamp in combat state for client countdown UI
+FR133: Replace hardcoded NPC fallback stats (hp=50, attack=10) and mob attack fallback (10) with `settings.DEFAULT_BASE_HP` and `settings.DEFAULT_ATTACK` (adversarial review F24, F25)
+FR134: Replace hardcoded fallback combat cards (damage=10, cost=1, count=10) with config references — `settings.DEFAULT_ATTACK` for damage value (adversarial review F26)
+FR135: Define `STAT_NAMES` tuple in `core/constants.py` as single source of truth; import in all 7+ files that reference D&D ability score names as string literals (adversarial review F27)
+FR136: Import `DIRECTION_DELTAS` from `room/room.py` in `query.py` and `schemas.py` instead of independently defining direction strings (adversarial review F28)
+FR137: Convert trade state machine from raw strings to `TradeState` StrEnum in `trade/session.py` (adversarial review F29)
+FR138: Add `protocol_version` field to `login_success`/reconnect responses; define version constant, update protocol-spec generator, client logs warning on mismatch (adversarial review F17)
+FR139: Move `grant_xp`, `notify_xp`, `send_level_up_available` from `core/xp.py` to `net/xp_notifications.py`; `apply_xp` and `get_pending_level_ups` stay in core — core must not push WebSocket messages (adversarial review F1)
+FR140: Extract auth session helpers (`_resolve_stats`, `_resolve_room_and_place`, `_hydrate_inventory`, `_build_login_response`, `_find_spawn_point`) into `player/service.py`; create shared `setup_session()` to deduplicate login/reconnect Case 2; create shared `build_stats_payload()` (adversarial review F2, F5, F6, F7)
+FR141: Extract `_handle_mob_encounter()` from `movement.py` into `combat/service.py` as `initiate_combat()`; move `PlayerManager._cleanup_combat()` body to `combat/service.py` as `cleanup_participant()` (adversarial review F3, F9)
+FR142: Extract `_execute_trade()` from `trade.py` handler into `trade/service.py` (adversarial review F4)
+FR143: Define `ErrorCode` StrEnum + `send_error()` helper; retrofit 5 protocol/auth-level errors with structured `"code"` field; handler errors migrate incrementally in future epics (adversarial review F20)
+FR144: Create `EffectType` StrEnum and `SPAWN_PERSISTENT`/`SPAWN_RARE` constants in `core/constants.py`; add `BEHAVIOR_HOSTILE` constant in `room/npc.py`; update all reference sites (adversarial review F30, F31, F32)
+FR145: Add `help_category: ClassVar[str | None]` to `InboundMessage`; auto-generate help categories from `ACTION_SCHEMAS` instead of hardcoded dict in `query.py` (adversarial review F33)
+FR146: Add `asyncpg>=0.29.0` as optional dependency in `pyproject.toml`; fix Alembic migration downgrade to use portable `sa.JSON()` instead of `sqlite.JSON()` (adversarial review F14, F15)
+FR147: Replace 23 handler registration lambdas with data-driven `HANDLERS` dict + 3-line loop in `_register_handlers()` (adversarial review F11)
+FR148: Sanitize Pydantic `ValidationError` before sending to client — use `e.errors()` to extract field/message, format via `send_error()` with `ErrorCode.VALIDATION_ERROR` (adversarial review F21)
+FR149: Extract `kill_npc`, `respawn_player`, `_reset_player_stats`, `_find_spawn_point` to `player/service.py`; extract heartbeat to `net/heartbeat.py`; Game retains thin delegation wrappers (adversarial review F8)
+FR150: Move `PlayerManager._cleanup_combat()` logic to `combat_service.cleanup_participant()` — PlayerManager calls service instead of inline combat logic (adversarial review F9)
+FR151: Add `\n` → `<br>` conversion in `renderSafeMarkdown()` and `white-space: pre-wrap` CSS fallback for non-markdown messages (adversarial review F22)
 
 ### NonFunctional Requirements
 
@@ -328,6 +348,25 @@ Web demo client (`web-demo/`) implemented as a proof-of-concept test tool. Vanil
 | FR130 | Epic 16 (Story 16.12) | Chat markdown format field |
 | FR131 | Epic 16 (Story 16.4a) | grant_xp refactor (apply_xp + notify_xp) |
 | FR132 | Epic 16 (Story 16.10a) | Combat turn timeout enforcement |
+| FR133 | Epic 17 (Story 17.2) | Hardcoded NPC/mob fallback stats → config |
+| FR134 | Epic 17 (Story 17.2) | Hardcoded fallback combat cards → config |
+| FR135 | Epic 17 (Story 17.1) | STAT_NAMES single source of truth |
+| FR136 | Epic 17 (Story 17.3) | Direction strings unified from DIRECTION_DELTAS |
+| FR137 | Epic 17 (Story 17.4) | Trade state machine → TradeState StrEnum |
+| FR138 | Epic 17 (Story 17.13) | Protocol versioning |
+| FR139 | Epic 17 (Story 17.6) | XP notifications → net layer |
+| FR140 | Epic 17 (Story 17.7) | Auth service extraction + dedup |
+| FR141 | Epic 17 (Story 17.9) | Combat initiation + cleanup → service |
+| FR142 | Epic 17 (Story 17.10) | Trade execution → service |
+| FR143 | Epic 17 (Story 17.11) | Structured error codes + send_error() |
+| FR144 | Epic 17 (Story 17.1) | Behavior/spawn/effect type constants |
+| FR145 | Epic 17 (Story 17.14) | Auto-generate help categories |
+| FR146 | Epic 17 (Story 17.5) | asyncpg dep + Alembic portability |
+| FR147 | Epic 17 (Story 17.15) | Handler registration → data-driven dict |
+| FR148 | Epic 17 (Story 17.12) | Sanitize Pydantic validation errors |
+| FR149 | Epic 17 (Story 17.8) | Game class decomposition |
+| FR150 | Epic 17 (Story 17.9) | Combat cleanup → combat service |
+| FR151 | Epic 17 (Story 17.16) | Markdown line break fix |
 
 ## Epic List
 
@@ -598,6 +637,560 @@ Game engine developers (Godot, Unity, Unreal) can integrate with the server usin
 | 16.9 | Session Tokens for Reconnection | FR127 | 3b |
 | 16.10 | Disconnected Player Grace Period | FR128 | 3b |
 | 16.11 | Message Acknowledgment IDs | FR129 | 3b |
+
+### Epic 17: Codebase Hardening & Constant Centralization
+The game server eliminates all remaining hardcoded game-balance values, centralizes scattered string constants into typed definitions (StrEnum), decomposes oversized handlers and the Game class into focused service modules, adds protocol versioning for multi-client compatibility, and introduces structured error codes for machine-parseable client error handling. Server foundation is hardened for confident Godot client integration and future feature development.
+**FRs covered:** FR133, FR134, FR135, FR136, FR137, FR138, FR139, FR140, FR141, FR142, FR143, FR144, FR145, FR146, FR147, FR148, FR149, FR150, FR151
+**Dependencies:** Epics 1-16 complete (1062 tests passing).
+**Source:** Adversarial codebase review (`codebase-adversarial-review-2026-04-12.md`) — 33 findings, 30 addressed, 3 deferred (F10, F12, F18).
+**No Alembic migrations required** — all 19 FRs modify runtime code only.
+**ADRs:** 8 (ADR-17-1 through ADR-17-8)
+**Hardened by:** 6 Red Team rounds, Architecture Decision Records, First Principles Analysis
+**Sprint plan:**
+
+| Sprint | Stories | Theme | Milestone |
+|--------|---------|-------|-----------|
+| Sprint 1 | 17.1, 17.2, 17.3, 17.4, 17.5 | Constants, Config & Dependencies | All hardcoded values and scattered strings centralized |
+| Sprint 2 | 17.7, 17.6, 17.9, 17.10, 17.8 | Service Extraction | Business logic extracted from handlers/Game into service modules |
+| Sprint 3 | 17.11, 17.12, 17.13, 17.14, 17.15, 17.16 | Protocol, Error & Polish | Protocol versioned, errors structured, registration streamlined |
+
+**Sprint 1 ordering:** 17.1 first (creates `core/constants.py`) → 17.2 (depends on 17.1 for same-line edits) → 17.3, 17.4, 17.5 (parallel)
+**Sprint 2 ordering:** 17.7 first (creates `player/service.py` + `_make_mock_game()` conftest) → 17.6, 17.9, 17.10 (any order) → 17.8 last (depends on 17.7)
+**Sprint 3 ordering:** 17.11 first (creates `ErrorCode` + `send_error()`) → 17.12 (uses `send_error()`) → 17.13, 17.14, 17.15, 17.16 (parallel)
+**Sprints 2 and 3 have zero code dependencies** — parallelizable for team scaling.
+
+**Stories:**
+
+| Story | Title | FRs | Sprint |
+|-------|-------|-----|--------|
+| 17.1 | Centralize Type Constants | FR135, FR144 | 1 |
+| 17.2 | Replace Hardcoded Game-Balance Fallbacks | FR133, FR134 | 1 |
+| 17.3 | Unify Direction Strings | FR136 | 1 |
+| 17.4 | Trade State Machine → StrEnum | FR137 | 1 |
+| 17.5 | PostgreSQL Dependency & Alembic Portability | FR146 | 1 |
+| 17.6 | Move XP Notifications to Net Layer | FR139 | 2 |
+| 17.7 | Extract Auth Service + Deduplicate Login/Reconnect | FR140 | 2 |
+| 17.8 | Decompose Game Class | FR149 | 2 |
+| 17.9 | Extract Combat Initiation + Cleanup to Service | FR141, FR150 | 2 |
+| 17.10 | Extract Trade Execution to Service | FR142 | 2 |
+| 17.11 | Structured Error Codes | FR143 | 3 |
+| 17.12 | Sanitize Pydantic Validation Errors | FR148 | 3 |
+| 17.13 | Protocol Versioning | FR138 | 3 |
+| 17.14 | Auto-Generate Help Categories | FR145 | 3 |
+| 17.15 | Handler Registration → Data-Driven Dict | FR147 | 3 |
+| 17.16 | Fix Markdown Line Break Rendering | FR151 | 3 |
+
+**ADRs:**
+- **ADR-17-1:** StrEnum for all type constants (TradeState, EffectType) — JSON data files use strings; StrEnum compares equal, no deserialization changes
+- **ADR-17-2:** `core/constants.py` for cross-cutting constants; domain constants stay in domain modules — respects dependency direction
+- **ADR-17-3:** Game retains thin delegation wrappers for extracted methods — minimizes test churn (~0 patch target changes)
+- **ADR-17-4:** `grant_xp` wrapper moves to `net/xp_notifications.py` (not deleted) — 38 test references make deletion expensive; layering violation fixed
+- **ADR-17-5:** FR143 scoped to 5 protocol/auth errors only — 102 total errors; handler errors migrate incrementally
+- **ADR-17-6:** Data-driven dict + loop for handler registration — no decorator auto-discovery (premature for 23 actions)
+- **ADR-17-7:** `help_category: ClassVar[str | None]` on InboundMessage — schema-driven, drift-proof help categories
+- **ADR-17-8:** FR148 uses FR143's `send_error()` helper — Sprint 3 ordering: FR143 first, FR148 second
+
+**Deferred findings (acceptable debt):**
+- F10 (domain-manager-to-network coupling) — stable, minimal, deliberate design (Story 15.4)
+- F12 (no plugin system) — FR147 addresses boilerplate; auto-discovery premature for 1-developer project
+- F18 (JSON-only, no binary) — 40KB room payload negligible for turn-based game; negative ROI
+
+**Sprint-level acceptance criteria:**
+- Sprint 1: All hardcoded fallback values replaced. All StrEnum types compile. `core/constants.py` exists. All 1062+ tests pass.
+- Sprint 2: Extracted functions not in handler files (verifiable by grep). Game class ≤320 lines. All `core/` modules have 0 imports from `server/net/`. All 1062+ tests pass.
+- Sprint 3: `make check-protocol` passes. `protocol_version` in login_success response. `ErrorCode` enum defined. Handler registration is data-driven dict. All 1062+ tests pass.
+
+**Epic-level acceptance criteria:**
+- All 16 stories complete across 3 sprints
+- All 1062+ existing tests pass
+- ~65-95 new tests added (estimated total: 1130-1160)
+- `make check-protocol` passes (spec matches schemas including protocol_version and error code fields)
+- `core/xp.py` has zero imports from `server/net/`
+- Game class ≤320 lines with thin delegation wrappers
+- `core/constants.py` contains `STAT_NAMES`, `EffectType`, spawn constants
+- `player/service.py`, `trade/service.py`, `net/heartbeat.py`, `net/xp_notifications.py` exist
+- `send_error()` helper used for protocol/auth errors
+- Handler registration is data-driven dict (no lambda boilerplate)
+- CLAUDE.md updated with Epic 17 conventions (new file locations, StrEnum convention, handler registration pattern, help_category, send_error, Game delegation pattern)
+
+### Story 17.1: Centralize Type Constants
+
+As a developer,
+I want all scattered string constants (stat names, effect types, spawn types, behavior types) defined in shared typed locations,
+So that adding or renaming a type requires changing one place, and typos are caught at import time instead of runtime.
+
+**Acceptance Criteria:**
+
+**Given** the string literals `"strength"`, `"dexterity"`, `"constitution"`, `"intelligence"`, `"wisdom"`, `"charisma"` scattered across 7+ files
+**When** Story 17.1 is implemented
+**Then** a `STAT_NAMES` tuple exists in `server/core/constants.py` containing all 6 stat names
+**And** `_VALID_LEVEL_UP_STATS` in `levelup.py` is defined as `set(STAT_NAMES)` imported from `core/constants`
+**And** `_STATS_WHITELIST` in `player/repo.py` includes `STAT_NAMES` via import (plus `"hp"`, `"max_hp"`, `"xp"`, `"level"`)
+**And** `_default_stats()` in `auth.py` constructs its dict by iterating `STAT_NAMES` with `settings.DEFAULT_STAT_VALUE`
+**And** `_derive_stats_from_hit_dice()` in `npc.py` uses `STAT_NAMES` for stat block generation
+**And** stat payload construction in `_build_login_response()`, `handle_register()`, `handle_stats()`, and `send_level_up_available()` uses `STAT_NAMES` iteration
+
+**Given** individual stat lookups in effect handlers (`damage.py`, `heal.py`) and combat (`instance.py`)
+**When** Story 17.1 is implemented
+**Then** these remain as direct string references (individual stats referenced by game design intent) — no change required
+
+**Given** the string literals `"damage"`, `"heal"`, `"shield"`, `"dot"`, `"draw"` across `core/effects/` and `combat/instance.py`
+**When** Story 17.1 is implemented
+**Then** an `EffectType` StrEnum exists in `server/core/constants.py` with members `DAMAGE`, `HEAL`, `SHIELD`, `DOT`, `DRAW`
+**And** `create_default_registry()` in `registry.py` uses `EffectType` members
+**And** each effect handler uses `EffectType` in its return dict
+**And** `_resolve_effect_targets()` in `instance.py` uses `EffectType` members in the self-targeting tuple
+**And** JSON data files (`data/cards/`, `data/items/`) are NOT modified — StrEnum compares equal to string values (ADR-17-1)
+
+**Given** the string literals `"persistent"` in `kill_npc()` and `"rare"` in `_run_rare_spawn_checks()`
+**When** Story 17.1 is implemented
+**Then** constants `SPAWN_PERSISTENT` and `SPAWN_RARE` exist in `server/core/constants.py`
+**And** both reference sites import and use these constants
+
+**Given** the string literal `"hostile"` in `room.py` and `npc.py`
+**When** Story 17.1 is implemented
+**Then** a constant `BEHAVIOR_HOSTILE` exists in `server/room/npc.py` (single-package usage per ADR-17-2)
+**And** `room.py` imports and uses `BEHAVIOR_HOSTILE` from `npc.py`
+
+**Given** all 1062 existing tests
+**When** Story 17.1 is implemented
+**Then** all tests pass unchanged — StrEnum members compare equal to string values
+
+**Implementation notes:**
+- `core/constants.py` is a new file (~25 lines): `STAT_NAMES`, `EffectType` StrEnum, `SPAWN_PERSISTENT`, `SPAWN_RARE`
+- `BEHAVIOR_HOSTILE` in `room/npc.py` (domain-local)
+- ~14 production files modified, 0-1 test file changes
+- ADR-17-1, ADR-17-2
+
+### Story 17.2: Replace Hardcoded Game-Balance Fallbacks
+
+As a developer,
+I want all remaining hardcoded game-balance fallback values to reference centralized config,
+So that changing a balance parameter in `Settings` is guaranteed to take effect everywhere.
+
+**Acceptance Criteria:**
+
+**Given** the hardcoded NPC fallback stats `{"hp": 50, "max_hp": 50, "attack": 10}` in `_handle_mob_encounter()`
+**When** Story 17.2 is implemented
+**Then** the fallback uses `{"hp": settings.DEFAULT_BASE_HP, "max_hp": settings.DEFAULT_BASE_HP, "attack": settings.DEFAULT_ATTACK}`
+
+**Given** the hardcoded mob attack fallback `self.mob_stats.get("attack", 10)` in `CombatInstance._mob_attack_target()`
+**When** Story 17.2 is implemented
+**Then** it uses `self.mob_stats.get("attack", settings.DEFAULT_ATTACK)`
+
+**Given** the hardcoded fallback combat cards with `effects=[{"type": "damage", "value": 10}]` in `_handle_mob_encounter()`
+**When** Story 17.2 is implemented
+**Then** the damage value uses `settings.DEFAULT_ATTACK`
+**And** the effect type uses `EffectType.DAMAGE` (from Story 17.1)
+
+**Given** all 1062 existing tests
+**When** Story 17.2 is implemented
+**Then** all tests pass
+
+**Implementation notes:**
+- 2 production files: `movement.py` (~3 lines), `instance.py` (~1 line)
+- Depends on Story 17.1 for `EffectType.DAMAGE`
+- Closes ISS-024 residual (mob attack fallback missed in original fix)
+
+### Story 17.3: Unify Direction Strings
+
+As a developer,
+I want direction strings defined in one place and imported everywhere,
+So that adding a new direction requires one change instead of three.
+
+**Acceptance Criteria:**
+
+**Given** `DIRECTION_DELTAS` in `room/room.py` as the authoritative source
+**And** `_SCAN_OFFSETS` in `query.py` independently defining the same 4 directions
+**And** the schema validator in `schemas.py` independently checking direction values
+
+**When** Story 17.3 is implemented
+**Then** `query.py` imports `DIRECTION_DELTAS` from `server.room.room` and derives `_SCAN_OFFSETS` from it (plus the `"here"` entry)
+**And** `schemas.py` `MoveMessage.validate_direction` imports `DIRECTION_DELTAS` and validates against its keys
+
+**Given** all 1062 existing tests
+**When** Story 17.3 is implemented
+**Then** all tests pass unchanged
+
+**Implementation notes:**
+- 2 production files modified: `query.py`, `schemas.py`
+- Verify no circular import (net→room dependency already exists in handlers)
+
+### Story 17.4: Trade State Machine → StrEnum
+
+As a developer,
+I want trade session states defined as a `TradeState` StrEnum,
+So that invalid state assignments are caught by type checkers and state names are IDE-autocomplete-friendly.
+
+**Acceptance Criteria:**
+
+**Given** 7 trade state strings scattered across `trade/manager.py`
+**When** Story 17.4 is implemented
+**Then** a `TradeState` StrEnum exists in `server/trade/session.py` with members `REQUEST_PENDING`, `NEGOTIATING`, `ONE_READY`, `BOTH_READY`, `EXECUTING`, `CANCELLED`, `COMPLETE`
+**And** the `Trade` dataclass `state` field type changes from `str` to `TradeState`
+**And** all 16 assignments and comparisons in `trade/manager.py` use `TradeState` members
+
+**Given** outbound messages that include trade state
+**When** Story 17.4 is implemented
+**Then** wire protocol value is unchanged — StrEnum serializes as its string value (ADR-17-1)
+
+**Given** all 1062 existing tests
+**When** Story 17.4 is implemented
+**Then** all tests pass
+
+**Implementation notes:**
+- 2 production files: `trade/session.py` (StrEnum + dataclass type), `trade/manager.py` (16 replacements)
+- ADR-17-1
+
+### Story 17.5: PostgreSQL Dependency & Alembic Portability
+
+As a developer,
+I want `asyncpg` available as an optional dependency and the Alembic migration portable,
+So that switching to PostgreSQL requires only setting `DATABASE_URL`.
+
+**Acceptance Criteria:**
+
+**Given** `pyproject.toml` lists only `aiosqlite>=0.19.0`
+**When** Story 17.5 is implemented
+**Then** `asyncpg>=0.29.0` is added under `[project.optional-dependencies]` with key `postgres`
+
+**Given** the Alembic migration `70a9c771b610_*.py` uses `sqlite.JSON()` in `downgrade()`
+**When** Story 17.5 is implemented
+**Then** `sqlite.JSON()` is replaced with `sa.JSON()` and the sqlite dialect import is removed
+
+**Given** all 1062 existing tests
+**When** Story 17.5 is implemented
+**Then** all tests pass — `aiosqlite` remains the default driver
+
+**Implementation notes:**
+- 2 files: `pyproject.toml`, `alembic/versions/70a9c771b610_*.py`
+
+---
+
+## Sprint 2: Service Extraction
+
+### Story 17.7: Extract Auth Service + Deduplicate Login/Reconnect
+
+As a developer,
+I want auth session setup logic extracted into a `player/service.py` module with shared helpers,
+So that login and reconnect use the same code path, and the auth handler is thin routing only.
+
+**Acceptance Criteria:**
+
+**Given** helper functions `_resolve_stats`, `_resolve_room_and_place`, `_hydrate_inventory`, `_build_login_response`, `_find_spawn_point` in `auth.py` and `app.py`
+**When** Story 17.7 is implemented
+**Then** all 5 functions are moved to `server/player/service.py`
+**And** `_find_spawn_point` from `app.py` is consolidated with `_resolve_room_and_place` (which contains the same spawn-with-fallback logic)
+
+**Given** stats payload construction duplicated in `_build_login_response()`, `handle_register()`, and `handle_stats()`
+**When** Story 17.7 is implemented
+**Then** a shared `build_stats_payload(stats: dict) -> dict` function exists in `player/service.py`
+**And** all 3 locations use it
+
+**Given** login (lines 264-304) and reconnect Case 2 (lines 419-475) share ~30 lines of session setup
+**When** Story 17.7 is implemented
+**Then** a shared `setup_full_session()` function in `player/service.py` handles: entity construction, room resolution, room.add_entity, connect, hydrate inventory, set_session, build_login_response, room_state broadcast, entity_entered broadcast, pending level-up check, start heartbeat
+**And** both `handle_login` and `handle_reconnect` Case 2 call `setup_full_session()`
+
+**Given** tests that patch auth handler internals
+**When** Story 17.7 is implemented
+**Then** a `_make_mock_game()` helper is created in `tests/conftest.py` that initializes all `Game` attributes (per Epic 16 retro action item)
+**And** all test patch targets updated to `server.player.service.*` paths
+**And** all 1062+ tests pass
+
+**Implementation notes:**
+- Largest story in the epic — ~10 files modified, ~30 test patch targets
+- Creates `server/player/service.py` (new file, ~130 lines)
+- `auth.py` shrinks from 475 to ~200 lines
+- Sprint 2's first story — must complete before Story 17.8
+
+### Story 17.6: Move XP Notifications to Net Layer
+
+As a developer,
+I want XP notification functions out of `core/xp.py` so that core has zero network imports,
+So that the core package is pure business logic — testable without WebSocket mocking.
+
+**Acceptance Criteria:**
+
+**Given** `notify_xp()`, `send_level_up_available()`, and `grant_xp()` in `core/xp.py` calling `game.connection_manager.send_to_player_seq()`
+**When** Story 17.6 is implemented
+**Then** all three functions are moved to `server/net/xp_notifications.py` (new file)
+**And** `core/xp.py` retains only: `XpResult` dataclass, `calculate_combat_xp()`, `apply_xp()`, `get_pending_level_ups()`
+**And** `core/xp.py` has zero imports from `server/net/`
+
+**Given** 3 production call sites that import `grant_xp` from `server.core.xp`
+**When** Story 17.6 is implemented
+**Then** `movement.py`, `interact.py`, and `combat/service.py` import from `server.net.xp_notifications` instead
+
+**Given** 38 test references to `grant_xp` across 7 test files
+**When** Story 17.6 is implemented
+**Then** all test imports/patches updated to `server.net.xp_notifications.grant_xp` (mechanical path change, no logic change — per ADR-17-4)
+
+**Given** all 1062+ tests
+**When** Story 17.6 is implemented
+**Then** all tests pass
+
+**Implementation notes:**
+- Creates `server/net/xp_notifications.py` (new file, ~85 lines)
+- `core/xp.py` shrinks from 176 to ~90 lines
+- 3 production files + 7 test files updated (import paths)
+- ADR-17-4 (wrapper preserved, not deleted)
+
+### Story 17.9: Extract Combat Initiation + Cleanup to Service
+
+As a developer,
+I want combat initiation and cleanup logic in `combat/service.py` instead of scattered across handler and player manager,
+So that all combat lifecycle logic lives in one module.
+
+**Acceptance Criteria:**
+
+**Given** `_handle_mob_encounter()` (108 lines) in `movement.py` containing combat initiation business logic
+**When** Story 17.9 is implemented
+**Then** a function `initiate_combat()` exists in `server/combat/service.py` containing the party gathering, card loading, stats map construction, combat instance creation, and turn timeout setup
+**And** `movement.py` calls `combat_service.initiate_combat()` and handles only the broadcasting of `combat_start` messages
+
+**Given** `PlayerManager._cleanup_combat()` (39 lines) in `player/manager.py` containing combat-specific logic
+**When** Story 17.9 is implemented
+**Then** a function `cleanup_participant()` exists in `server/combat/service.py` handling: stat sync, HP restore, participant removal, NPC release, remaining-player notification
+**And** `PlayerManager._cleanup_combat()` becomes a thin call to `combat_service.cleanup_participant()`
+
+**Given** all 1062+ tests
+**When** Story 17.9 is implemented
+**Then** all test patch targets updated to new module paths
+**And** all tests pass
+
+**Implementation notes:**
+- Expands existing `combat/service.py` (~250 → ~400 lines)
+- `movement.py` shrinks from 354 to ~250 lines
+- `player/manager.py` `_cleanup_combat` becomes ~5 lines
+
+### Story 17.10: Extract Trade Execution to Service
+
+As a developer,
+I want trade execution logic in a trade service module instead of inline in the handler,
+So that the trade handler is thin routing and trade business logic is independently testable.
+
+**Acceptance Criteria:**
+
+**Given** `_execute_trade()` (114 lines) in `trade.py` handler containing atomic trade swap logic
+**When** Story 17.10 is implemented
+**Then** the function is moved to `server/trade/service.py` (new file)
+**And** the trade handler imports and calls `trade_service.execute_trade()`
+
+**Given** all 1062+ tests
+**When** Story 17.10 is implemented
+**Then** all test patch targets updated
+**And** all tests pass
+
+**Implementation notes:**
+- Creates `server/trade/service.py` (new file, ~120 lines)
+- `trade.py` handler shrinks from 485 to ~375 lines
+
+### Story 17.8: Decompose Game Class
+
+As a developer,
+I want business logic extracted from the Game class into domain service modules,
+So that Game is a thin orchestrator (~300 lines) that delegates to services.
+
+**Acceptance Criteria:**
+
+**Given** `kill_npc()` (17 lines), `_reset_player_stats()` (5 lines), `_find_spawn_point()` (12 lines), and `respawn_player()` (68 lines) on `Game`
+**When** Story 17.8 is implemented
+**Then** these functions exist in `server/player/service.py` (created by Story 17.7)
+**And** Game retains thin 1-line delegation wrappers: `self.kill_npc(...)` calls `player_service.kill_npc(self, ...)` (per ADR-17-3)
+**And** tests that mock `game.kill_npc` and `game.respawn_player` continue to work unchanged
+
+**Given** `_start_heartbeat()` (7 lines), `_cancel_heartbeat()` (5 lines), and `_heartbeat_loop()` (31 lines) on `Game`
+**When** Story 17.8 is implemented
+**Then** these functions exist in `server/net/heartbeat.py` (new file)
+**And** Game retains thin delegation wrappers for `_start_heartbeat` and `_cancel_heartbeat`
+**And** heartbeat tests (`test_heartbeat.py`) continue to work via Game delegation
+
+**Given** the Game class spans ~447 lines before this story
+**When** Story 17.8 is implemented
+**Then** Game class is ≤320 lines (init, transaction, startup, shutdown, registration, handle_disconnect, delegation wrappers)
+
+**Given** all 1062+ tests
+**When** Story 17.8 is implemented
+**Then** all tests pass with ~0 test patch target changes (delegation wrappers preserve mock surface)
+
+**Implementation notes:**
+- Depends on Story 17.7 (player/service.py must exist)
+- Creates `server/net/heartbeat.py` (new file, ~45 lines)
+- Adds ~90 lines to `player/service.py`
+- Game shrinks from ~447 to ~300 lines
+- ADR-17-3 (thin delegation wrappers)
+- Last story in Sprint 2
+
+---
+
+## Sprint 3: Protocol, Error & Polish
+
+### Story 17.11: Structured Error Codes
+
+As a developer,
+I want protocol-level errors to include machine-parseable error codes,
+So that game engine clients can programmatically handle errors without string-matching.
+
+**Acceptance Criteria:**
+
+**Given** error responses use `{"type": "error", "detail": "..."}`
+**When** Story 17.11 is implemented
+**Then** an `ErrorCode` StrEnum exists (in `server/net/errors.py` or similar) with members covering: `INVALID_JSON`, `MISSING_ACTION`, `UNKNOWN_ACTION`, `VALIDATION_ERROR`, `AUTH_REQUIRED`, and ~5-10 additional codes for major categories
+**And** a `send_error(ws, code, detail, data)` async helper constructs `{"type": "error", "code": code, "detail": detail, "request_id": ...}`
+
+**Given** the 3 protocol errors in `app.py` (Invalid JSON, Missing action field, Unknown action) and 2 auth middleware errors (Not logged in)
+**When** Story 17.11 is implemented
+**Then** these 5 errors use `send_error()` with appropriate `ErrorCode`
+
+**Given** the remaining ~97 handler-level errors
+**When** Story 17.11 is implemented
+**Then** they are NOT migrated — handler errors adopt `send_error()` incrementally in future epics (per ADR-17-5)
+
+**Given** `outbound_schemas.py` `ErrorMessage` model
+**When** Story 17.11 is implemented
+**Then** the schema is updated with optional `code: str | None = None` field
+**And** `make protocol-doc` is run and the spec includes the new field
+
+**Given** all 1062+ tests
+**When** Story 17.11 is implemented
+**Then** all tests pass — the `"code"` field is additive (existing error assertions don't check for it)
+
+**Implementation notes:**
+- Creates `ErrorCode` StrEnum + `send_error()` helper
+- 3 files modified: `app.py`, `auth_middleware.py`, `outbound_schemas.py`
+- ADR-17-5 (scoped to 5 errors only)
+- Sprint 3's first story — FR148 depends on this
+
+### Story 17.12: Sanitize Pydantic Validation Errors
+
+As a developer,
+I want Pydantic validation errors sanitized before sending to clients,
+So that internal schema structure (class names, validation rules) is not leaked.
+
+**Acceptance Criteria:**
+
+**Given** `app.py` sends `str(e)` for `ValidationError`, exposing class names and internal structure
+**When** Story 17.12 is implemented
+**Then** `e.errors()` is used to extract structured field/message pairs
+**And** the error is sent via `send_error(ws, ErrorCode.VALIDATION_ERROR, sanitized_detail, data)` (from Story 17.11)
+**And** the sanitized detail format is `"field: message"` (e.g., `"direction: Invalid direction: diagonal"`)
+
+**Given** all 1062+ tests
+**When** Story 17.12 is implemented
+**Then** all tests pass — tests that check error `detail` content may need assertion updates for the new format
+
+**Implementation notes:**
+- 1 production file: `app.py` (~5 lines changed)
+- Depends on Story 17.11 for `send_error()` and `ErrorCode`
+- ADR-17-8
+
+### Story 17.13: Protocol Versioning
+
+As a developer,
+I want the server to include a protocol version in login/reconnect responses,
+So that game engine clients can detect incompatible protocol changes.
+
+**Acceptance Criteria:**
+
+**Given** no protocol version exists in the current protocol
+**When** Story 17.13 is implemented
+**Then** a `PROTOCOL_VERSION: int = 1` constant exists in `server/core/config.py` (or `core/constants.py`)
+**And** `login_success` responses include `"protocol_version": PROTOCOL_VERSION`
+**And** reconnect success responses include `"protocol_version": PROTOCOL_VERSION`
+
+**Given** the protocol spec generator `scripts/generate_protocol_doc.py`
+**When** Story 17.13 is implemented
+**Then** the generated spec documents the `protocol_version` field on `login_success`
+
+**Given** `outbound_schemas.py` `LoginSuccessMessage`
+**When** Story 17.13 is implemented
+**Then** the schema includes `protocol_version: int` field
+**And** `make protocol-doc` is run and `make check-protocol` passes
+
+**Given** the web-demo client
+**When** Story 17.13 is implemented
+**Then** the client logs a warning if `protocol_version` differs from expected (does not hard-block)
+
+**Given** all 1062+ tests
+**When** Story 17.13 is implemented
+**Then** all tests pass — `protocol_version` is an additive field
+
+**Implementation notes:**
+- Version format: integer starting at 1 (bumped on breaking protocol changes)
+- ~4 files: `config.py` or `constants.py`, `auth.py` or `player/service.py` (wherever `_build_login_response` lives after Sprint 2), `outbound_schemas.py`, `web-demo/js/game.js`
+
+### Story 17.14: Auto-Generate Help Categories
+
+As a developer,
+I want help categories derived from schema metadata instead of a hardcoded dict,
+So that adding a new action automatically includes it in help output.
+
+**Acceptance Criteria:**
+
+**Given** the hardcoded `categories` dict in `handle_help_actions()` at `query.py`
+**When** Story 17.14 is implemented
+**Then** `InboundMessage` base class has `help_category: ClassVar[str | None] = None`
+**And** each schema class sets its category (e.g., `MoveMessage` sets `help_category = "Movement"`, `FleeMessage` sets `help_category = "Combat"`)
+**And** internal actions (`LoginMessage`, `RegisterMessage`, `PongMessage`, `ReconnectMessage`) have `help_category = None`
+**And** `handle_help_actions()` generates categories by iterating `ACTION_SCHEMAS` and grouping by `help_category`, excluding `None`
+
+**Given** all 1062+ tests
+**When** Story 17.14 is implemented
+**Then** all tests pass — help output content is unchanged (same categories, same action groupings)
+
+**Implementation notes:**
+- 2 files: `schemas.py` (add ClassVar to 23 classes), `query.py` (replace hardcoded dict with generation loop)
+- ADR-17-7
+
+### Story 17.15: Handler Registration → Data-Driven Dict
+
+As a developer,
+I want handler registration driven by a dict instead of 23 lambda wrappers,
+So that adding a new handler is a 1-line dict entry instead of a 3-line register call.
+
+**Acceptance Criteria:**
+
+**Given** 23 `self.router.register("action", lambda ws, d: handler(ws, d, game=self))` calls in `_register_handlers()` (~73 lines)
+**When** Story 17.15 is implemented
+**Then** a `HANDLERS` dict maps action strings to handler functions
+**And** a 3-line loop iterates the dict and registers each with the standardized lambda
+**And** `_register_handlers()` shrinks from ~73 lines of register calls to ~30 lines (dict + loop)
+
+**Given** all 1062+ tests
+**When** Story 17.15 is implemented
+**Then** all tests pass — handler routing behavior is unchanged
+
+**Implementation notes:**
+- 1 production file: `app.py` `_register_handlers()` method
+- ADR-17-6 (data-driven dict, no decorator auto-discovery)
+
+### Story 17.16: Fix Markdown Line Break Rendering
+
+As a developer,
+I want multi-line chat messages to render correctly in the web-demo,
+So that inventory listings, help text, and multi-line player messages display with proper line breaks.
+
+**Acceptance Criteria:**
+
+**Given** `renderSafeMarkdown()` in `game.js` uses `div.innerHTML` without converting `\n` to `<br>`
+**When** Story 17.16 is implemented
+**Then** `renderSafeMarkdown()` includes `.replace(/\n/g, '<br>')` after HTML-escaping and before markdown regex
+
+**Given** the non-markdown fallback path (`div.textContent = text`) also collapses `\n`
+**When** Story 17.16 is implemented
+**Then** `.chat-msg` CSS class includes `white-space: pre-wrap` as fallback for non-markdown messages
+
+**Given** the server preserves `\n` in chat messages (per `chat.py:31` control character stripping)
+**When** Story 17.16 is implemented
+**Then** multi-line messages from server render with visible line breaks in the web-demo
+
+**Given** all 1062+ tests
+**When** Story 17.16 is implemented
+**Then** all tests pass (no server changes)
+
+**Implementation notes:**
+- 2 files: `web-demo/js/game.js` (~1 line in `renderSafeMarkdown`), `web-demo/css/style.css` (~1 line CSS)
 
 ---
 

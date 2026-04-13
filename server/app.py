@@ -17,7 +17,8 @@ from server.core.database import init_db
 from server.core import database as _database
 from server.net.connection_manager import ConnectionManager
 from server.net.message_router import MessageRouter
-from server.net.schemas import ACTION_SCHEMAS, with_request_id
+from server.net.errors import ErrorCode, send_error
+from server.net.schemas import ACTION_SCHEMAS
 from server.player import repo as player_repo
 from server.combat.manager import CombatManager
 from server.core.effects import create_default_registry
@@ -515,16 +516,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             try:
                 data = json.loads(raw)
             except json.JSONDecodeError:
-                await websocket.send_json(
-                    {"type": "error", "detail": "Invalid JSON"}
-                )
+                await send_error(websocket, ErrorCode.INVALID_JSON, "Invalid JSON")
                 continue
             if "action" not in data:
-                await websocket.send_json(
-                    with_request_id(
-                        {"type": "error", "detail": "Missing action field"},
-                        data,
-                    )
+                await send_error(
+                    websocket, ErrorCode.MISSING_ACTION, "Missing action field", data
                 )
                 continue
             action = data["action"]
@@ -534,10 +530,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     validated = schema_cls(**data)
                     data = validated.model_dump()
                 except ValidationError as e:
-                    await websocket.send_json(
-                        with_request_id(
-                            {"type": "error", "detail": str(e)}, data
-                        )
+                    await send_error(
+                        websocket, ErrorCode.VALIDATION_ERROR, str(e), data
                     )
                     continue
             await game.router.route(websocket, data)

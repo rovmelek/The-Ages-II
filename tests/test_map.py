@@ -76,7 +76,7 @@ async def test_map_not_logged_in():
 
     await handle_map(ws, {"action": "map"}, game=game)
 
-    ws.send_json.assert_called_once_with({"type": "error", "detail": "Not logged in"})
+    ws.send_json.assert_called_once_with({"type": "error", "code": "AUTH_REQUIRED", "detail": "Not logged in"})
 
 
 @pytest.mark.asyncio

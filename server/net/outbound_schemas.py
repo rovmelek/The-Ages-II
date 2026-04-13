@@ -182,6 +182,7 @@ class KickedMessage(BaseModel):
 
 class ErrorMessage(BaseModel):
     type: str = "error"
+    code: str | None = None
     detail: str
     request_id: str | None = None
 

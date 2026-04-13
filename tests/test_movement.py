@@ -208,7 +208,7 @@ async def test_move_not_logged_in():
     await handle_move(mock_ws, {"action": "move", "direction": "right"}, game=game)
 
     mock_ws.send_json.assert_called_with(
-        {"type": "error", "detail": "Not logged in"}
+        {"type": "error", "code": "AUTH_REQUIRED", "detail": "Not logged in"}
     )
 
 

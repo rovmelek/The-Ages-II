@@ -5,7 +5,7 @@ from typing import Callable
 
 from fastapi import WebSocket
 
-from server.net.schemas import with_request_id
+from server.net.errors import ErrorCode, send_error
 
 
 class MessageRouter:
@@ -23,11 +23,9 @@ class MessageRouter:
         action = data.get("action")
         handler = self._handlers.get(action)
         if handler is None:
-            await websocket.send_json(
-                with_request_id(
-                    {"type": "error", "detail": f"Unknown action: {action}"},
-                    data,
-                )
+            await send_error(
+                websocket, ErrorCode.UNKNOWN_ACTION,
+                f"Unknown action: {action}", data,
             )
             return
         await handler(websocket, data)
