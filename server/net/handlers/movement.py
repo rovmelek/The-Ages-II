@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 from fastapi import WebSocket
 
 from server.core.config import settings
-from server.core.constants import EffectType
 from server.net.xp_notifications import grant_xp
 from server.net.auth_middleware import requires_auth
 from server.net.schemas import with_request_id
@@ -109,25 +108,6 @@ async def handle_move(
         )
 
 
-async def _cancel_trade_for(entity_id: str, game: Game) -> None:
-    """Cancel any active trade for a player and notify the other party."""
-    cancelled = game.trade_manager.cancel_trades_for(entity_id)
-    if cancelled:
-        other_id = (
-            cancelled.player_b
-            if cancelled.player_a == entity_id
-            else cancelled.player_a
-        )
-        await game.connection_manager.send_to_player(
-            other_id,
-            {
-                "type": "trade_result",
-                "status": "cancelled",
-                "reason": "Trade cancelled \u2014 player entered combat",
-            },
-        )
-
-
 async def _handle_mob_encounter(
     websocket: WebSocket,
     game: Game,
@@ -138,6 +118,8 @@ async def _handle_mob_encounter(
     mob_encounter: dict,
 ) -> None:
     """Initiate combat when player encounters a hostile mob."""
+    from server.combat.service import initiate_combat
+
     npc_id = mob_encounter["entity_id"]
     npc = room.get_npc(npc_id)
     if npc is None:
@@ -150,89 +132,20 @@ async def _handle_mob_encounter(
         npc.in_combat = True
 
     try:
-        # Cancel active trade before entering combat
-        await _cancel_trade_for(entity_id, game)
-
-        room_key = player_info.room_key
-
-        # Gather eligible party members in the same room
-        all_player_ids = [entity_id]
-        party = game.party_manager.get_party(entity_id)
-        if party is not None:
-            for mid in party.members:
-                if mid == entity_id:
-                    continue
-                mid_info = game.player_manager.get_session(mid)
-                if mid_info is None:
-                    continue
-                if game.connection_manager.get_room(mid) != room_key:
-                    continue
-                if mid_info.entity.in_combat:
-                    continue
-                all_player_ids.append(mid)
-                # Cancel trades for pulled-in party members
-                await _cancel_trade_for(mid, game)
-
-        # Load card definitions for player deck
-        from server.combat.cards.card_def import CardDef
-        from server.combat.cards import card_repo
-
-        card_defs: list[CardDef] = []
-        async with game.transaction() as session:
-            cards = await card_repo.get_all(session)
-            card_defs = [CardDef.from_db(c) for c in cards]
-
-        # Fallback: if no cards in DB, create basic cards
-        if not card_defs:
-            card_defs = [
-                CardDef(card_key=f"basic_attack_{i}", name="Basic Attack", cost=1,
-                        effects=[{"type": EffectType.DAMAGE, "value": settings.DEFAULT_ATTACK}])
-                for i in range(10)
-            ]
-
-        # Create combat instance (store NPC reference for death/release on combat end)
-        mob_stats = dict(npc.stats) if npc.stats else {"hp": settings.DEFAULT_BASE_HP, "max_hp": settings.DEFAULT_BASE_HP, "attack": settings.DEFAULT_ATTACK}
-        tmpl = game.npc_templates.get(npc.npc_key)
-        mob_hit_dice = tmpl.get("hit_dice", 0) if tmpl else 0
-
-        # Scale mob HP by party size for multi-player combat
-        party_size = len(all_player_ids)
-        if party_size > 1:
-            mob_stats["hp"] *= party_size
-            mob_stats["max_hp"] *= party_size
-
-        # Build player stats map for all participants
-        player_stats_map: dict[str, dict] = {}
-        for pid in all_player_ids:
-            p_info = game.player_manager.get_session(pid)
-            if p_info is None:
-                continue
-            p_stats = dict(p_info.entity.stats)
-            p_stats.setdefault("hp", settings.DEFAULT_BASE_HP)
-            p_stats.setdefault("max_hp", p_stats["hp"])
-            p_stats.setdefault("attack", settings.DEFAULT_ATTACK)
-            p_stats.setdefault("shield", 0)
-            player_stats_map[pid] = p_stats
-
-        instance = game.combat_manager.start_combat(
-            npc.name, mob_stats, all_player_ids, player_stats_map, card_defs,
-            npc_id=npc_id, room_key=room_key, mob_hit_dice=mob_hit_dice,
+        result = await initiate_combat(
+            entity_id=entity_id,
+            npc=npc,
+            room_key=player_info.room_key,
+            game=game,
         )
+        if result is None:
+            return
 
-        # Register turn timeout callback and start the first timer
-        from server.net.handlers.combat import make_turn_timeout_callback
-        instance.set_turn_timeout_callback(make_turn_timeout_callback(game))
-        instance.start_turn_timer()
-
-        # Mark all participants as in combat and send combat_start
-        state = instance.get_state()
-        for pid in all_player_ids:
-            p_info = game.player_manager.get_session(pid)
-            if p_info:
-                p_info.entity.in_combat = True
+        # Broadcast combat_start to all participants
+        for pid in result.participant_ids:
             ws = game.connection_manager.get_websocket(pid)
             if ws:
-                await ws.send_json({"type": "combat_start", **state})
+                await ws.send_json({"type": "combat_start", **result.state})
     except Exception:
         npc.in_combat = False
         raise

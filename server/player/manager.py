@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Iterator
 
-from server.core.config import settings
 from server.player import repo as player_repo
 from server.player.session import PlayerSession
 
@@ -120,43 +119,8 @@ class PlayerManager:
 
     async def _cleanup_combat(self, entity_id: str, entity, game: Game) -> None:
         """Sync combat stats, remove from instance, notify remaining participants."""
-        combat_instance = game.combat_manager.get_player_instance(entity_id)
-        if not combat_instance:
-            return
-
-        # Sync combat stats back to entity (only whitelisted keys)
-        combat_stats = combat_instance.participant_stats.get(entity_id, {})
-        for key in ("hp", "max_hp"):
-            if key in combat_stats:
-                entity.stats[key] = combat_stats[key]
-        # Restore HP if dead in combat
-        if entity.stats.get("hp", 0) <= 0:
-            entity.stats["hp"] = entity.stats.get("max_hp", settings.DEFAULT_BASE_HP)
-        entity.in_combat = False
-
-        # Remove from combat instance (destroys participant_stats entry)
-        combat_instance.remove_participant(entity_id)
-        game.combat_manager.remove_player(entity_id)
-
-        if not combat_instance.participants:
-            # Last player — release NPC and clean up instance
-            if combat_instance.npc_id and combat_instance.room_key:
-                room = game.room_manager.get_room(combat_instance.room_key)
-                if room:
-                    npc = room.get_npc(combat_instance.npc_id)
-                    if npc:
-                        npc.in_combat = False
-            game.combat_manager.remove_instance(combat_instance.instance_id)
-        else:
-            # Notify remaining participants (best-effort per recipient)
-            state = combat_instance.get_state()
-            for eid in combat_instance.participants:
-                ws = game.connection_manager.get_websocket(eid)
-                if ws:
-                    try:
-                        await ws.send_json({"type": "combat_update", **state})
-                    except Exception:
-                        pass
+        from server.combat.service import cleanup_participant
+        await cleanup_participant(entity_id, entity, game)
 
     async def _cleanup_party(self, entity_id: str, game: Game) -> None:
         """Remove from party, handle leader succession, clean up pending invites."""
