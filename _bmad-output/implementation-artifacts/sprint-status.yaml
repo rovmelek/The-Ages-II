@@ -299,7 +299,7 @@ development_status:
   17-7-extract-auth-service-deduplicate-login-reconnect: done  # FR140 — player/service.py, setup_full_session(), build_stats_payload()
   17-6-move-xp-notifications-to-net-layer: done              # FR139 — grant_xp/notify_xp/send_level_up_available → net/xp_notifications.py
   17-9-extract-combat-initiation-cleanup-to-service: done    # FR141, FR150 — initiate_combat() + cleanup_participant() in combat/service.py
-  17-10-extract-trade-execution-to-service: backlog             # FR142 — _execute_trade() → trade/service.py
+  17-10-extract-trade-execution-to-service: done             # FR142 — _execute_trade() → trade/service.py
   17-8-decompose-game-class: backlog                            # FR149 — kill_npc/respawn → player/service, heartbeat → net/heartbeat.py, Game ≤320 lines
 
   # Sprint 3 — Protocol, Error & Polish

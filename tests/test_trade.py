@@ -575,7 +575,8 @@ class TestItemDefTradeable:
 # Story 12.2: Trade Validation tests
 # ---------------------------------------------------------------------------
 
-from server.net.handlers.trade import _execute_trade, _validate_offers
+from server.net.handlers.trade import _execute_trade
+from server.trade.service import _validate_offers
 
 
 from server.player.session import PlayerSession
