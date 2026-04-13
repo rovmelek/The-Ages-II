@@ -58,11 +58,19 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 
 **Effect System:**
 - `EffectHandler` signature: `async (effect, source, target, context) -> dict` — all dicts
-- 5 types: `damage`, `heal`, `shield`, `dot`, `draw` — handlers are stateless
+- 6 types: `damage`, `heal`, `shield`, `dot`, `draw`, `restore_energy` — handlers are stateless
 - DoT recording (EffectRegistry) and DoT ticking (CombatInstance) are separate concerns
 
-**Combat Energy:**
-- Cards cost energy (start: `COMBAT_STARTING_ENERGY`, regen per cycle: `COMBAT_ENERGY_REGEN`); items and pass are free
+**Energy System (Epic 18):**
+- Energy is a persistent player stat (like HP), derived from INT+WIS: `max_energy = DEFAULT_BASE_ENERGY + INT * INT_ENERGY_PER_POINT + WIS * WIS_ENERGY_PER_POINT`
+- Cards have `card_type` field: `"physical"` (free, cost=0) or `"magical"` (costs energy). Classification rubric in ADR-18-2.
+- Combat energy regen per cycle: `compute_energy_regen(stats)` in `server/combat/instance.py` — `floor(BASE_COMBAT_ENERGY_REGEN + (INT+WIS) * COMBAT_ENERGY_REGEN_FACTOR)`
+- Out-of-combat HP/energy regen: `server/core/regen.py` (standalone module, not Scheduler). Sends `stats_update` message via `send_to_player_seq()`. Skips in-combat and full HP+energy players. Error-isolated.
+- Energy potion: `restore_energy` effect in `server/core/effects/restore_energy.py`, flat 25 restore, no stat scaling
+- `_STATS_WHITELIST` in `player/repo.py` includes `energy`, `max_energy` — they persist to DB
+- Combat sync: 4 functions in `combat/service.py` sync energy alongside HP: `sync_combat_stats()`, `clean_player_combat_stats()`, `cleanup_participant()`, `handle_flee_outcome()`
+- Items and pass are free (no energy cost); only `play_card()` checks energy for non-physical cards
+- Level-up: stacking allowed (no dedup), `max_energy` recalculated from INT+WIS, energy reset to max
 - Config in `Settings` (Pydantic BaseSettings) in `server/core/config.py`
 
 **Connection/Room Model:**
@@ -174,22 +182,23 @@ _Critical rules and patterns for implementing code in The-Ages-II. Focus on unob
 - NEVER add module-level mutable state (dicts, lists, globals) to handler files — all state belongs on manager classes owned by `Game`
 
 **Easy-to-Forget:**
-- New player stats MUST be added to `_STATS_WHITELIST` in `player/repo.py` — unlisted stats are silently dropped on save
+- New player stats MUST be added to `_STATS_WHITELIST` in `player/repo.py` — unlisted stats are silently dropped on save. Current whitelist: `hp`, `max_hp`, `energy`, `max_energy`, `xp`, `level`, + 6 D&D abilities. Excluded: `attack` (always DEFAULT_ATTACK), `shield`/`active_effects` (combat-only transient).
 - Stairs exits use `"ascend"`/`"descend"` — NOT `"up"`/`"down"` (collision with movement directions)
 
 **State Synchronization:**
-- Combat stats sync back to `PlayerEntity.stats` after every action AND at combat end
-- Strip `shield` at combat end: `entity.stats.pop("shield", None)`
+- Combat stats sync `hp`, `max_hp`, `energy`, `max_energy` back to `PlayerEntity.stats` after every action AND at combat end (4 sync functions in `combat/service.py`)
+- Strip `shield` at combat end: `entity.stats.pop("shield", None)` — but keep `energy`/`max_energy` (persistent)
 - XP applied in `_check_combat_end`, NOT in `CombatInstance`
 - Inventory persists immediately after combat item use
 - On disconnect/kick: save to DB BEFORE removing from room/combat
+- On flee: sync stats BEFORE `remove_participant()` (ISS-033 fix)
 
 **Combat Flow Order:**
 1. Process DoT effects (mob + current player)
 2. Check `is_finished` — early return if DoT killed
-3. Check energy cost (cards only — items are free) — reject if insufficient
+3. Check `card_type` — physical cards skip energy check; magical cards check energy cost — reject if insufficient
 4. Resolve card/item effects
-5. Advance turn (may trigger cycle-end mob attack + energy regen)
+5. Advance turn (may trigger cycle-end mob attack + energy regen via `compute_energy_regen()`)
 6. `_broadcast_combat_state()` — sync stats + send to participants
 7. `_check_combat_end()` — victory/defeat cleanup, XP, respawn
 
