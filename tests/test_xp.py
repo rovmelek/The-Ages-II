@@ -7,7 +7,8 @@ import pytest
 
 from server.player.manager import PlayerManager
 
-from server.core.xp import calculate_combat_xp, grant_xp, apply_xp, notify_xp, XpResult
+from server.core.xp import calculate_combat_xp, apply_xp, XpResult
+from server.net.xp_notifications import grant_xp, notify_xp
 from server.combat.instance import CombatInstance
 
 
@@ -395,7 +396,7 @@ class TestNotifyXp:
         result = XpResult(final_xp=200, source="combat", detail="boss",
                           new_total_xp=200, level_up_available=True, new_level=2)
 
-        with patch("server.core.xp.send_level_up_available", new_callable=AsyncMock) as mock_lu:
+        with patch("server.net.xp_notifications.send_level_up_available", new_callable=AsyncMock) as mock_lu:
             await notify_xp("player_1", result, _mock_entity, _mock_game)
             mock_lu.assert_called_once_with("player_1", _mock_entity, _mock_game)
 
@@ -404,7 +405,7 @@ class TestNotifyXp:
         result = XpResult(final_xp=50, source="exploration", detail="room",
                           new_total_xp=50, level_up_available=False)
 
-        with patch("server.core.xp.send_level_up_available", new_callable=AsyncMock) as mock_lu:
+        with patch("server.net.xp_notifications.send_level_up_available", new_callable=AsyncMock) as mock_lu:
             await notify_xp("player_1", result, _mock_entity, _mock_game)
             mock_lu.assert_not_called()
 

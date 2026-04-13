@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from server.core.config import settings
-from server.core.xp import grant_xp
+from server.net.xp_notifications import grant_xp
 from server.items.item_def import ItemDef
 from server.items import item_repo as items_repo
 from server.player import repo as player_repo

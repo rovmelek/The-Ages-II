@@ -7,7 +7,8 @@ from fastapi import WebSocket
 
 from server.core.config import settings
 from server.core.constants import STAT_NAMES
-from server.core.xp import get_pending_level_ups, send_level_up_available
+from server.core.xp import get_pending_level_ups
+from server.net.xp_notifications import send_level_up_available
 from server.net.auth_middleware import requires_auth
 from server.net.schemas import with_request_id
 from server.player import repo as player_repo

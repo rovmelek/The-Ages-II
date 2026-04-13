@@ -8,7 +8,8 @@ from fastapi import WebSocket
 
 from server.core.config import settings
 from server.core.constants import PROTOCOL_VERSION, STAT_NAMES
-from server.core.xp import get_pending_level_ups, send_level_up_available
+from server.core.xp import get_pending_level_ups
+from server.net.xp_notifications import send_level_up_available
 from server.items import item_repo
 from server.items.inventory import Inventory
 from server.items.item_def import ItemDef

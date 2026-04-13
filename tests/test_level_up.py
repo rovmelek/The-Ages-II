@@ -4,7 +4,8 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from server.core.xp import get_pending_level_ups, send_level_up_available, grant_xp
+from server.core.xp import get_pending_level_ups
+from server.net.xp_notifications import send_level_up_available, grant_xp
 from server.net.handlers.levelup import handle_level_up, _VALID_LEVEL_UP_STATS
 from server.player.entity import PlayerEntity
 

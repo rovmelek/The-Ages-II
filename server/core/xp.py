@@ -90,46 +90,6 @@ async def apply_xp(
     )
 
 
-async def notify_xp(
-    entity_id: str,
-    result: XpResult,
-    player_entity: Any,
-    game: Any,
-) -> None:
-    """Send xp_gained and optional level_up_available messages."""
-    await game.connection_manager.send_to_player_seq(entity_id, {
-        "type": "xp_gained",
-        "amount": result.final_xp,
-        "source": result.source,
-        "detail": result.detail,
-        "new_total_xp": result.new_total_xp,
-    })
-    if result.level_up_available:
-        await send_level_up_available(entity_id, player_entity, game)
-
-
-async def grant_xp(
-    entity_id: str,
-    player_entity: Any,
-    amount: int,
-    source: str,
-    detail: str,
-    game: Any,
-    apply_cha_bonus: bool = True,
-    session: Any = None,
-) -> int:
-    """Apply XP and notify. Backward-compatible wrapper.
-
-    Returns final XP amount.
-    """
-    result = await apply_xp(
-        entity_id, player_entity, amount, source, detail, game,
-        apply_cha_bonus, session,
-    )
-    await notify_xp(entity_id, result, player_entity, game)
-    return result.final_xp
-
-
 def get_pending_level_ups(stats: dict) -> int:
     """Return how many level-ups are available based on current XP and level."""
     if settings.XP_LEVEL_THRESHOLD_MULTIPLIER <= 0:
@@ -142,30 +102,3 @@ def get_pending_level_ups(stats: dict) -> int:
         pending += 1
         check_level += 1
     return pending
-
-
-async def send_level_up_available(entity_id: str, player_entity: Any, game: Any) -> None:
-    """Send level_up_available message to the player."""
-    stats = player_entity.stats
-    current_level = stats.get("level", 1)
-    new_level = current_level + 1
-    ssf = settings.STAT_SCALING_FACTOR
-    await game.connection_manager.send_to_player_seq(entity_id, {
-        "type": "level_up_available",
-        "new_level": new_level,
-        "choose_stats": settings.LEVEL_UP_STAT_CHOICES,
-        "current_stats": {
-            s: stats.get(s, settings.DEFAULT_STAT_VALUE) for s in STAT_NAMES
-        },
-        "stat_cap": settings.STAT_CAP,
-        "xp_for_next_level": current_level * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
-        "xp_for_current_level": (current_level - 1) * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
-        "stat_effects": {
-            "strength": f"+{ssf:g} physical damage per point",
-            "dexterity": f"-{ssf:g} incoming damage per point",
-            "constitution": f"+{settings.CON_HP_PER_POINT} max HP per point",
-            "intelligence": f"+{ssf:g} magic damage per point",
-            "wisdom": f"+{ssf:g} healing per point",
-            "charisma": f"+{round(settings.XP_CHA_BONUS_PER_POINT * 100)}% XP per point",
-        },
-    })

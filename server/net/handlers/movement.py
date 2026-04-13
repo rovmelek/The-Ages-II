@@ -8,7 +8,7 @@ from fastapi import WebSocket
 
 from server.core.config import settings
 from server.core.constants import EffectType
-from server.core.xp import grant_xp
+from server.net.xp_notifications import grant_xp
 from server.net.auth_middleware import requires_auth
 from server.net.schemas import with_request_id
 from server.player import repo as player_repo
