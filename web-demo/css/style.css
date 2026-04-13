@@ -313,7 +313,7 @@ body {
   min-height: 100px;
 }
 
-.chat-msg { padding: 2px 0; word-wrap: break-word; }
+.chat-msg { padding: 2px 0; word-wrap: break-word; white-space: pre-wrap; }
 .chat-sender { font-weight: bold; color: #4488ff; }
 .chat-whisper { font-style: italic; color: #aa66ff; }
 .chat-announcement { color: #ffaa00; font-weight: bold; }
