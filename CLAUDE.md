@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **The-Ages-II** is a multiplayer room-based dungeon game with turn-based card combat. The project combines:
 - A **BMAD framework** (v6.2.0) for AI-assisted design, planning, and project management workflows
-- A **Python game server** (Epics 1-16 complete; 1062 tests passing) built with FastAPI + WebSockets
+- A **Python game server** (Epics 1-17 complete; 1066 tests passing) built with FastAPI + WebSockets
 - A **web demo client** (`web-demo/`) — vanilla HTML/CSS/JS proof-of-concept for testing and demos; production client planned in Godot
 
 **Key reference documents:**
@@ -58,7 +58,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Alembic** for schema migrations (`make db-migrate`); `create_all` still used at startup alongside Alembic
 - **Pydantic** for message schemas and settings
 - **bcrypt** for password hashing
-- **pytest** + **pytest-asyncio** for testing (808 tests)
+- **pytest** + **pytest-asyncio** for testing (1066 tests)
 
 ### Commands
 ```bash
@@ -75,7 +75,7 @@ open http://localhost:8000     # web demo client (requires server running)
 
 ### Server Architecture
 
-`Game` class in `server/app.py` is the central orchestrator, owning all managers:
+`Game` class in `server/app.py` is the central orchestrator (thin delegation — business logic lives in service modules), owning all managers:
 
 - **RoomManager** (`server/room/manager.py`) — loads tile-based rooms from JSON files → SQLite → memory
 - **CombatManager** (`server/combat/manager.py`) — creates/tracks `CombatInstance` objects for turn-based card combat (multi-player party combat complete in Epic 12)
@@ -105,27 +105,35 @@ open http://localhost:8000     # web demo client (requires server running)
 - **SpawnCheckpoint Repo**: All spawn checkpoint DB access goes through `server/room/spawn_repo.py` (get_checkpoint, upsert_checkpoint, get_all_checkpoints) — never inline `select(SpawnCheckpoint)` in scheduler or elsewhere.
 - **Handler Auth Middleware**: All WebSocket handlers (except `handle_login`/`handle_register`) use `@requires_auth` decorator from `server/net/auth_middleware.py`. The decorator injects `entity_id: str` and `player_info: PlayerSession` as keyword arguments. Never duplicate the auth-check boilerplate manually.
 - **Party Invite State**: All invite tracking (pending, outgoing, timeouts, cooldowns) lives on `PartyManager` — the party handler (`server/net/handlers/party.py`) is stateless. `PartyManager` takes `connection_manager` via constructor injection. Never add module-level mutable state to handler files.
-- **Combat Turn Timeout**: `COMBAT_TURN_TIMEOUT_SECONDS: 30` exists in config (`config.py:32`) but is **not yet enforced** — Story 16.10a will implement timer-based auto-pass.
-- **Epic 16 Planned Changes** (not yet implemented — reference `epic-16-tech-spec.md` for details):
-  - Story 16.1/16.2: Pydantic schemas for all WebSocket messages in `server/net/schemas.py` and `server/net/outbound_schemas.py`
-  - Story 16.4: Combat business logic will move from `server/net/handlers/combat.py` to `server/combat/service.py`
-  - Story 16.4a: `grant_xp` will split into `apply_xp` (business) + `notify_xp` (messaging) with backward-compatible wrapper
-  - Story 16.9/16.10: Session tokens + grace period for reconnection (changes `handle_disconnect` from immediate to deferred cleanup)
-  - Story 16.12: Chat messages will include `"format": settings.CHAT_FORMAT` field — server remains client-agnostic (no HTML stripping, per ADR-16-4)
+- **Combat Turn Timeout**: `COMBAT_TURN_TIMEOUT_SECONDS: 30` enforced via `loop.call_later` timer (Story 16.10a).
+- **Service Layer Architecture** (Epic 17): Handlers are thin routing — business logic lives in service modules:
+  - `server/player/service.py` — auth session setup (`setup_full_session`, `build_stats_payload`), NPC kill, player respawn, spawn point resolution
+  - `server/combat/service.py` — combat end orchestration (`finalize_combat`), combat initiation (`initiate_combat`), participant cleanup (`cleanup_participant`), flee handling
+  - `server/trade/service.py` — atomic trade execution (`execute_trade`)
+  - `server/net/xp_notifications.py` — XP messaging (`grant_xp`, `notify_xp`, `send_level_up_available`); `core/xp.py` has zero net imports
+  - `server/net/heartbeat.py` — ping/pong connection health (`start_heartbeat`, `cancel_heartbeat`)
+  - `server/net/errors.py` — structured error codes (`ErrorCode` StrEnum, `send_error`, `sanitize_validation_error`)
+- **Centralized Constants** (Epic 17): `server/core/constants.py` holds cross-cutting constants (`STAT_NAMES`, `EffectType`, `SPAWN_PERSISTENT`, `SPAWN_RARE`, `PROTOCOL_VERSION`). Domain-specific constants stay in their modules (`TradeState` in `trade/session.py`, `BEHAVIOR_HOSTILE` in `room/npc.py`).
+- **StrEnum Pattern**: Type constants use `StrEnum` (ADR-17-1) — compares equal to plain strings, so JSON wire protocol is unchanged.
+- **Dual-Patch Test Pattern**: When a repo module (e.g., `player_repo`) is imported by both a handler and a service, tests must patch both import paths with the same mock object.
+- **Protocol**: 23 inbound Pydantic schemas in `server/net/schemas.py`, 40 outbound in `server/net/outbound_schemas.py` (Stories 16.1, 16.2). Auto-generated spec: `make protocol-doc`, `make check-protocol`.
+- **Chat**: Messages include `"format": settings.CHAT_FORMAT` (default "markdown") — server is client-agnostic per ADR-16-4.
+- **Session Tokens**: `TokenStore` in-memory, 300s TTL (Story 16.9). Grace period: `DISCONNECT_GRACE_SECONDS=120`, deferred cleanup (Story 16.10).
+- **Message Sequence Numbers**: `send_to_player_seq()` with per-player `_msg_seq` counter (Story 16.11).
 
 ### Directory Structure
 ```
 server/
-├── core/          # Config, database, scheduler, event bus, shared effect registry
-├── net/           # WebSocket connection manager, message router, auth middleware
-│   └── handlers/  # auth, movement, chat, combat, inventory, interact, trade, party, admin
-├── player/        # Player model, repo (stats whitelist), entity, auth (bcrypt), manager (session lifecycle + cleanup)
+├── core/          # Config, database, scheduler, event bus, shared effect registry, constants, xp (pure business logic)
+├── net/           # WebSocket connection manager, message router, auth middleware, heartbeat, xp notifications, errors
+│   └── handlers/  # auth, movement, chat, combat, inventory, interact, trade, party, admin, levelup, query
+├── player/        # Player model, repo, entity, auth (bcrypt), manager (session lifecycle + cleanup), service (session setup, respawn, NPC kill)
 ├── room/          # Room model, repo, tile system, room instance, manager, provider, npc entity, spawn repo
 │   └── objects/   # Chest, lever, base classes, registry, state
-├── combat/        # Combat instance (DoT ticking, turn resolution), manager
+├── combat/        # Combat instance (DoT ticking, turn resolution), manager, service (initiation, finalization, flee, cleanup)
 │   └── cards/     # Card definitions, hand management, card repo
 ├── items/         # Item definitions, item repo, inventory (serialization)
-├── trade/         # TradeManager, trade session dataclass, state machine
+├── trade/         # TradeManager, trade session dataclass, state machine, service (trade execution)
 ├── party/         # PartyManager, party dataclass, leader succession, invite tracking
 data/
 ├── rooms/         # Room definitions (4 rooms: town_square, dark_cave, test_room, other_room)
@@ -133,7 +141,7 @@ data/
 ├── items/         # Item definitions (JSON)
 └── npcs/          # NPC template definitions (JSON)
 alembic/           # Alembic migrations (env.py, versions/)
-tests/             # pytest — 49 test files (flat structure)
+tests/             # pytest — 50+ test files (flat structure)
 web-demo/          # Browser-based test/demo client (vanilla HTML/CSS/JS)
 ├── index.html     # Auth, game viewport, combat overlay
 ├── css/style.css  # Dark theme, tiles, cards
@@ -187,8 +195,9 @@ When fixing any bug, warning, or issue (whether found during testing, code revie
 
 When creating story files (via `/gds-create-story` or manually):
 
-- **Prefer function/class names over line numbers** when referencing code locations. Line numbers shift as earlier stories modify files; function names are stable. Write `in _broadcast_combat_state()` rather than `at combat.py:41-50`.
-- Line numbers may be included as supplementary context but should never be the **only** identifier for a code location.
+- **Use function/class names as the primary code reference** — never line numbers alone. Line numbers shift as earlier stories modify files; function names are stable. Write `in _broadcast_combat_state()` rather than `at combat.py:41-50`.
+- Line numbers may be included parenthetically as supplementary context (e.g., `in _broadcast_combat_state() (~line 41)`) but should never be the **only** identifier for a code location.
+- When creating story specs with adversarial review, verify all function name references exist in the current codebase.
 
 ### Design Workflow Phases (WDS)
 

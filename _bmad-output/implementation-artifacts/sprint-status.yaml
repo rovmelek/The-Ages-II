@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-21
-last_updated: 2026-04-12 (Story 17.7 ready-for-dev)
+last_updated: 2026-04-12 (Epic 17 complete, retrospective done)
 project: The-Ages-II
 project_key: NOKEY
 tracking_system: file-system
@@ -283,7 +283,7 @@ development_status:
   # ADRs: 8 (ADR-17-1 through ADR-17-8)
   # Hardened: 6 Red Team rounds, ADR formalization, First Principles analysis
   # No Alembic migrations required
-  epic-17: in-progress
+  epic-17: done
 
   # Sprint 1 — Constants, Config & Dependencies
   # Ordering: 17.1 first → 17.2 (depends on 17.1) → 17.3, 17.4, 17.5 (parallel)
@@ -311,4 +311,4 @@ development_status:
   17-15-handler-registration-data-driven-dict: done               # FR147 — HANDLERS dict + loop replaces 23 lambdas
   17-16-fix-markdown-line-break-rendering: done                   # FR151 — \n → <br> in renderSafeMarkdown, white-space: pre-wrap CSS
 
-  epic-17-retrospective: optional
+  epic-17-retrospective: done
