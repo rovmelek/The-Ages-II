@@ -387,6 +387,7 @@
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
 | `type` | `str` | No | `"login_success"` |
+| `protocol_version` | `str` | Yes | PydanticUndefined |
 | `player_id` | `int` | Yes | PydanticUndefined |
 | `entity_id` | `str` | Yes | PydanticUndefined |
 | `username` | `str` | Yes | PydanticUndefined |

@@ -83,6 +83,7 @@ def _sample_combat_state():
 class TestAuth:
     def test_login_success(self):
         m = LoginSuccessMessage(
+            protocol_version="1.0",
             player_id=1, entity_id="player_1", username="hero",
             stats=_sample_stats(),
         )

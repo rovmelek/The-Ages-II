@@ -157,6 +157,7 @@ class PartyMemberPayload(BaseModel):
 
 class LoginSuccessMessage(BaseModel):
     type: str = "login_success"
+    protocol_version: str
     player_id: int
     entity_id: str
     username: str

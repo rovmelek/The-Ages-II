@@ -27,3 +27,6 @@ class EffectType(StrEnum):
 # NPC spawn type identifiers (from NPC template JSON)
 SPAWN_PERSISTENT = "persistent"
 SPAWN_RARE = "rare"
+
+# Protocol version included in login_success responses
+PROTOCOL_VERSION = "1.0"

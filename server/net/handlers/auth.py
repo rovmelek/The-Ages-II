@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from fastapi import WebSocket
 
 from server.core.config import settings
-from server.core.constants import STAT_NAMES
+from server.core.constants import PROTOCOL_VERSION, STAT_NAMES
 from server.items import item_repo
 from server.items.inventory import Inventory
 from server.items.item_def import ItemDef
@@ -109,6 +109,7 @@ def _build_login_response(
     """
     result = {
         "type": "login_success",
+        "protocol_version": PROTOCOL_VERSION,
         "player_id": db_id,
         "entity_id": entity_id,
         "username": username,
@@ -192,6 +193,7 @@ async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> No
         await websocket.send_json(
             with_request_id({
                 "type": "login_success",
+                "protocol_version": PROTOCOL_VERSION,
                 "player_id": player.id,
                 "entity_id": f"player_{player.id}",
                 "username": player.username,

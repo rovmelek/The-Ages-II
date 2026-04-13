@@ -456,6 +456,7 @@ class TestLoginSuccessSchema:
     def test_login_success_has_session_token_field(self):
         from server.net.outbound_schemas import LoginSuccessMessage
         msg = LoginSuccessMessage(
+            protocol_version="1.0",
             player_id=1, entity_id="player_1", username="test",
             stats={"hp": 100, "max_hp": 100, "attack": 10, "xp": 0, "level": 1,
                    "xp_for_next_level": 1000, "xp_for_current_level": 0,
@@ -468,6 +469,7 @@ class TestLoginSuccessSchema:
     def test_login_success_session_token_optional(self):
         from server.net.outbound_schemas import LoginSuccessMessage
         msg = LoginSuccessMessage(
+            protocol_version="1.0",
             player_id=1, entity_id="player_1", username="test",
             stats={"hp": 100, "max_hp": 100, "attack": 10, "xp": 0, "level": 1,
                    "xp_for_next_level": 1000, "xp_for_current_level": 0,
