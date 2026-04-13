@@ -404,7 +404,7 @@ class CombatInstance:
         import math
         from server.core.config import settings
 
-        base_attack = self.mob_stats.get("attack", 10)
+        base_attack = self.mob_stats.get("attack", settings.DEFAULT_ATTACK)
         str_bonus = math.floor(
             self.mob_stats.get("strength", 0) * settings.STAT_SCALING_FACTOR
         )

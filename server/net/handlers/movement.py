@@ -186,12 +186,12 @@ async def _handle_mob_encounter(
         if not card_defs:
             card_defs = [
                 CardDef(card_key=f"basic_attack_{i}", name="Basic Attack", cost=1,
-                        effects=[{"type": EffectType.DAMAGE, "value": 10}])
+                        effects=[{"type": EffectType.DAMAGE, "value": settings.DEFAULT_ATTACK}])
                 for i in range(10)
             ]
 
         # Create combat instance (store NPC reference for death/release on combat end)
-        mob_stats = dict(npc.stats) if npc.stats else {"hp": 50, "max_hp": 50, "attack": 10}
+        mob_stats = dict(npc.stats) if npc.stats else {"hp": settings.DEFAULT_BASE_HP, "max_hp": settings.DEFAULT_BASE_HP, "attack": settings.DEFAULT_ATTACK}
         tmpl = game.npc_templates.get(npc.npc_key)
         mob_hit_dice = tmpl.get("hit_dice", 0) if tmpl else 0
 

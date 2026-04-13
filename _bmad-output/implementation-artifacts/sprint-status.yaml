@@ -288,7 +288,7 @@ development_status:
   # Sprint 1 — Constants, Config & Dependencies
   # Ordering: 17.1 first → 17.2 (depends on 17.1) → 17.3, 17.4, 17.5 (parallel)
   17-1-centralize-type-constants: done                            # FR135, FR144 — STAT_NAMES, EffectType StrEnum, spawn/behavior constants
-  17-2-replace-hardcoded-game-balance-fallbacks: backlog        # FR133, FR134 — NPC/mob/card fallbacks → settings.*
+  17-2-replace-hardcoded-game-balance-fallbacks: done            # FR133, FR134 — NPC/mob/card fallbacks → settings.*
   17-3-unify-direction-strings: backlog                         # FR136 — query.py + schemas.py import DIRECTION_DELTAS from room.py
   17-4-trade-state-machine-strenum: backlog                     # FR137 — TradeState StrEnum in trade/session.py
   17-5-postgresql-dependency-alembic-portability: backlog        # FR146 — asyncpg optional dep, sa.JSON() in Alembic downgrade
@@ -306,7 +306,7 @@ development_status:
   # Ordering: 17.11 first (creates ErrorCode + send_error) → 17.12 (uses send_error) → 17.13-17.16 (parallel)
   17-11-structured-error-codes: done                              # FR143 — ErrorCode StrEnum + send_error() helper, 5 protocol/auth errors
   17-12-sanitize-pydantic-validation-errors: done                  # FR148 — e.errors() extraction, uses send_error()
-  17-13-protocol-versioning: ready-for-dev                       # FR138 — PROTOCOL_VERSION in login_success/reconnect, spec generator
+  17-13-protocol-versioning: in-progress                          # FR138 — PROTOCOL_VERSION in login_success/reconnect, spec generator
   17-14-auto-generate-help-categories: ready-for-dev             # FR145 — help_category ClassVar on InboundMessage
   17-15-handler-registration-data-driven-dict: ready-for-dev     # FR147 — HANDLERS dict + loop replaces 23 lambdas
   17-16-fix-markdown-line-break-rendering: ready-for-dev         # FR151 — \n → <br> in renderSafeMarkdown, white-space: pre-wrap CSS
