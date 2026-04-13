@@ -4,6 +4,7 @@ from __future__ import annotations
 from enum import StrEnum
 
 from fastapi import WebSocket
+from pydantic import ValidationError
 
 from server.net.schemas import with_request_id
 
@@ -33,3 +34,19 @@ async def send_error(
     if data is not None:
         with_request_id(response, data)
     await websocket.send_json(response)
+
+
+def sanitize_validation_error(e: ValidationError) -> str:
+    """Extract a client-safe summary from a Pydantic ValidationError.
+
+    Returns ``"field: message; field2: message2"`` without leaking internal
+    schema details (type annotations, input values, URLs).
+    """
+    parts: list[str] = []
+    for err in e.errors():
+        field = str(err["loc"][-1]) if err.get("loc") else "unknown"
+        msg = err.get("msg", "")
+        if msg.startswith("Value error, "):
+            msg = msg[len("Value error, "):]
+        parts.append(f"{field}: {msg}")
+    return "; ".join(parts) if parts else "Validation failed"

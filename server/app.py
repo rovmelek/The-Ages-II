@@ -13,11 +13,12 @@ from pydantic import ValidationError
 from starlette.responses import FileResponse
 
 from server.core.config import settings
+from server.core.constants import SPAWN_PERSISTENT
 from server.core.database import init_db
 from server.core import database as _database
 from server.net.connection_manager import ConnectionManager
 from server.net.message_router import MessageRouter
-from server.net.errors import ErrorCode, send_error
+from server.net.errors import ErrorCode, send_error, sanitize_validation_error
 from server.net.schemas import ACTION_SCHEMAS
 from server.player import repo as player_repo
 from server.combat.manager import CombatManager
@@ -285,7 +286,7 @@ class Game:
 
         # Schedule respawn for persistent NPCs
         tmpl = self.npc_templates.get(npc.npc_key)
-        if tmpl and tmpl.get("spawn_type") == "persistent":
+        if tmpl and tmpl.get("spawn_type") == SPAWN_PERSISTENT:
             respawn_seconds = tmpl.get("spawn_config", {}).get("respawn_seconds", settings.MOB_RESPAWN_SECONDS)
             self.scheduler.schedule_respawn(room_key, npc_id, respawn_seconds)
 
@@ -531,7 +532,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     data = validated.model_dump()
                 except ValidationError as e:
                     await send_error(
-                        websocket, ErrorCode.VALIDATION_ERROR, str(e), data
+                        websocket, ErrorCode.VALIDATION_ERROR,
+                        sanitize_validation_error(e), data,
                     )
                     continue
             await game.router.route(websocket, data)

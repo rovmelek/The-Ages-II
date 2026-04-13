@@ -95,6 +95,74 @@ async def test_router_unknown_action():
     )
 
 
+# --- sanitize_validation_error unit tests ---
+
+
+class TestSanitizeValidationError:
+    def test_single_field_error(self):
+        from pydantic import BaseModel, ValidationError
+        from server.net.errors import sanitize_validation_error
+
+        class M(BaseModel):
+            name: str
+
+        try:
+            M()
+        except ValidationError as e:
+            result = sanitize_validation_error(e)
+        assert result == "name: Field required"
+
+    def test_multi_field_error(self):
+        from pydantic import BaseModel, ValidationError
+        from server.net.errors import sanitize_validation_error
+
+        class M(BaseModel):
+            username: str
+            password: str
+
+        try:
+            M()
+        except ValidationError as e:
+            result = sanitize_validation_error(e)
+        assert "username: Field required" in result
+        assert "password: Field required" in result
+        assert "; " in result
+
+    def test_value_error_prefix_stripped(self):
+        from pydantic import BaseModel, field_validator, ValidationError
+        from server.net.errors import sanitize_validation_error
+
+        class M(BaseModel):
+            direction: str
+
+            @field_validator("direction")
+            @classmethod
+            def check_dir(cls, v):
+                raise ValueError("Invalid direction: diagonal")
+
+        try:
+            M(direction="diagonal")
+        except ValidationError as e:
+            result = sanitize_validation_error(e)
+        assert result == "direction: Invalid direction: diagonal"
+        assert "Value error" not in result
+
+    def test_no_internal_details_leaked(self):
+        from pydantic import BaseModel, ValidationError
+        from server.net.errors import sanitize_validation_error
+
+        class M(BaseModel):
+            x: int
+
+        try:
+            M(x="not_a_number")
+        except ValidationError as e:
+            result = sanitize_validation_error(e)
+        assert "type=" not in result
+        assert "input_value" not in result
+        assert "pydantic.dev" not in result
+
+
 # --- ConnectionManager unit tests ---
 
 
