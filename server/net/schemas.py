@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+from server.room.room import DIRECTION_DELTAS
 
 
 class InboundMessage(BaseModel):
@@ -10,6 +14,7 @@ class InboundMessage(BaseModel):
 
     action: str
     request_id: str | None = None
+    help_category: ClassVar[str | None] = None
 
 
 # --- Auth ---
@@ -29,6 +34,7 @@ class RegisterMessage(InboundMessage):
 
 class LogoutMessage(InboundMessage):
     action: str = "logout"
+    help_category: ClassVar[str | None] = "Social"
 
 
 # --- Movement ---
@@ -37,11 +43,12 @@ class LogoutMessage(InboundMessage):
 class MoveMessage(InboundMessage):
     action: str = "move"
     direction: str = Field(min_length=1)
+    help_category: ClassVar[str | None] = "Movement"
 
     @field_validator("direction")
     @classmethod
     def validate_direction(cls, v: str) -> str:
-        if v not in ("up", "down", "left", "right"):
+        if v not in DIRECTION_DELTAS:
             raise ValueError(f"Invalid direction: {v}")
         return v
 
@@ -53,6 +60,7 @@ class ChatMessage(InboundMessage):
     action: str = "chat"
     message: str = Field(min_length=1)
     whisper_to: str | None = None
+    help_category: ClassVar[str | None] = "Social"
 
 
 class PartyChatMessage(InboundMessage):
@@ -66,19 +74,23 @@ class PartyChatMessage(InboundMessage):
 class PlayCardMessage(InboundMessage):
     action: str = "play_card"
     card_key: str = Field(min_length=1)
+    help_category: ClassVar[str | None] = "Combat"
 
 
 class PassTurnMessage(InboundMessage):
     action: str = "pass_turn"
+    help_category: ClassVar[str | None] = "Combat"
 
 
 class FleeMessage(InboundMessage):
     action: str = "flee"
+    help_category: ClassVar[str | None] = "Combat"
 
 
 class UseItemCombatMessage(InboundMessage):
     action: str = "use_item_combat"
     item_key: str = Field(min_length=1)
+    help_category: ClassVar[str | None] = "Combat"
 
 
 # --- Inventory ---
@@ -86,11 +98,13 @@ class UseItemCombatMessage(InboundMessage):
 
 class InventoryMessage(InboundMessage):
     action: str = "inventory"
+    help_category: ClassVar[str | None] = "Items"
 
 
 class UseItemMessage(InboundMessage):
     action: str = "use_item"
     item_key: str = Field(min_length=1)
+    help_category: ClassVar[str | None] = "Items"
 
 
 # --- Interact ---
@@ -98,6 +112,7 @@ class UseItemMessage(InboundMessage):
 
 class InteractMessage(InboundMessage):
     action: str = "interact"
+    help_category: ClassVar[str | None] = "Items"
     target_id: str = ""
     direction: str = ""
 
@@ -113,18 +128,22 @@ class InteractMessage(InboundMessage):
 
 class LookMessage(InboundMessage):
     action: str = "look"
+    help_category: ClassVar[str | None] = "Info"
 
 
 class WhoMessage(InboundMessage):
     action: str = "who"
+    help_category: ClassVar[str | None] = "Info"
 
 
 class StatsMessage(InboundMessage):
     action: str = "stats"
+    help_category: ClassVar[str | None] = "Info"
 
 
 class HelpMessage(InboundMessage):
     action: str = "help_actions"
+    help_category: ClassVar[str | None] = "Info"
 
 
 class MapMessage(InboundMessage):

@@ -4,6 +4,19 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
+from enum import StrEnum
+
+
+class TradeState(StrEnum):
+    """Trade session state machine states."""
+
+    REQUEST_PENDING = "request_pending"
+    NEGOTIATING = "negotiating"
+    ONE_READY = "one_ready"
+    BOTH_READY = "both_ready"
+    EXECUTING = "executing"
+    CANCELLED = "cancelled"
+    COMPLETE = "complete"
 
 
 @dataclass
@@ -13,7 +26,7 @@ class Trade:
     trade_id: str
     player_a: str  # entity_id of initiator
     player_b: str  # entity_id of target
-    state: str  # request_pending, negotiating, one_ready, both_ready, executing, complete
+    state: TradeState
     offers_a: dict[str, int] = field(default_factory=dict)  # item_key -> qty
     offers_b: dict[str, int] = field(default_factory=dict)
     ready_a: bool = False

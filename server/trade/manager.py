@@ -6,7 +6,7 @@ import time
 import uuid
 
 from server.core.config import settings
-from server.trade.session import Trade
+from server.trade.session import Trade, TradeState
 
 
 class TradeManager:
@@ -86,7 +86,7 @@ class TradeManager:
             trade_id=trade_id,
             player_a=initiator_id,
             player_b=target_id,
-            state="request_pending",
+            state=TradeState.REQUEST_PENDING,
         )
 
         # Schedule request timeout
@@ -113,7 +113,7 @@ class TradeManager:
             return
         player_a = trade.player_a
         player_b = trade.player_b
-        trade.state = "cancelled"
+        trade.state = TradeState.CANCELLED
         trade.timeout_handle = None
         self._cleanup_trade(trade)
 
@@ -134,14 +134,14 @@ class TradeManager:
         if trade is None:
             return "No pending trade request"
 
-        if trade.state != "request_pending":
+        if trade.state != TradeState.REQUEST_PENDING:
             return "No pending trade request to accept"
 
         if trade.player_b != entity_id:
             return "No pending trade request"
 
         self._cancel_timeout(trade)
-        trade.state = "negotiating"
+        trade.state = TradeState.NEGOTIATING
 
         # Schedule session timeout
         def _on_timeout() -> None:
@@ -159,14 +159,14 @@ class TradeManager:
         if trade is None:
             return "No pending trade request"
 
-        if trade.state != "request_pending":
+        if trade.state != TradeState.REQUEST_PENDING:
             return "No pending trade request to reject"
 
         if trade.player_b != entity_id:
             return "No pending trade request"
 
         self._cancel_timeout(trade)
-        trade.state = "cancelled"
+        trade.state = TradeState.CANCELLED
         self._cleanup_trade(trade)
         return trade
 
@@ -178,7 +178,7 @@ class TradeManager:
         if trade is None:
             return "You are not in a trade session"
 
-        if trade.state not in ("negotiating", "one_ready", "both_ready"):
+        if trade.state not in (TradeState.NEGOTIATING, TradeState.ONE_READY, TradeState.BOTH_READY):
             return "Cannot modify offers in current trade state"
 
         # Determine which side
@@ -200,7 +200,7 @@ class TradeManager:
         # Reset ready flags (bait-and-switch prevention)
         trade.ready_a = False
         trade.ready_b = False
-        trade.state = "negotiating"
+        trade.state = TradeState.NEGOTIATING
         return trade
 
     def remove_offer(self, entity_id: str, item_key: str) -> Trade | str:
@@ -209,7 +209,7 @@ class TradeManager:
         if trade is None:
             return "You are not in a trade session"
 
-        if trade.state not in ("negotiating", "one_ready", "both_ready"):
+        if trade.state not in (TradeState.NEGOTIATING, TradeState.ONE_READY, TradeState.BOTH_READY):
             return "Cannot modify offers in current trade state"
 
         if entity_id == trade.player_a:
@@ -227,7 +227,7 @@ class TradeManager:
         # Reset ready flags
         trade.ready_a = False
         trade.ready_b = False
-        trade.state = "negotiating"
+        trade.state = TradeState.NEGOTIATING
         return trade
 
     def set_ready(self, entity_id: str) -> Trade | str:
@@ -236,7 +236,7 @@ class TradeManager:
         if trade is None:
             return "You are not in a trade session"
 
-        if trade.state not in ("negotiating", "one_ready"):
+        if trade.state not in (TradeState.NEGOTIATING, TradeState.ONE_READY):
             return "Cannot ready in current trade state"
 
         if entity_id == trade.player_a:
@@ -247,9 +247,9 @@ class TradeManager:
             return "You are not in this trade"
 
         if trade.ready_a and trade.ready_b:
-            trade.state = "both_ready"
+            trade.state = TradeState.BOTH_READY
         else:
-            trade.state = "one_ready"
+            trade.state = TradeState.ONE_READY
         return trade
 
     def cancel_trade(self, entity_id: str) -> Trade | str:
@@ -258,7 +258,7 @@ class TradeManager:
         if trade is None:
             return "You are not in a trade session"
 
-        trade.state = "cancelled"
+        trade.state = TradeState.CANCELLED
         self._cleanup_trade(trade)
         return trade
 
@@ -267,13 +267,13 @@ class TradeManager:
         trade = self.get_trade(entity_id)
         if trade is None:
             return None
-        trade.state = "cancelled"
+        trade.state = TradeState.CANCELLED
         self._cleanup_trade(trade)
         return trade
 
     def complete_trade(self, trade: Trade) -> None:
         """Mark a trade as complete and clean up."""
-        trade.state = "complete"
+        trade.state = TradeState.COMPLETE
         self._cleanup_trade(trade)
 
     def get_trade_status(self, entity_id: str) -> dict | None:

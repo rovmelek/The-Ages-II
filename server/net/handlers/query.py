@@ -9,6 +9,7 @@ from fastapi import WebSocket
 from server.core.config import settings
 from server.core.constants import STAT_NAMES
 from server.net.auth_middleware import requires_auth
+from server.room.room import DIRECTION_DELTAS
 from server.net.schemas import with_request_id
 from server.player.session import PlayerSession
 
@@ -17,12 +18,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SCAN_OFFSETS = [
-    (0, 0, "here"),
-    (0, -1, "up"),
-    (0, 1, "down"),
-    (-1, 0, "left"),
-    (1, 0, "right"),
+_SCAN_OFFSETS = [(0, 0, "here")] + [
+    (dx, dy, d) for d, (dx, dy) in DIRECTION_DELTAS.items()
 ]
 
 
