@@ -340,9 +340,9 @@ Damage-over-time effects (poison, bleed) are processed at the **start of each pl
 - Dead players' turns are skipped automatically by `_advance_turn()`
 
 **Post-combat cleanup** (in `_check_combat_end`):
-- Strip `shield` from entity stats (combat-only transient)
-- Sync final combat stats back to `PlayerEntity.stats` and persist to DB
-- On defeat: respawn dead players in `town_square` with full HP
+- Strip `shield` from entity stats (combat-only transient); `energy`/`max_energy` are now persistent and synced back
+- Sync final combat stats (hp, max_hp, energy, max_energy) back to `PlayerEntity.stats` and persist to DB
+- On defeat: respawn dead players in `town_square` with full HP and energy
 - On victory: kill NPC, schedule respawn if persistent, broadcast room state update
 
 ### 5.6 Card Skill Tree (Deferred — Hook Points Only)
@@ -496,7 +496,7 @@ No fog of war — players see the entire map on entry. Entity updates (movement,
 | id | Integer PK | Auto-increment |
 | username | String(50) | Unique, indexed |
 | password_hash | String(128) | bcrypt |
-| stats | JSON | `{hp, max_hp, xp, level, strength, dexterity, constitution, intelligence, wisdom, charisma}` — persisted via `_STATS_WHITELIST`; `shield`, `active_effects`, `energy` are combat-only transient |
+| stats | JSON | `{hp, max_hp, energy, max_energy, xp, level, strength, dexterity, constitution, intelligence, wisdom, charisma}` — persisted via `_STATS_WHITELIST`; `shield`, `active_effects` are combat-only transient |
 | inventory | JSON | `{item_key: quantity, ...}` |
 | card_collection | JSON | List of card_key strings |
 | visited_rooms | JSON | List of room_key strings (exploration XP tracking) |
@@ -575,7 +575,7 @@ Player state is saved to the database at multiple trigger points:
 - **Server shutdown**: All connected players saved before disconnect
 - **Item use in combat**: Inventory persisted after consuming an item
 
-**Stats whitelist**: Only `{hp, max_hp, xp, level, strength, dexterity, constitution, intelligence, wisdom, charisma}` are persisted. `shield`, `active_effects`, and `energy` are combat-only transient data, stripped by `_STATS_WHITELIST` in `player/repo.py`.
+**Stats whitelist**: Only `{hp, max_hp, energy, max_energy, xp, level, strength, dexterity, constitution, intelligence, wisdom, charisma}` are persisted. `shield` and `active_effects` are combat-only transient data, stripped by `_STATS_WHITELIST` in `player/repo.py`. Energy is persistent (Epic 18): `max_energy` is derived from `DEFAULT_BASE_ENERGY + INT * INT_ENERGY_PER_POINT + WIS * WIS_ENERGY_PER_POINT`.
 
 **Database access pattern**: All DB access goes through `game.session_factory()` — the `Game` class owns the session factory (defaults to `async_session` from `server/core/database.py`). Consumer modules (handlers, xp, scheduler, interactive objects) receive `game` as a parameter and use `async with game.session_factory() as session:`. No module imports `async_session` directly. This enables test isolation (swap `game.session_factory = test_factory`) and future database migration (swap the factory in `Game.__init__()`).
 

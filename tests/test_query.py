@@ -231,7 +231,8 @@ async def test_stats_excludes_transient():
 
     response = ws.send_json.call_args[0][0]
     assert "shield" not in response["stats"]
-    expected_keys = {"hp", "max_hp", "attack", "xp", "xp_next",
+    expected_keys = {"hp", "max_hp", "energy", "max_energy",
+                     "attack", "xp", "xp_next",
                      "xp_for_next_level", "xp_for_current_level",
                      "level", "strength", "dexterity", "constitution",
                      "intelligence", "wisdom", "charisma"}

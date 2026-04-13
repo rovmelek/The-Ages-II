@@ -37,9 +37,11 @@ from server.net.outbound_schemas import (
     PlayerStatsPayload,
     RespawnMessage,
     RoomStateMessage,
+    SeqStatusMessage,
     ServerShutdownMessage,
     StatsResultMessage,
     StatsResultPayload,
+    StatsUpdateMessage,
     TileChangedMessage,
     TradeRequestMessage,
     TradeResultMessage,
@@ -56,7 +58,8 @@ from server.net.outbound_schemas import (
 
 def _sample_stats():
     return PlayerStatsPayload(
-        hp=100, max_hp=100, attack=10, xp=0, level=1,
+        hp=100, max_hp=100, energy=25, max_energy=25,
+        attack=10, xp=0, level=1,
         xp_for_next_level=100, xp_for_current_level=0,
         strength=10, dexterity=10, constitution=10,
         intelligence=10, wisdom=10, charisma=10,
@@ -68,10 +71,11 @@ def _sample_combat_state():
         "instance_id": "combat_1",
         "current_turn": "player_1",
         "participants": [{"entity_id": "player_1", "hp": 80, "max_hp": 100,
-                          "shield": 0, "energy": 3, "max_energy": 3}],
+                          "shield": 0, "energy": 25, "max_energy": 25, "energy_regen": 2}],
         "mob": {"name": "Goblin", "hp": 50, "max_hp": 50},
         "hands": {"player_1": [{"card_key": "slash", "name": "Slash",
-                                "cost": 1, "effects": [], "description": "Basic attack"}]},
+                                "cost": 1, "card_type": "physical",
+                                "effects": [], "description": "Basic attack"}]},
     }
 
 
@@ -120,10 +124,11 @@ class TestSystem:
         assert m.model_dump()["message"] == "A rare creature appeared!"
 
     def test_respawn(self):
-        m = RespawnMessage(room_key="town_square", x=5, y=5, hp=100, max_hp=100)
+        m = RespawnMessage(room_key="town_square", x=5, y=5, hp=100, max_hp=100, energy=25, max_energy=25)
         d = m.model_dump()
         assert d["room_key"] == "town_square"
         assert d["hp"] == 100
+        assert d["energy"] == 25
 
 
 # ---------------------------------------------------------------------------
@@ -420,7 +425,8 @@ class TestQuery:
 
     def test_stats_result(self):
         m = StatsResultMessage(stats=StatsResultPayload(
-            hp=100, max_hp=100, attack=10, xp=50, xp_next=100,
+            hp=100, max_hp=100, energy=25, max_energy=25,
+            attack=10, xp=50, xp_next=100,
             xp_for_next_level=100, xp_for_current_level=0, level=1,
             strength=10, dexterity=10, constitution=10,
             intelligence=10, wisdom=10, charisma=10,
@@ -454,6 +460,7 @@ class TestJsonSchema:
     ALL_SCHEMAS = [
         ErrorMessage, LoginSuccessMessage, LoggedOutMessage, KickedMessage,
         ServerShutdownMessage, AnnouncementMessage, RespawnMessage,
+        StatsUpdateMessage,
         RoomStateMessage, EntityEnteredMessage, EntityLeftMessage,
         EntityMovedMessage, NearbyObjectsMessage, TileChangedMessage,
         CombatStartMessage, CombatTurnMessage, CombatEndMessage,
@@ -465,10 +472,11 @@ class TestJsonSchema:
         PartyStatusMessage, XpGainedMessage, LevelUpAvailableMessage,
         LevelUpCompleteMessage, LookResultMessage, WhoResultMessage,
         StatsResultMessage, HelpResultMessage, MapDataMessage,
+        SeqStatusMessage,
     ]
 
     def test_schema_count(self):
-        assert len(self.ALL_SCHEMAS) == 38
+        assert len(self.ALL_SCHEMAS) == 40
 
     @pytest.mark.parametrize("schema_cls", ALL_SCHEMAS, ids=lambda c: c.__name__)
     def test_json_schema_valid(self, schema_cls):

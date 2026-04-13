@@ -39,10 +39,21 @@ def _default_stats() -> dict[str, int]:
     result = {
         "hp": settings.DEFAULT_BASE_HP, "max_hp": settings.DEFAULT_BASE_HP,
         "attack": settings.DEFAULT_ATTACK, "xp": 0, "level": 1,
+        # energy/max_energy: fallback defaults only — _resolve_stats() derives actual values from INT+WIS
+        "energy": settings.DEFAULT_BASE_ENERGY, "max_energy": settings.DEFAULT_BASE_ENERGY,
     }
     for s in STAT_NAMES:
         result[s] = settings.DEFAULT_STAT_VALUE
     return result
+
+
+def compute_max_energy(stats: dict) -> int:
+    """Compute max_energy from INT+WIS using the energy formula (ADR-18-4)."""
+    return (
+        settings.DEFAULT_BASE_ENERGY
+        + stats.get("intelligence", settings.DEFAULT_STAT_VALUE) * settings.INT_ENERGY_PER_POINT
+        + stats.get("wisdom", settings.DEFAULT_STAT_VALUE) * settings.WIS_ENERGY_PER_POINT
+    )
 
 
 async def _resolve_stats(player, session) -> dict:
@@ -52,9 +63,15 @@ async def _resolve_stats(player, session) -> dict:
         stats = _default_stats()
         stats["max_hp"] = settings.DEFAULT_BASE_HP + stats["constitution"] * settings.CON_HP_PER_POINT
         stats["hp"] = stats["max_hp"]
+        stats["max_energy"] = compute_max_energy(stats)
+        stats["energy"] = stats["max_energy"]
         await player_repo.update_stats(session, player.id, stats)
     else:
         stats = {**_default_stats(), **db_stats}
+        # ADR-18-6: lazy migration for existing players without energy
+        if "max_energy" not in db_stats:
+            stats["max_energy"] = compute_max_energy(stats)
+            stats["energy"] = stats["max_energy"]
     return stats
 
 
@@ -120,6 +137,8 @@ def build_stats_payload(stats: dict) -> dict:
     return {
         "hp": stats.get("hp", settings.DEFAULT_BASE_HP),
         "max_hp": stats.get("max_hp", settings.DEFAULT_BASE_HP),
+        "energy": stats.get("energy", settings.DEFAULT_BASE_ENERGY),
+        "max_energy": stats.get("max_energy", settings.DEFAULT_BASE_ENERGY),
         "attack": stats.get("attack", settings.DEFAULT_ATTACK),
         "xp": stats.get("xp", 0),
         "level": level,
@@ -238,10 +257,12 @@ async def kill_npc(game: Game, room_key: str, npc_id: str) -> None:
 
 
 def _reset_player_stats(entity) -> None:
-    """Clear combat flags and restore HP to max for respawn."""
+    """Clear combat flags and restore HP/energy to max for respawn."""
     entity.in_combat = False
     entity.stats["hp"] = entity.stats.get("max_hp", settings.DEFAULT_BASE_HP)
+    entity.stats["energy"] = entity.stats.get("max_energy", settings.DEFAULT_BASE_ENERGY)
     entity.stats.pop("shield", None)
+    entity.stats.pop("active_effects", None)
 
 
 async def respawn_player(game: Game, entity_id: str) -> None:
@@ -300,6 +321,8 @@ async def respawn_player(game: Game, entity_id: str) -> None:
             "y": sy,
             "hp": entity.stats["hp"],
             "max_hp": entity.stats["max_hp"],
+            "energy": entity.stats.get("energy", 0),
+            "max_energy": entity.stats.get("max_energy", 0),
         })
         await ws.send_json({"type": "room_state", **spawn_room.get_state()})
 

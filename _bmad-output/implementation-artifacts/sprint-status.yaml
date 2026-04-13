@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-03-21
-last_updated: 2026-04-12 (Epic 17 complete, retrospective done)
+last_updated: 2026-04-12 (Epic 18 complete, retrospective done)
 project: The-Ages-II
 project_key: NOKEY
 tracking_system: file-system
@@ -312,6 +312,24 @@ development_status:
   17-16-fix-markdown-line-break-rendering: done                   # FR151 — \n → <br> in renderSafeMarkdown, white-space: pre-wrap CSS
 
   epic-17-retrospective: done
+
+  # Epic 18: Energy System & Combat Rebalance
+  # Source: Tech spec via /gds-quick-spec, implemented via quick-dev
+  # ADRs: 15 (ADR-18-1 through ADR-18-15)
+  # Adversarial review: 7 rounds (63 issues found/fixed, 0 on final pass)
+  # Tech spec: _bmad-output/implementation-artifacts/tech-spec-energy-system-combat-rebalance.md
+  epic-18: done
+  18-1-config-constants-player-stats: done        # Tasks 1-7: Foundation — config, constants, whitelist, default stats, schemas, stat_effects, test fixes
+  18-2-card-type-system: done                     # Tasks 8-13: Card type field, Alembic migration, card JSON, combat instance, combat service, test fixes
+  18-3-energy-potion-restore-effect: done          # Tasks 14-20: restore_energy handler, registry, self-targeting, energy potion, loot tables, stats_update, respawn, test fixes
+  18-4-out-of-combat-regen: done                   # Tasks 21-23: regen.py module, Game lifecycle wiring, regen tests
+  18-5-level-up-stacking: done                     # Tasks 24-25: Remove dedup, energy recalc, stat_increases, test fixes
+  18-6-xp-bar-fix: done                            # Task 26: XP bar shows progress within level
+  18-7-web-demo-client: done                       # Tasks 27-30: Energy bar, combat UI, level-up +/- controls, level-up complete handler
+  18-8-protocol-documentation: done                # Tasks 31-32: Protocol version bump, check-protocol, architecture docs, final test pass
+  ISS-033-flee-no-stat-sync: done                  # Pre-existing bug: handle_flee_outcome never synced stats before remove_participant
+  ISS-034-respawn-dots-not-cleared: done           # Pre-existing bug: _reset_player_stats didn't clear active_effects
+  epic-18-retrospective: done
 
 # Post-Epic Issues
 issues:

@@ -469,7 +469,8 @@ class TestLoginSuccessSchema:
         msg = LoginSuccessMessage(
             protocol_version="1.0",
             player_id=1, entity_id="player_1", username="test",
-            stats={"hp": 100, "max_hp": 100, "attack": 10, "xp": 0, "level": 1,
+            stats={"hp": 100, "max_hp": 100, "energy": 25, "max_energy": 25,
+                   "attack": 10, "xp": 0, "level": 1,
                    "xp_for_next_level": 1000, "xp_for_current_level": 0,
                    "strength": 1, "dexterity": 1, "constitution": 1,
                    "intelligence": 1, "wisdom": 1, "charisma": 1},
@@ -482,7 +483,8 @@ class TestLoginSuccessSchema:
         msg = LoginSuccessMessage(
             protocol_version="1.0",
             player_id=1, entity_id="player_1", username="test",
-            stats={"hp": 100, "max_hp": 100, "attack": 10, "xp": 0, "level": 1,
+            stats={"hp": 100, "max_hp": 100, "energy": 25, "max_energy": 25,
+                   "attack": 10, "xp": 0, "level": 1,
                    "xp_for_next_level": 1000, "xp_for_current_level": 0,
                    "strength": 1, "dexterity": 1, "constitution": 1,
                    "intelligence": 1, "wisdom": 1, "charisma": 1},

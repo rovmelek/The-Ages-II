@@ -82,8 +82,10 @@ async def update_visited_rooms(
     )
 
 
-# attack excluded -- derived from STR/INT at runtime, not independently persisted
-_STATS_WHITELIST = {"hp", "max_hp", "xp", "level", *STAT_NAMES}
+# attack excluded -- derived from STR/INT at runtime, not independently persisted.
+# energy/max_energy included -- consumable resource like HP, must persist across sessions.
+# shield/active_effects excluded -- combat-only transient.
+_STATS_WHITELIST = {"hp", "max_hp", "energy", "max_energy", "xp", "level", *STAT_NAMES}
 
 
 async def update_stats(

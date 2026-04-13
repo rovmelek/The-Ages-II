@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from fastapi import WebSocket
 
 from server.core.config import settings
+from server.core.constants import EffectType
 from server.net.auth_middleware import requires_auth
 from server.net.schemas import with_request_id
 from server.player import repo as player_repo
@@ -64,6 +65,8 @@ async def handle_use_item(
     player_stats = entity.stats
     player_stats.setdefault("hp", settings.DEFAULT_BASE_HP)
     player_stats.setdefault("max_hp", settings.DEFAULT_BASE_HP)
+    player_stats.setdefault("energy", settings.DEFAULT_BASE_ENERGY)
+    player_stats.setdefault("max_energy", settings.DEFAULT_BASE_ENERGY)
     player_stats.setdefault("shield", 0)
     for effect in item_def.effects:
         result = await game.effect_registry.resolve(
@@ -86,3 +89,14 @@ async def handle_use_item(
         "item_name": item_def.name,
         "effect_results": effect_results,
     }, data))
+
+    # Send stats_update when HP or energy changed
+    stat_affecting = {EffectType.HEAL, EffectType.RESTORE_ENERGY}
+    if any(r.get("type") in stat_affecting for r in effect_results):
+        await game.connection_manager.send_to_player_seq(entity_id, {
+            "type": "stats_update",
+            "hp": entity.stats["hp"],
+            "max_hp": entity.stats["max_hp"],
+            "energy": entity.stats.get("energy", 0),
+            "max_energy": entity.stats.get("max_energy", 0),
+        })

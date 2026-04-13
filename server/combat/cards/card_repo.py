@@ -34,6 +34,7 @@ async def load_cards_from_json(session: AsyncSession, json_path: Path | str) -> 
             existing.cost = data["cost"]
             existing.effects = data.get("effects", [])
             existing.description = data.get("description", "")
+            existing.card_type = data.get("card_type", "physical")
             cards.append(existing)
         else:
             card = Card(
@@ -42,6 +43,7 @@ async def load_cards_from_json(session: AsyncSession, json_path: Path | str) -> 
                 cost=data["cost"],
                 effects=data.get("effects", []),
                 description=data.get("description", ""),
+                card_type=data.get("card_type", "physical"),
             )
             session.add(card)
             cards.append(card)

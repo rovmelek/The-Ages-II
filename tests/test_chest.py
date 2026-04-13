@@ -128,7 +128,7 @@ async def test_open_chest_first_time():
     msg = ws.send_json.call_args.args[0]
     assert msg["type"] == "interact_result"
     assert msg["result"]["status"] == "looted"
-    assert len(msg["result"]["items"]) == 2
+    assert len(msg["result"]["items"]) == 3
 
     # State should be marked opened
     mock_set_state.assert_called_once()

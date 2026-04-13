@@ -171,6 +171,55 @@ body {
 .hp-bar-fill.hp-medium { background: #aaaa44; }
 .hp-bar-fill.hp-low { background: #aa4444; }
 
+/* --- Energy Bar --- */
+.energy-bar-track {
+  width: 100%;
+  height: 12px;
+  background: #222;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 2px;
+}
+
+.energy-bar-fill {
+  height: 100%;
+  background: #6644cc;
+  transition: width 0.3s ease;
+  border-radius: 3px;
+}
+
+/* --- Card Type Styling --- */
+.card-cost-physical { color: #999; }
+.card-cost-magical { color: #aa88ff; font-weight: bold; }
+.card-magical { border-color: #6644cc; }
+.card-unaffordable { opacity: 0.4; }
+
+/* --- Level-Up +/- Controls --- */
+.levelup-stat-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.levelup-stat-controls button {
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
+  cursor: pointer;
+  background: #333;
+  color: #ddd;
+  border: 1px solid #555;
+  border-radius: 4px;
+}
+.levelup-stat-controls button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.levelup-stat-count {
+  min-width: 20px;
+  text-align: center;
+  font-weight: bold;
+}
+
 /* === Inventory === */
 #inventory-list { font-size: 13px; }
 

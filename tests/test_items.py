@@ -183,7 +183,7 @@ class TestItemRepo:
             pytest.skip("base_items.json not found")
 
         loaded = await item_repo.load_items_from_json(db_session, base_path)
-        assert len(loaded) == 4
+        assert len(loaded) == 5
         keys = {item.item_key for item in loaded}
         assert "healing_potion" in keys
         assert "fire_essence" in keys

@@ -19,10 +19,11 @@ def _make_mob_stats(hp=100, attack=10, strength=0, dexterity=0, intelligence=0, 
             "intelligence": intelligence, "wisdom": wisdom}
 
 
-def _make_player_stats(hp=100, max_hp=100, attack=15, strength=0, dexterity=0, intelligence=0, wisdom=0):
+def _make_player_stats(hp=100, max_hp=100, attack=15, strength=0, dexterity=0, intelligence=0, wisdom=0, energy=25, max_energy=25):
     return {"hp": hp, "max_hp": max_hp, "attack": attack, "defense": 5, "shield": 0,
             "strength": strength, "dexterity": dexterity,
-            "intelligence": intelligence, "wisdom": wisdom}
+            "intelligence": intelligence, "wisdom": wisdom,
+            "energy": energy, "max_energy": max_energy}
 
 
 def _make_two_player_instance(cards, mob_hp=100, player_hp=100, player_max_hp=100):

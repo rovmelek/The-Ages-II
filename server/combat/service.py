@@ -172,7 +172,7 @@ async def cleanup_participant(entity_id: str, entity: Any, game: Game) -> None:
 
     # Sync combat stats back to entity (only whitelisted keys)
     combat_stats = combat_instance.participant_stats.get(entity_id, {})
-    for key in ("hp", "max_hp"):
+    for key in ("hp", "max_hp", "energy", "max_energy"):
         if key in combat_stats:
             entity.stats[key] = combat_stats[key]
     # Restore HP if dead in combat
@@ -216,7 +216,7 @@ async def sync_combat_stats(instance: Any, game: Game) -> None:
             continue
         entity = player_info.entity
         # Update entity stats from combat (exclude shield — combat-only)
-        for key in ("hp", "max_hp"):
+        for key in ("hp", "max_hp", "energy", "max_energy"):
             if key in combat_stats:
                 entity.stats[key] = combat_stats[key]
         # Persist to DB
@@ -227,15 +227,13 @@ async def sync_combat_stats(instance: Any, game: Game) -> None:
 def clean_player_combat_stats(entity: Any, instance: Any, eid: str) -> bool:
     """Clear combat flags, sync final stats, return whether player is alive."""
     entity.in_combat = False
-    # Reset combat-only transient stats
+    # Reset combat-only transient stats (energy is now persistent — keep it)
     entity.stats.pop("shield", None)
-    entity.stats.pop("energy", None)
-    entity.stats.pop("max_energy", None)
 
-    # Sync final combat stats (hp etc.) back from instance FIRST
+    # Sync final combat stats back from instance
     combat_stats = instance.participant_stats.get(eid)
     if combat_stats:
-        for key in ("hp", "max_hp"):
+        for key in ("hp", "max_hp", "energy", "max_energy"):
             if key in combat_stats:
                 entity.stats[key] = combat_stats[key]
 
@@ -427,6 +425,13 @@ class FleeOutcome:
 
 def handle_flee_outcome(instance: Any, entity_id: str, player_info: Any, game: Game) -> FleeOutcome:
     """Handle business logic of fleeing: remove participant, clean up if last."""
+    # Sync stats back to entity BEFORE remove_participant pops combat stats (ISS-033)
+    combat_stats = instance.participant_stats.get(entity_id)
+    if combat_stats:
+        for key in ("hp", "max_hp", "energy", "max_energy"):
+            if key in combat_stats:
+                player_info.entity.stats[key] = combat_stats[key]
+
     # Remove from combat instance and player mapping
     instance.remove_participant(entity_id)
     game.combat_manager.remove_player(entity_id)

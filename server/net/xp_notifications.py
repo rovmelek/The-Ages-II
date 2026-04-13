@@ -31,8 +31,8 @@ async def send_level_up_available(entity_id: str, player_entity: Any, game: Game
             "strength": f"+{ssf:g} physical damage per point",
             "dexterity": f"-{ssf:g} incoming damage per point",
             "constitution": f"+{settings.CON_HP_PER_POINT} max HP per point",
-            "intelligence": f"+{ssf:g} magic damage per point",
-            "wisdom": f"+{ssf:g} healing per point",
+            "intelligence": f"+{ssf:g} magic dmg, +{settings.INT_ENERGY_PER_POINT} max energy per point",
+            "wisdom": f"+{ssf:g} healing, +{settings.WIS_ENERGY_PER_POINT} max energy per point",
             "charisma": f"+{round(settings.XP_CHA_BONUS_PER_POINT * 100)}% XP per point",
         },
     })

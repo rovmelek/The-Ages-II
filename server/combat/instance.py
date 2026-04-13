@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import random
 import time
 import uuid
@@ -11,6 +12,15 @@ from server.combat.cards.card_def import CardDef
 from server.core.constants import EffectType
 from server.combat.cards.card_hand import CardHand
 from server.core.config import settings
+
+
+def compute_energy_regen(stats: dict) -> int:
+    """Compute energy regen per combat cycle from INT+WIS (ADR-18-5)."""
+    return math.floor(
+        settings.BASE_COMBAT_ENERGY_REGEN
+        + (stats.get("intelligence", 0) + stats.get("wisdom", 0))
+        * settings.COMBAT_ENERGY_REGEN_FACTOR
+    )
 
 if TYPE_CHECKING:
     from server.core.effects.registry import EffectRegistry
@@ -53,13 +63,9 @@ class CombatInstance:
         self, entity_id: str, player_stats: dict, card_defs: list[CardDef]
     ) -> CardHand:
         """Add a player to this combat. Returns their CardHand."""
-        from server.core.config import settings
-
         self.participants.append(entity_id)
         self.participant_stats[entity_id] = dict(player_stats)
         self.participant_stats[entity_id].setdefault("shield", 0)
-        self.participant_stats[entity_id].setdefault("energy", settings.COMBAT_STARTING_ENERGY)
-        self.participant_stats[entity_id].setdefault("max_energy", settings.COMBAT_STARTING_ENERGY)
         hand = CardHand(card_defs)
         self.hands[entity_id] = hand
         return hand
@@ -129,7 +135,7 @@ class CombatInstance:
         All others (damage, dot) return (player, mob).
         """
         player_stats = self.participant_stats[entity_id]
-        if effect_type in (EffectType.HEAL, EffectType.SHIELD, EffectType.DRAW):
+        if effect_type in (EffectType.HEAL, EffectType.SHIELD, EffectType.DRAW, EffectType.RESTORE_ENERGY):
             return player_stats, player_stats
         return player_stats, self.mob_stats
 
@@ -191,14 +197,17 @@ class CombatInstance:
         hand = self.hands[entity_id]
         stats = self.participant_stats[entity_id]
 
-        # Check energy cost before playing
-        card_cost = hand.get_card_cost(card_key)
-        if stats.get("energy", 0) < card_cost:
-            self._schedule_turn_timeout()
-            raise ValueError("Not enough energy")
+        # Check energy cost before playing (physical cards are free)
+        card_def = hand.get_card_def(card_key)
+        if card_def.card_type != "physical":
+            card_cost = card_def.cost
+            if stats.get("energy", 0) < card_cost:
+                self._schedule_turn_timeout()
+                raise ValueError("Not enough energy")
 
         played = hand.play_card(card_key)
-        stats["energy"] -= card_cost
+        if card_def.card_type != "physical":
+            stats["energy"] = max(0, stats.get("energy", 0) - card_def.cost)
 
         # Resolve card effects through EffectRegistry
         effect_results = await self.resolve_card_effects(entity_id, played)
@@ -371,13 +380,13 @@ class CombatInstance:
                 mob_attack = self._mob_attack_target(target)
 
                 # Regenerate energy for all alive participants at cycle end
-                from server.core.config import settings
                 for eid in self.participants:
                     s = self.participant_stats[eid]
                     if s["hp"] > 0:
+                        regen = compute_energy_regen(s)
                         s["energy"] = min(
-                            s.get("energy", 0) + settings.COMBAT_ENERGY_REGEN,
-                            s.get("max_energy", settings.COMBAT_STARTING_ENERGY),
+                            s.get("energy", 0) + regen,
+                            s.get("max_energy", 0),
                         )
 
         self._turn_index = (self._turn_index + 1) % max(1, len(self.participants))
@@ -443,6 +452,7 @@ class CombatInstance:
                 "shield": s.get("shield", 0),
                 "energy": s.get("energy", 0),
                 "max_energy": s.get("max_energy", 0),
+                "energy_regen": compute_energy_regen(s),
             })
 
         hands = {}

@@ -12,6 +12,7 @@ from server.net.xp_notifications import send_level_up_available
 from server.net.auth_middleware import requires_auth
 from server.net.schemas import with_request_id
 from server.player import repo as player_repo
+from server.player.service import compute_max_energy
 from server.player.session import PlayerSession
 
 if TYPE_CHECKING:
@@ -42,14 +43,14 @@ async def handle_level_up(
 
     chosen_stats = data.get("stats", [])
 
-    # Validate and deduplicate (max 3 unique)
-    unique_stats = list(dict.fromkeys(chosen_stats))[:settings.LEVEL_UP_STAT_CHOICES]
-    if not unique_stats:
+    # Validate (allow stacking — no dedup)
+    chosen = chosen_stats[:settings.LEVEL_UP_STAT_CHOICES]
+    if not chosen:
         await websocket.send_json(
             with_request_id({"type": "error", "detail": "Must choose at least 1 stat"}, data)
         )
         return
-    for s in unique_stats:
+    for s in chosen:
         if s not in _VALID_LEVEL_UP_STATS:
             await websocket.send_json(
                 with_request_id({"type": "error", "detail": f"Invalid stat: {s}"}, data)
@@ -58,15 +59,17 @@ async def handle_level_up(
 
     stats = entity.stats
 
-    # Apply stat boosts
+    # Apply stat boosts (stacking allowed)
     stat_changes = {}
+    stat_increases: dict[str, int] = {}
     skipped = []
-    for s in unique_stats:
+    for s in chosen:
         if stats.get(s, settings.DEFAULT_STAT_VALUE) >= settings.STAT_CAP:
             skipped.append(s)
         else:
             stats[s] = stats.get(s, settings.DEFAULT_STAT_VALUE) + 1
             stat_changes[s] = stats[s]
+            stat_increases[s] = stat_increases.get(s, 0) + 1
 
     # Increment level
     stats["level"] = stats.get("level", 1) + 1
@@ -74,6 +77,10 @@ async def handle_level_up(
     # Recalculate max_hp from CON and full heal
     stats["max_hp"] = settings.DEFAULT_BASE_HP + stats.get("constitution", settings.DEFAULT_STAT_VALUE) * settings.CON_HP_PER_POINT
     stats["hp"] = stats["max_hp"]
+
+    # Recalculate max_energy from INT+WIS and full restore (ADR-18-9)
+    stats["max_energy"] = compute_max_energy(stats)
+    stats["energy"] = stats["max_energy"]
 
     # Persist to DB
     async with game.transaction() as session:
@@ -84,8 +91,11 @@ async def handle_level_up(
         "type": "level_up_complete",
         "level": stats["level"],
         "stat_changes": stat_changes,
+        "stat_increases": stat_increases,
         "new_max_hp": stats["max_hp"],
         "new_hp": stats["hp"],
+        "new_max_energy": stats["max_energy"],
+        "new_energy": stats["energy"],
     }
     if skipped:
         response["skipped_at_cap"] = skipped

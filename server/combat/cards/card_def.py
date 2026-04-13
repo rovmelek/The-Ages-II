@@ -17,6 +17,7 @@ class CardDef:
     cost: int
     effects: list[dict] = field(default_factory=list)
     description: str = ""
+    card_type: str = "physical"
 
     @classmethod
     def from_db(cls, card: Card) -> CardDef:
@@ -27,6 +28,7 @@ class CardDef:
             cost=card.cost,
             effects=list(card.effects) if card.effects else [],
             description=card.description or "",
+            card_type=getattr(card, "card_type", "physical") or "physical",
         )
 
     def to_dict(self) -> dict:
@@ -35,6 +37,7 @@ class CardDef:
             "card_key": self.card_key,
             "name": self.name,
             "cost": self.cost,
+            "card_type": self.card_type,
             "effects": self.effects,
             "description": self.description,
         }

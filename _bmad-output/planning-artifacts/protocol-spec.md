@@ -212,7 +212,7 @@
 
 ## 4. Outbound Messages (Server → Client)
 
-**42 message types** defined.
+**43 message types** defined.
 
 ### `announcement` (AnnouncementMessage)
 
@@ -370,8 +370,11 @@
 | `type` | `str` | No | `"level_up_complete"` |
 | `level` | `int` | Yes | PydanticUndefined |
 | `stat_changes` | `dict` | Yes | PydanticUndefined |
+| `stat_increases` | `dict[str, int] | None` | No | `"—"` |
 | `new_max_hp` | `int` | Yes | PydanticUndefined |
 | `new_hp` | `int` | Yes | PydanticUndefined |
+| `new_max_energy` | `int | None` | No | `"—"` |
+| `new_energy` | `int | None` | No | `"—"` |
 | `skipped_at_cap` | `list[str] | None` | No | `"—"` |
 | `request_id` | `str | None` | No | `"—"` |
 
@@ -513,6 +516,8 @@
 | `y` | `int` | Yes | PydanticUndefined |
 | `hp` | `int` | Yes | PydanticUndefined |
 | `max_hp` | `int` | Yes | PydanticUndefined |
+| `energy` | `int` | Yes | PydanticUndefined |
+| `max_energy` | `int` | Yes | PydanticUndefined |
 
 ### `room_state` (RoomStateMessage)
 
@@ -551,6 +556,16 @@
 | `type` | `str` | No | `"stats_result"` |
 | `stats` | `StatsResultPayload` | Yes | PydanticUndefined |
 | `request_id` | `str | None` | No | `"—"` |
+
+### `stats_update` (StatsUpdateMessage)
+
+| Field | Type | Required | Default |
+|-------|------|----------|---------|
+| `type` | `str` | No | `"stats_update"` |
+| `hp` | `int` | Yes | PydanticUndefined |
+| `max_hp` | `int` | Yes | PydanticUndefined |
+| `energy` | `int` | Yes | PydanticUndefined |
+| `max_energy` | `int` | Yes | PydanticUndefined |
 
 ### `tile_changed` (TileChangedMessage)
 

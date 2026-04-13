@@ -6,12 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **The-Ages-II** is a multiplayer room-based dungeon game with turn-based card combat. The project combines:
 - A **BMAD framework** (v6.2.0) for AI-assisted design, planning, and project management workflows
-- A **Python game server** (Epics 1-17 complete; 1066 tests passing) built with FastAPI + WebSockets
+- A **Python game server** (Epics 1-18 complete; 1083 tests passing) built with FastAPI + WebSockets
 - A **web demo client** (`web-demo/`) — vanilla HTML/CSS/JS proof-of-concept for testing and demos; production client planned in Godot
 
 **Key reference documents:**
 - `_bmad-output/planning-artifacts/architecture.md` — **Authoritative** architecture spec (structure, systems, data models, design decisions)
 - `_bmad-output/planning-artifacts/epic-16-tech-spec.md` — **Epic 16** detailed tech spec (1760+ lines, 14 stories, 7 ADRs, adversarial-hardened)
+- `_bmad-output/implementation-artifacts/tech-spec-energy-system-combat-rebalance.md` — **Epic 18** tech spec (530+ lines, 33 tasks, 15 ADRs, 7 adversarial review rounds)
 - `_bmad-output/project-context.md` — AI agent rules and implementation patterns
 - `THE_AGES_SERVER_PLAN.md` — Original file-by-file blueprint (superseded by architecture.md where conflicts arise)
 
@@ -58,7 +59,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Alembic** for schema migrations (`make db-migrate`); `create_all` still used at startup alongside Alembic
 - **Pydantic** for message schemas and settings
 - **bcrypt** for password hashing
-- **pytest** + **pytest-asyncio** for testing (1066 tests)
+- **pytest** + **pytest-asyncio** for testing (1083 tests)
 
 ### Commands
 ```bash
@@ -91,12 +92,14 @@ open http://localhost:8000     # web demo client (requires server running)
 ### Key Server Features
 
 - **Combat**: Turn-based card combat with DoT effect ticking (poison/bleed tick each turn), shield absorption; multi-player party combat in-progress (Epic 12)
-- **Persistence**: Player stats (`hp`, `max_hp`, `attack`, `xp`, 6 D&D abilities, level), position, inventory, and visited rooms saved on disconnect, room transition, combat end, and server shutdown
-- **Death & Respawn**: Defeated players respawn in `town_square` with full HP
+- **Persistent Energy System** (Epic 18): Energy is a persistent player stat (like HP), derived from INT+WIS via `max_energy = DEFAULT_BASE_ENERGY + INT * INT_ENERGY_PER_POINT + WIS * WIS_ENERGY_PER_POINT`. Physical cards (`card_type: "physical"`) are free; magical cards (`card_type: "magical"`) consume energy. Combat energy regens per cycle via `compute_energy_regen()` based on INT+WIS. Out-of-combat HP/energy regen via `server/core/regen.py` (standalone module, not in Scheduler).
+- **Card Type Classification** (Epic 18): Cards have `card_type` field (`"physical"` or `"magical"`) on `CardDef` and in card JSON. Classification rubric: physical = ALL effects are physical-damage/shield/DoT-with-physical-damage; magical = ANY non-physical effect (elemental damage, heal, draw, standalone DoT).
+- **Persistence**: Player stats (`hp`, `max_hp`, `energy`, `max_energy`, `attack`, `xp`, 6 D&D abilities, level), position, inventory, and visited rooms saved on disconnect, room transition, combat end, and server shutdown
+- **Death & Respawn**: Defeated players respawn in `town_square` with full HP and full energy; `active_effects` cleared
 - **Duplicate Login Protection**: Old session kicked (state saved) when same account logs in from another connection
 - **Graceful Shutdown**: All player states saved, clients notified, WebSockets closed cleanly
 - **NPC Spawning**: Three-tier system (persistent, timed, rare with chance roll + global announcements)
-- **Card Energy System**: Cards cost energy to play (configurable starting energy + per-cycle regen); items and pass are free
+- **Card Energy System** (Epic 18): Non-physical cards cost persistent energy; physical cards and items are free. Energy regens per combat cycle based on `compute_energy_regen(stats)` in `server/combat/instance.py`. `stats_update` message pushes HP/energy changes to client (regen ticks, item use).
 - **Vertical Exits**: Stairs tiles (`STAIRS_UP`/`STAIRS_DOWN`) with `"ascend"`/`"descend"` exit directions (distinct from movement `"up"`/`"down"`)
 - **Admin REST API**: Authenticated endpoints (`/admin/status`, `/admin/shutdown`, `/admin/restart`) protected by `ADMIN_SECRET` env var with `hmac.compare_digest`
 - **Centralized Config**: All game balance values must reference `settings.*` from `server/core/config.py` — never hardcode HP, attack, stat defaults, spawn room, auth lengths, etc.
@@ -116,7 +119,7 @@ open http://localhost:8000     # web demo client (requires server running)
 - **Centralized Constants** (Epic 17): `server/core/constants.py` holds cross-cutting constants (`STAT_NAMES`, `EffectType`, `SPAWN_PERSISTENT`, `SPAWN_RARE`, `PROTOCOL_VERSION`). Domain-specific constants stay in their modules (`TradeState` in `trade/session.py`, `BEHAVIOR_HOSTILE` in `room/npc.py`).
 - **StrEnum Pattern**: Type constants use `StrEnum` (ADR-17-1) — compares equal to plain strings, so JSON wire protocol is unchanged.
 - **Dual-Patch Test Pattern**: When a repo module (e.g., `player_repo`) is imported by both a handler and a service, tests must patch both import paths with the same mock object.
-- **Protocol**: 23 inbound Pydantic schemas in `server/net/schemas.py`, 40 outbound in `server/net/outbound_schemas.py` (Stories 16.1, 16.2). Auto-generated spec: `make protocol-doc`, `make check-protocol`.
+- **Protocol**: 23 inbound Pydantic schemas in `server/net/schemas.py`, 41 outbound in `server/net/outbound_schemas.py` (+`StatsUpdate` in Epic 18). Auto-generated spec: `make protocol-doc`, `make check-protocol`. Protocol version: 1.1 (bumped in Epic 18).
 - **Chat**: Messages include `"format": settings.CHAT_FORMAT` (default "markdown") — server is client-agnostic per ADR-16-4.
 - **Session Tokens**: `TokenStore` in-memory, 300s TTL (Story 16.9). Grace period: `DISCONNECT_GRACE_SECONDS=120`, deferred cleanup (Story 16.10).
 - **Message Sequence Numbers**: `send_to_player_seq()` with per-player `_msg_seq` counter (Story 16.11).

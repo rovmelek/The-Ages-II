@@ -22,10 +22,11 @@ def _make_mob_stats(hp=50, attack=10, strength=0, dexterity=0, intelligence=0, w
             "intelligence": intelligence, "wisdom": wisdom}
 
 
-def _make_player_stats(hp=100, attack=15, strength=0, dexterity=0, intelligence=0, wisdom=0):
+def _make_player_stats(hp=100, attack=15, strength=0, dexterity=0, intelligence=0, wisdom=0, energy=25, max_energy=25):
     return {"hp": hp, "max_hp": hp, "attack": attack, "defense": 5,
             "strength": strength, "dexterity": dexterity,
-            "intelligence": intelligence, "wisdom": wisdom}
+            "intelligence": intelligence, "wisdom": wisdom,
+            "energy": energy, "max_energy": max_energy}
 
 
 def _make_instance_with_player():
@@ -330,13 +331,14 @@ async def test_dead_player_cannot_pass():
 # --- Energy system ---
 
 
-def test_add_participant_initializes_energy():
+def test_add_participant_uses_persistent_energy():
+    """Energy comes from player stats (persistent), not combat defaults."""
     instance = CombatInstance(
         instance_id="test", mob_name="Mob", mob_stats=_make_mob_stats()
     )
-    instance.add_participant("p1", {"hp": 100, "max_hp": 100, "attack": 10}, _make_cards())
-    assert instance.participant_stats["p1"]["energy"] == 3
-    assert instance.participant_stats["p1"]["max_energy"] == 3
+    instance.add_participant("p1", _make_player_stats(energy=25, max_energy=25), _make_cards())
+    assert instance.participant_stats["p1"]["energy"] == 25
+    assert instance.participant_stats["p1"]["max_energy"] == 25
 
 
 def test_get_state_includes_energy():
@@ -345,43 +347,68 @@ def test_get_state_includes_energy():
     p = state["participants"][0]
     assert "energy" in p
     assert "max_energy" in p
-    assert p["energy"] == 3
-    assert p["max_energy"] == 3
+    assert "energy_regen" in p
+    assert p["energy"] == 25
+    assert p["max_energy"] == 25
 
 
 @pytest.mark.asyncio
-async def test_play_card_deducts_energy():
+async def test_play_magical_card_deducts_energy():
+    """Magical cards deduct energy on play."""
     instance = _make_instance_with_two_players()
-    assert instance.participant_stats["player_1"]["energy"] == 3
-    card_key = instance.hands["player_1"].hand[0].card_key
-    await instance.play_card("player_1", card_key)
-    # Cards cost 1, so energy should be 2
-    assert instance.participant_stats["player_1"]["energy"] == 2
+    # Replace first card in hand with a magical card
+    instance.hands["player_1"].hand[0] = CardDef(
+        card_key="magic_1", name="Magic", cost=3, card_type="magical",
+        effects=[{"type": "damage", "value": 10, "subtype": "fire"}],
+    )
+    assert instance.participant_stats["player_1"]["energy"] == 25
+    await instance.play_card("player_1", "magic_1")
+    assert instance.participant_stats["player_1"]["energy"] == 22
+
+
+@pytest.mark.asyncio
+async def test_play_physical_card_free():
+    """Physical cards do not deduct energy."""
+    instance = _make_instance_with_two_players()
+    # Replace first card with a physical card
+    instance.hands["player_1"].hand[0] = CardDef(
+        card_key="phys_1", name="Slash", cost=0, card_type="physical",
+        effects=[{"type": "damage", "value": 10, "subtype": "physical"}],
+    )
+    instance.participant_stats["player_1"]["energy"] = 5
+    await instance.play_card("player_1", "phys_1")
+    assert instance.participant_stats["player_1"]["energy"] == 5
 
 
 @pytest.mark.asyncio
 async def test_play_card_not_enough_energy():
+    """Magical card with insufficient energy raises ValueError."""
     instance = _make_instance_with_two_players()
-    # Drain energy to 0
+    instance.hands["player_1"].hand[0] = CardDef(
+        card_key="magic_1", name="Magic", cost=3, card_type="magical",
+        effects=[{"type": "damage", "value": 10, "subtype": "fire"}],
+    )
     instance.participant_stats["player_1"]["energy"] = 0
-    card_key = instance.hands["player_1"].hand[0].card_key
     with pytest.raises(ValueError, match="Not enough energy"):
-        await instance.play_card("player_1", card_key)
+        await instance.play_card("player_1", "magic_1")
 
 
 @pytest.mark.asyncio
 async def test_cycle_regenerates_energy():
+    """Energy regens by formula at end of cycle."""
     instance = _make_instance_with_two_players()
-    # Play cards for both players — cost 1 each
+    # Set energy low to observe regen
+    instance.participant_stats["player_1"]["energy"] = 0
+    instance.participant_stats["player_2"]["energy"] = 0
+    # Default stats: INT=0, WIS=0 → regen = floor(2 + 0*0.5) = 2
     card_key1 = instance.hands["player_1"].hand[0].card_key
     await instance.play_card("player_1", card_key1)
-    assert instance.participant_stats["player_1"]["energy"] == 2
 
     card_key2 = instance.hands["player_2"].hand[0].card_key
     await instance.play_card("player_2", card_key2)
-    # Cycle complete — energy regen (+3, capped at max 3)
-    assert instance.participant_stats["player_1"]["energy"] == 3
-    assert instance.participant_stats["player_2"]["energy"] == 3
+    # Cycle complete — energy regen (+2 at default stats)
+    assert instance.participant_stats["player_1"]["energy"] == 2
+    assert instance.participant_stats["player_2"]["energy"] == 2
 
 
 @pytest.mark.asyncio
@@ -423,3 +450,42 @@ async def test_dead_player_skipped_in_turn_order():
     card_key = instance.hands["A"].hand[0].card_key
     await instance.play_card("A", card_key)
     assert instance.get_current_turn() == "C"
+
+
+# --- Energy formula tests ---
+
+
+def test_compute_energy_regen_default_stats():
+    """Default stats (INT=0, WIS=0) → regen = floor(2 + 0*0.5) = 2."""
+    from server.combat.instance import compute_energy_regen
+    assert compute_energy_regen({"intelligence": 0, "wisdom": 0}) == 2
+
+
+def test_compute_energy_regen_high_stats():
+    """INT=5, WIS=5 → regen = floor(2 + 10*0.5) = 7."""
+    from server.combat.instance import compute_energy_regen
+    assert compute_energy_regen({"intelligence": 5, "wisdom": 5}) == 7
+
+
+def test_compute_energy_regen_starting_stats():
+    """INT=1, WIS=1 → regen = floor(2 + 2*0.5) = 3 (matches old default)."""
+    from server.combat.instance import compute_energy_regen
+    assert compute_energy_regen({"intelligence": 1, "wisdom": 1}) == 3
+
+
+def test_compute_max_energy_default():
+    """Default stats (INT=1, WIS=1) → max_energy = 20 + 1*3 + 1*2 = 25."""
+    from server.player.service import compute_max_energy
+    assert compute_max_energy({"intelligence": 1, "wisdom": 1}) == 25
+
+
+def test_compute_max_energy_high_int():
+    """INT=10, WIS=1 → max_energy = 20 + 10*3 + 1*2 = 52."""
+    from server.player.service import compute_max_energy
+    assert compute_max_energy({"intelligence": 10, "wisdom": 1}) == 52
+
+
+def test_compute_max_energy_balanced():
+    """INT=5, WIS=5 → max_energy = 20 + 5*3 + 5*2 = 45."""
+    from server.player.service import compute_max_energy
+    assert compute_max_energy({"intelligence": 5, "wisdom": 5}) == 45

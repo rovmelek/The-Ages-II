@@ -121,7 +121,8 @@ def test_combat_start_state_has_required_fields():
     """Combat state from new instance has all required fields for client."""
     mgr = CombatManager(effect_registry=create_default_registry())
     instance = mgr.create_instance("Goblin", {"hp": 50, "max_hp": 50, "attack": 10})
-    instance.add_participant("p1", {"hp": 100, "max_hp": 100, "attack": 15, "shield": 0}, _make_cards())
+    instance.add_participant("p1", {"hp": 100, "max_hp": 100, "attack": 15, "shield": 0,
+                                     "energy": 25, "max_energy": 25}, _make_cards())
     state = instance.get_state()
 
     assert "instance_id" in state
@@ -129,8 +130,9 @@ def test_combat_start_state_has_required_fields():
     assert state["current_turn"] == "p1"
     assert "participants" in state
     assert len(state["participants"]) == 1
-    assert state["participants"][0]["energy"] == 3
-    assert state["participants"][0]["max_energy"] == 3
+    assert state["participants"][0]["energy"] == 25
+    assert state["participants"][0]["max_energy"] == 25
+    assert "energy_regen" in state["participants"][0]
     assert state["mob"]["name"] == "Goblin"
     assert state["mob"]["hp"] == 50
     assert "hands" in state

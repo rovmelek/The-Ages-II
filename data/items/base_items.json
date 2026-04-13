@@ -11,6 +11,17 @@
     "description": "Restores 25 HP. 3 uses."
   },
   {
+    "item_key": "energy_potion",
+    "name": "Energy Potion",
+    "category": "consumable",
+    "stackable": true,
+    "charges": 3,
+    "effects": [{"type": "restore_energy", "value": 25}],
+    "usable_in_combat": true,
+    "usable_outside_combat": true,
+    "description": "Restores 25 energy. 3 uses."
+  },
+  {
     "item_key": "antidote",
     "name": "Antidote",
     "category": "consumable",

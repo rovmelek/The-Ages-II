@@ -278,4 +278,4 @@ class TestBaseItems:
         items = await item_repo.load_items_from_json(
             db_session, DATA_DIR / "items" / "base_items.json"
         )
-        assert len(items) == 4
+        assert len(items) == 5

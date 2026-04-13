@@ -22,6 +22,7 @@ class EffectType(StrEnum):
     SHIELD = "shield"
     DOT = "dot"
     DRAW = "draw"
+    RESTORE_ENERGY = "restore_energy"
 
 
 # NPC spawn type identifiers (from NPC template JSON)
@@ -29,4 +30,4 @@ SPAWN_PERSISTENT = "persistent"
 SPAWN_RARE = "rare"
 
 # Protocol version included in login_success responses
-PROTOCOL_VERSION = "1.0"
+PROTOCOL_VERSION = "1.1"

@@ -121,10 +121,17 @@ class Game:
         # Start scheduler after rooms and NPC templates are loaded
         await self.scheduler.start(self)
 
+        # Start out-of-combat regen loop
+        from server.core.regen import start_regen_loop
+        await start_regen_loop(self)
+
     async def shutdown(self) -> None:
         """Gracefully shut down: save all player states, notify, and disconnect."""
         self._shutting_down = True
         await self.scheduler.stop()
+
+        from server.core.regen import stop_regen_loop
+        await stop_regen_loop()
 
         # Cancel all pending deferred cleanup timers
         for handle in self._cleanup_handles.values():

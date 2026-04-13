@@ -1,4 +1,4 @@
-"""Pydantic schemas for all 38 WebSocket outbound (server-to-client) message types.
+"""Pydantic schemas for all 41 WebSocket outbound (server-to-client) message types.
 
 These serve as machine-readable protocol documentation and optional runtime validation.
 Handlers continue using raw dicts; these schemas document the contract.
@@ -20,6 +20,8 @@ from starlette.websockets import WebSocket
 class PlayerStatsPayload(BaseModel):
     hp: int
     max_hp: int
+    energy: int
+    max_energy: int
     attack: int
     xp: int
     level: int
@@ -74,6 +76,7 @@ class CombatParticipantPayload(BaseModel):
     shield: int
     energy: int
     max_energy: int
+    energy_regen: int
 
 
 class CombatMobPayload(BaseModel):
@@ -86,6 +89,7 @@ class CardPayload(BaseModel):
     card_key: str
     name: str
     cost: int
+    card_type: str
     effects: list[dict[str, Any]]
     description: str
 
@@ -215,6 +219,16 @@ class RespawnMessage(BaseModel):
     y: int
     hp: int
     max_hp: int
+    energy: int
+    max_energy: int
+
+
+class StatsUpdateMessage(BaseModel):
+    type: str = "stats_update"
+    hp: int
+    max_hp: int
+    energy: int
+    max_energy: int
 
 
 # ---------------------------------------------------------------------------
@@ -452,8 +466,11 @@ class LevelUpCompleteMessage(BaseModel):
     type: str = "level_up_complete"
     level: int
     stat_changes: dict[str, int]
+    stat_increases: dict[str, int] | None = None
     new_max_hp: int
     new_hp: int
+    new_max_energy: int | None = None
+    new_energy: int | None = None
     skipped_at_cap: list[str] | None = None
     request_id: str | None = None
 

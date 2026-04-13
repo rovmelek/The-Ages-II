@@ -35,9 +35,9 @@ _LOOT_TABLES = load_loot_tables(Path("data/loot"))
 
 def test_loot_table_slime():
     items = _LOOT_TABLES["slime_loot"]
-    assert len(items) == 1
-    assert items[0]["item_key"] == "healing_potion"
-    assert items[0]["quantity"] == 1
+    assert len(items) == 2
+    keys = {i["item_key"] for i in items}
+    assert keys == {"healing_potion", "energy_potion"}
 
 
 def test_loot_table_goblin():
@@ -54,26 +54,25 @@ def test_loot_table_bat():
 
 def test_loot_table_troll():
     items = _LOOT_TABLES["troll_loot"]
-    assert len(items) == 2
+    assert len(items) == 3
     keys = {i["item_key"] for i in items}
-    assert keys == {"healing_potion", "iron_shard"}
+    assert keys == {"healing_potion", "energy_potion", "iron_shard"}
 
 
 def test_loot_table_dragon():
     items = _LOOT_TABLES["dragon_loot"]
-    assert len(items) == 2
+    assert len(items) == 3
     keys = {i["item_key"] for i in items}
-    assert keys == {"fire_essence", "healing_potion"}
+    assert keys == {"fire_essence", "healing_potion", "energy_potion"}
     for item in items:
         assert item["quantity"] == 2
 
 
 def test_loot_table_common_chest():
     items = _LOOT_TABLES["common_chest"]
-    assert len(items) == 2
+    assert len(items) == 3
     keys = {i["item_key"] for i in items}
-    assert "healing_potion" in keys
-    assert "iron_shard" in keys
+    assert keys == {"healing_potion", "energy_potion", "iron_shard"}
 
 
 def test_all_npc_loot_tables_present():
@@ -200,9 +199,9 @@ async def test_combat_victory_includes_loot():
     assert result is not None
     assert result.end_result["victory"] is True
     assert "player_1" in result.player_loot
-    assert len(result.player_loot["player_1"]) == 1
-    assert result.player_loot["player_1"][0]["item_key"] == "healing_potion"
-    assert result.player_loot["player_1"][0]["quantity"] == 1
+    assert len(result.player_loot["player_1"]) == 2
+    loot_keys = {i["item_key"] for i in result.player_loot["player_1"]}
+    assert loot_keys == {"healing_potion", "energy_potion"}
 
 
 @pytest.mark.asyncio

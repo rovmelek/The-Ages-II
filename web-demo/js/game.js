@@ -106,7 +106,7 @@ const gameState = {
   movePending: false,
   /** @type {Object|null} */
   pendingLevelUp: null,
-  /** @type {string[]} */
+  /** @type {string[]} @deprecated Use levelUpAllocations instead */
   levelUpSelections: [],
   /** @type {number|undefined} */
   _lastXp: undefined,
@@ -479,6 +479,7 @@ function dispatchMessage(data) {
     party_status: handlePartyStatus,
     party_invite_response: handlePartyInviteResponse,
     party_chat: handlePartyChat,
+    stats_update: handleStatsUpdate,
     ping: () => sendAction('pong'),
     error: handleError,
   };
@@ -664,6 +665,9 @@ function handleRespawn(data) {
     gameState.player.y = data.y;
     if (gameState.player.stats) {
       gameState.player.stats.hp = data.hp;
+      gameState.player.stats.max_hp = data.max_hp;
+      gameState.player.stats.energy = data.energy;
+      gameState.player.stats.max_energy = data.max_energy;
     }
   }
   gameState.combat = null;
@@ -1295,6 +1299,16 @@ function renderCombatOverlay() {
     }
     if ($cpHpText) $cpHpText.textContent = `${me.hp} / ${me.max_hp}`;
     if ($cpShield) $cpShield.textContent = me.shield ? `Shield: ${me.shield}` : '';
+    // Energy in combat
+    const $cpEnergyBar = /** @type {HTMLElement} */ (document.getElementById('combat-energy-bar'));
+    const $cpEnergyText = document.getElementById('combat-energy-text');
+    const $cpEnergyRegen = document.getElementById('combat-energy-regen');
+    if ($cpEnergyBar && me.max_energy > 0) {
+      const ePct = (me.energy / me.max_energy) * 100;
+      $cpEnergyBar.style.width = `${ePct}%`;
+    }
+    if ($cpEnergyText) $cpEnergyText.textContent = `${me.energy} / ${me.max_energy}`;
+    if ($cpEnergyRegen && me.energy_regen != null) $cpEnergyRegen.textContent = `+${me.energy_regen}/cycle`;
   }
 
   // Status
@@ -1328,8 +1342,17 @@ function renderCombatOverlay() {
  * @returns {HTMLElement}
  */
 function createCardElement(card, enabled) {
+  const isMagical = card.card_type === 'magical';
+  // Determine if player can afford this card
+  const me = gameState.combat?.participants?.find(
+    (/** @type {Object} */ p) => p.entity_id === gameState.player?.id
+  );
+  const currentEnergy = me ? me.energy : 0;
+  const canAfford = !isMagical || currentEnergy >= card.cost;
+
   const div = document.createElement('div');
-  div.className = `card${enabled ? '' : ' disabled'}`;
+  div.className = `card${enabled ? '' : ' disabled'}${!canAfford ? ' card-unaffordable' : ''}`;
+  if (isMagical) div.classList.add('card-magical');
 
   const header = document.createElement('div');
   header.className = 'card-header';
@@ -1337,8 +1360,8 @@ function createCardElement(card, enabled) {
   nameEl.className = 'card-name';
   nameEl.textContent = card.name;
   const costEl = document.createElement('span');
-  costEl.className = 'card-cost';
-  costEl.textContent = String(card.cost);
+  costEl.className = isMagical ? 'card-cost card-cost-magical' : 'card-cost card-cost-physical';
+  costEl.textContent = isMagical ? String(card.cost) : '0';
   header.appendChild(nameEl);
   header.appendChild(costEl);
   div.appendChild(header);
@@ -1491,17 +1514,21 @@ function handleItemUsed(data) {
       case 'shield': parts.push(`Gained ${r.value} shield (total: ${r.total_shield})`); break;
       case 'dot': parts.push(`Applied ${r.subtype} for ${r.value} over ${r.duration} turns`); break;
       case 'draw': parts.push(`Drew ${r.value} card(s)`); break;
+      case 'restore_energy': parts.push(`Restored ${r.value} energy (Energy: ${r.target_energy})`); break;
       default: parts.push(`${r.type}: ${r.value || ''}`);
     }
   }
   text += parts.join(', ');
   appendChat(text, 'system');
 
-  // Sync HP from heal effect results to player stats HUD
+  // Sync HP/energy from effect results to player stats HUD
   if (gameState.player?.stats) {
     for (const r of (data.effect_results || [])) {
       if (r.type === 'heal' && r.target_hp != null) {
         gameState.player.stats.hp = r.target_hp;
+      }
+      if (r.type === 'restore_energy' && r.target_energy != null) {
+        gameState.player.stats.energy = r.target_energy;
       }
     }
     updateStatsPanel();
@@ -1561,7 +1588,7 @@ function handleTileChanged(data) {
 // Stats Panel
 // =========================================================================
 
-/** Sync HP/max_hp from combat participant data back to player stats. */
+/** Sync HP/max_hp/energy/max_energy from combat participant data back to player stats. */
 function syncCombatStatsToPlayer() {
   if (!gameState.player?.stats || !gameState.combat) return;
   const me = gameState.combat.participants.find(
@@ -1570,6 +1597,31 @@ function syncCombatStatsToPlayer() {
   if (me) {
     gameState.player.stats.hp = me.hp;
     gameState.player.stats.max_hp = me.max_hp;
+    gameState.player.stats.energy = me.energy;
+    gameState.player.stats.max_energy = me.max_energy;
+  }
+}
+
+/** @param {Object} data */
+function handleStatsUpdate(data) {
+  if (!gameState.player?.stats) return;
+  gameState.player.stats.hp = data.hp;
+  gameState.player.stats.max_hp = data.max_hp;
+  gameState.player.stats.energy = data.energy;
+  gameState.player.stats.max_energy = data.max_energy;
+  updateStatsPanel();
+  // Pulse animation on bars
+  const $hpTrack = document.getElementById('hp-bar')?.parentElement;
+  const $energyTrack = document.getElementById('energy-bar')?.parentElement;
+  if ($hpTrack) {
+    $hpTrack.classList.remove('xp-flash-anim');
+    void $hpTrack.offsetWidth;
+    $hpTrack.classList.add('xp-flash-anim');
+  }
+  if ($energyTrack) {
+    $energyTrack.classList.remove('xp-flash-anim');
+    void $energyTrack.offsetWidth;
+    $energyTrack.classList.add('xp-flash-anim');
   }
 }
 
@@ -1607,6 +1659,15 @@ function updateStatsPanel() {
     setHpBarColor($hpBar, pct);
   }
   if ($hpText) $hpText.textContent = `${hp} / ${maxHp}`;
+
+  // Energy bar
+  const energy = stats.energy ?? 0;
+  const maxEnergy = stats.max_energy ?? 0;
+  const $energyBar = /** @type {HTMLElement} */ (document.getElementById('energy-bar'));
+  const $energyText = document.getElementById('energy-text');
+  const energyPct = maxEnergy > 0 ? (energy / maxEnergy) * 100 : 0;
+  if ($energyBar) $energyBar.style.width = `${energyPct}%`;
+  if ($energyText) $energyText.textContent = `${energy} / ${maxEnergy}`;
 
   // Shield (combat only)
   const $shieldSection = document.getElementById('shield-section');
@@ -1646,7 +1707,7 @@ function updateStatsPanel() {
       }
     }
   }
-  if ($xpText) $xpText.textContent = `${currentXp}/${xpNext}`;
+  if ($xpText) $xpText.textContent = `${xpInLevel} / ${xpNeeded}`;
   gameState._lastXp = currentXp;
 
   // Stats detail panel
@@ -1713,6 +1774,8 @@ function handleLevelUpComplete(data) {
   stats.level = data.level;
   stats.max_hp = data.new_max_hp;
   stats.hp = data.new_hp || data.new_max_hp;
+  if (data.new_max_energy != null) stats.max_energy = data.new_max_energy;
+  if (data.new_energy != null) stats.energy = data.new_energy;
   if (data.stat_changes) {
     for (const [key, val] of Object.entries(data.stat_changes)) {
       stats[key] = val;
@@ -1720,17 +1783,17 @@ function handleLevelUpComplete(data) {
   }
   updateStatsPanel();
 
-  // Celebration chat message
-  const changes = data.stat_changes
-    ? Object.entries(data.stat_changes)
-        .map(([k, _v]) => `${k.substring(0, 3).toUpperCase()}+1`)
-        .join(', ')
-    : '';
+  // Celebration chat message using stat_increases for correct "+N"
+  const increases = data.stat_increases || data.stat_changes || {};
+  const changes = Object.entries(increases)
+    .map(([k, v]) => `${k.substring(0, 3).toUpperCase()}+${v}`)
+    .join(', ');
   appendChat(`You reached Level ${data.level}! ${changes}`, 'system');
 
   // Clear pending
   gameState.pendingLevelUp = null;
   gameState.levelUpSelections = [];
+  levelUpAllocations = {};
   const $badge = document.getElementById('levelup-badge');
   if ($badge) $badge.classList.add('hidden');
   // Hide modal if open
@@ -1738,6 +1801,9 @@ function handleLevelUpComplete(data) {
   if ($overlay) $overlay.classList.add('hidden');
   // Note: if another level-up is queued, server sends a new level_up_available immediately
 }
+
+/** @type {Object.<string, number>} */
+let levelUpAllocations = {};
 
 /** @param {Object} data */
 function showLevelUpModal(data) {
@@ -1747,12 +1813,14 @@ function showLevelUpModal(data) {
   const $confirm = /** @type {HTMLButtonElement} */ (document.getElementById('levelup-confirm-btn'));
   if (!$overlay || !$grid || !$feedback || !$confirm) return;
 
+  levelUpAllocations = {};
   gameState.levelUpSelections = [];
   $feedback.textContent = '';
   $confirm.disabled = true;
   $grid.innerHTML = '';
 
   const serverEffects = data.stat_effects || {};
+  const maxPoints = data.choose_stats || 3;
   const statInfo = {
     strength: { label: 'STR', effect: serverEffects.strength || 'physical dmg per point' },
     dexterity: { label: 'DEX', effect: serverEffects.dexterity || 'incoming dmg reduction per point' },
@@ -1765,61 +1833,103 @@ function showLevelUpModal(data) {
   const currentStats = data.current_stats || {};
   const cap = data.stat_cap || 10;
 
+  const _getAllocTotal = () => Object.values(levelUpAllocations).reduce((a, b) => a + b, 0);
+
   for (const [key, info] of Object.entries(statInfo)) {
     const val = currentStats[key] ?? 1;
-    const atCap = val >= cap;
+    const maxCanAdd = cap - val;
 
-    const btn = document.createElement('div');
-    btn.className = `levelup-stat-btn${atCap ? ' disabled' : ''}`;
-    btn.dataset.stat = key;
+    const row = document.createElement('div');
+    row.className = 'levelup-stat-btn';
+    row.dataset.stat = key;
 
     const nameEl = document.createElement('div');
     nameEl.className = 'levelup-stat-name';
     nameEl.textContent = info.label;
-    btn.appendChild(nameEl);
+    row.appendChild(nameEl);
 
-    const changeEl = document.createElement('div');
-    changeEl.className = 'levelup-stat-change';
-    changeEl.textContent = atCap ? `${val} (MAX)` : `${val} \u2192 ${val + 1}`;
-    btn.appendChild(changeEl);
+    const controlsEl = document.createElement('div');
+    controlsEl.className = 'levelup-stat-controls';
+
+    const minusBtn = document.createElement('button');
+    minusBtn.className = 'levelup-minus';
+    minusBtn.textContent = '-';
+    const countEl = document.createElement('span');
+    countEl.className = 'levelup-stat-count';
+    countEl.textContent = '0';
+    const plusBtn = document.createElement('button');
+    plusBtn.className = 'levelup-plus';
+    plusBtn.textContent = '+';
 
     const effectEl = document.createElement('div');
     effectEl.className = 'levelup-stat-effect';
-    effectEl.textContent = `+1 ${info.effect}`;
-    btn.appendChild(effectEl);
+    effectEl.textContent = info.effect;
 
-    if (!atCap) {
-      btn.addEventListener('click', () => {
-        toggleLevelUpStat(key, btn, $feedback, $confirm);
+    const _updateRow = () => {
+      const alloc = levelUpAllocations[key] || 0;
+      countEl.textContent = String(alloc);
+      minusBtn.disabled = alloc <= 0;
+      plusBtn.disabled = maxCanAdd <= 0 || alloc >= maxCanAdd || _getAllocTotal() >= maxPoints;
+      const total = _getAllocTotal();
+      $feedback.textContent = `${total} / ${maxPoints} points allocated`;
+      $confirm.disabled = total === 0;
+      // Update effect description with multiplier
+      if (alloc > 1) {
+        effectEl.textContent = `${info.effect} ×${alloc}`;
+      } else {
+        effectEl.textContent = info.effect;
+      }
+    };
+
+    plusBtn.addEventListener('click', () => {
+      if (_getAllocTotal() >= maxPoints) return;
+      if ((levelUpAllocations[key] || 0) >= maxCanAdd) return;
+      levelUpAllocations[key] = (levelUpAllocations[key] || 0) + 1;
+      _updateRow();
+      // Update all plus buttons (total may have reached max)
+      $grid.querySelectorAll('.levelup-plus').forEach((b) => {
+        const stat = b.closest('.levelup-stat-btn')?.dataset.stat;
+        if (stat && stat !== key) {
+          const sVal = currentStats[stat] ?? 1;
+          const sMax = cap - sVal;
+          /** @type {HTMLButtonElement} */ (b).disabled = sMax <= 0 || (levelUpAllocations[stat] || 0) >= sMax || _getAllocTotal() >= maxPoints;
+        }
       });
+    });
+
+    minusBtn.addEventListener('click', () => {
+      if ((levelUpAllocations[key] || 0) <= 0) return;
+      levelUpAllocations[key] -= 1;
+      if (levelUpAllocations[key] === 0) delete levelUpAllocations[key];
+      _updateRow();
+      // Re-enable all plus buttons
+      $grid.querySelectorAll('.levelup-plus').forEach((b) => {
+        const stat = b.closest('.levelup-stat-btn')?.dataset.stat;
+        if (stat) {
+          const sVal = currentStats[stat] ?? 1;
+          const sMax = cap - sVal;
+          /** @type {HTMLButtonElement} */ (b).disabled = sMax <= 0 || (levelUpAllocations[stat] || 0) >= sMax || _getAllocTotal() >= maxPoints;
+        }
+      });
+    });
+
+    controlsEl.appendChild(minusBtn);
+    controlsEl.appendChild(countEl);
+    controlsEl.appendChild(plusBtn);
+    row.appendChild(controlsEl);
+    row.appendChild(effectEl);
+
+    if (maxCanAdd <= 0) {
+      row.classList.add('disabled');
+      plusBtn.disabled = true;
+      minusBtn.disabled = true;
+      countEl.textContent = 'MAX';
     }
 
-    $grid.appendChild(btn);
+    $grid.appendChild(row);
   }
 
   $overlay.classList.remove('hidden');
-}
-
-/**
- * @param {string} stat
- * @param {HTMLElement} btn
- * @param {HTMLElement} $feedback
- * @param {HTMLButtonElement} $confirm
- */
-function toggleLevelUpStat(stat, btn, $feedback, $confirm) {
-  const idx = gameState.levelUpSelections.indexOf(stat);
-  if (idx >= 0) {
-    gameState.levelUpSelections.splice(idx, 1);
-    btn.classList.remove('selected');
-  } else if (gameState.levelUpSelections.length >= (gameState.pendingLevelUp?.choose_stats ?? 3)) {
-    $feedback.textContent = `Max ${gameState.pendingLevelUp?.choose_stats ?? 3} selected`;
-    return;
-  } else {
-    gameState.levelUpSelections.push(stat);
-    btn.classList.add('selected');
-  }
-  $feedback.textContent = '';
-  $confirm.disabled = gameState.levelUpSelections.length === 0;
 }
 
 // =========================================================================
@@ -1919,8 +2029,13 @@ document.getElementById('login-form')?.addEventListener('submit', (e) => {
 // =========================================================================
 
 document.getElementById('levelup-confirm-btn')?.addEventListener('click', () => {
-  if (gameState.levelUpSelections.length > 0) {
-    sendAction('level_up', { stats: gameState.levelUpSelections });
+  // Build flat array with repeats from allocations
+  const statsArray = [];
+  for (const [stat, count] of Object.entries(levelUpAllocations)) {
+    for (let i = 0; i < count; i++) statsArray.push(stat);
+  }
+  if (statsArray.length > 0) {
+    sendAction('level_up', { stats: statsArray });
     const $overlay = document.getElementById('levelup-overlay');
     if ($overlay) $overlay.classList.add('hidden');
   }

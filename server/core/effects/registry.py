@@ -46,6 +46,7 @@ def create_default_registry() -> EffectRegistry:
     from server.core.effects.dot import handle_dot
     from server.core.effects.draw import handle_draw
     from server.core.effects.heal import handle_heal
+    from server.core.effects.restore_energy import handle_restore_energy
     from server.core.effects.shield import handle_shield
 
     registry = EffectRegistry()
@@ -54,4 +55,5 @@ def create_default_registry() -> EffectRegistry:
     registry.register(EffectType.SHIELD, handle_shield)
     registry.register(EffectType.DOT, handle_dot)
     registry.register(EffectType.DRAW, handle_draw)
+    registry.register(EffectType.RESTORE_ENERGY, handle_restore_energy)
     return registry

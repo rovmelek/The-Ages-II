@@ -142,6 +142,7 @@ async def test_handle_level_up_valid():
         "hp": 50, "max_hp": 105, "xp": 1200, "level": 1,
         "strength": 1, "dexterity": 1, "constitution": 1,
         "intelligence": 1, "wisdom": 1, "charisma": 1,
+        "energy": 10, "max_energy": 25,
     }
     game, ws, entity = _make_game_with_entity(stats, pending=1)
 
@@ -154,13 +155,38 @@ async def test_handle_level_up_valid():
     assert entity.stats["level"] == 2
     assert entity.stats["max_hp"] == 100 + 2 * 5  # CON=2, CON_HP_PER_POINT=5
     assert entity.stats["hp"] == entity.stats["max_hp"]  # full heal
+    # Energy recalculated from INT+WIS (both still 1)
+    assert entity.stats["max_energy"] == 20 + 1 * 3 + 1 * 2  # BASE + INT*3 + WIS*2
+    assert entity.stats["energy"] == entity.stats["max_energy"]  # full restore
 
     # Verify response
     msg = ws.send_json.call_args[0][0]
     assert msg["type"] == "level_up_complete"
     assert msg["level"] == 2
     assert msg["stat_changes"] == {"strength": 2, "dexterity": 2, "constitution": 2}
+    assert msg["stat_increases"] == {"strength": 1, "dexterity": 1, "constitution": 1}
     assert msg["new_max_hp"] == 110
+    assert msg["new_max_energy"] == 25
+    assert msg["new_energy"] == 25
+
+
+@pytest.mark.asyncio
+async def test_handle_level_up_int_increases_energy():
+    """Putting points into INT increases max_energy and resets energy to new max."""
+    stats = {
+        "hp": 100, "max_hp": 105, "xp": 1200, "level": 1,
+        "strength": 1, "dexterity": 1, "constitution": 1,
+        "intelligence": 1, "wisdom": 1, "charisma": 1,
+        "energy": 10, "max_energy": 25,
+    }
+    game, ws, entity = _make_game_with_entity(stats, pending=1)
+
+    await handle_level_up(ws, {"stats": ["intelligence", "intelligence", "intelligence"]}, game=game)
+
+    # INT=4: max_energy = 20 + 4*3 + 1*2 = 34
+    assert entity.stats["intelligence"] == 4
+    assert entity.stats["max_energy"] == 34
+    assert entity.stats["energy"] == 34  # full restore
 
 
 @pytest.mark.asyncio
@@ -225,24 +251,42 @@ async def test_handle_level_up_invalid_stat():
 
 
 @pytest.mark.asyncio
-async def test_handle_level_up_duplicate_stats():
-    """Duplicate stats are deduplicated — only unique stats boosted."""
+async def test_handle_level_up_stacking():
+    """Stacking 3 points on one stat is allowed."""
     stats = {"hp": 105, "max_hp": 105, "xp": 1200, "level": 1,
              "strength": 1, "dexterity": 1, "constitution": 1,
              "intelligence": 1, "wisdom": 1, "charisma": 1}
     game, ws, entity = _make_game_with_entity(stats, pending=1)
 
     await handle_level_up(
-        ws, {"stats": ["strength", "strength", "dexterity"]}, game=game
+        ws, {"stats": ["strength", "strength", "strength"]}, game=game
     )
 
-    # Only STR+1 and DEX+1 (strength deduplicated)
-    assert entity.stats["strength"] == 2
-    assert entity.stats["dexterity"] == 2
-    assert entity.stats["constitution"] == 1  # unchanged
+    assert entity.stats["strength"] == 4  # +3
+    assert entity.stats["dexterity"] == 1  # unchanged
 
     msg = ws.send_json.call_args[0][0]
-    assert msg["stat_changes"] == {"strength": 2, "dexterity": 2}
+    assert msg["stat_changes"] == {"strength": 4}
+    assert msg["stat_increases"] == {"strength": 3}
+
+
+@pytest.mark.asyncio
+async def test_handle_level_up_stacking_respects_cap():
+    """Stacking respects stat cap — extra points skipped."""
+    stats = {"hp": 105, "max_hp": 105, "xp": 1200, "level": 1,
+             "strength": 9, "dexterity": 1, "constitution": 1,
+             "intelligence": 1, "wisdom": 1, "charisma": 1}
+    game, ws, entity = _make_game_with_entity(stats, pending=1)
+
+    await handle_level_up(
+        ws, {"stats": ["strength", "strength", "strength"]}, game=game
+    )
+
+    assert entity.stats["strength"] == 10  # Only +1 applied (9→10), 2 skipped
+
+    msg = ws.send_json.call_args[0][0]
+    assert msg["stat_increases"] == {"strength": 1}
+    assert msg["skipped_at_cap"] == ["strength", "strength"]
 
 
 @pytest.mark.asyncio

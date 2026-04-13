@@ -27,9 +27,20 @@ class Settings(BaseSettings):
     # --- Combat ---
     COMBAT_HAND_SIZE: int = 5
     COMBAT_MIN_DAMAGE: int = 1
-    COMBAT_STARTING_ENERGY: int = 3
-    COMBAT_ENERGY_REGEN: int = 3
     COMBAT_TURN_TIMEOUT_SECONDS: int = 30
+
+    # --- Energy ---
+    DEFAULT_BASE_ENERGY: int = 20
+    INT_ENERGY_PER_POINT: int = 3
+    WIS_ENERGY_PER_POINT: int = 2
+    BASE_COMBAT_ENERGY_REGEN: int = 2
+    COMBAT_ENERGY_REGEN_FACTOR: float = 0.5
+
+    # --- Out-of-Combat Regen ---
+    REGEN_INTERVAL_SECONDS: int = 10
+    REGEN_HP_PER_TICK: int = 3
+    REGEN_ENERGY_PER_TICK: int = 2
+    REGEN_PERSIST_INTERVAL: int = 6
 
     # --- NPC ---
     NPC_DEFAULT_HP_MULTIPLIER: int = 10
