@@ -4,205 +4,207 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**The-Ages-II** is a multiplayer room-based dungeon game with turn-based card combat. The project combines:
-- A **BMAD framework** (v6.2.0) for AI-assisted design, planning, and project management workflows
-- A **Python game server** (Epics 1-18 complete; 1083 tests passing) built with FastAPI + WebSockets
-- A **web demo client** (`web-demo/`) — vanilla HTML/CSS/JS proof-of-concept for testing and demos; production client planned in Godot
+**The-Ages-II** is a multiplayer room-based dungeon game with turn-based card combat:
+- **Python game server** (Epics 1-18 complete; ~1083 tests passing) — FastAPI + WebSockets
+- **Web demo client** (`web-demo/`) — vanilla HTML/CSS/JS proof-of-concept for testing and demos
+- **BMAD framework** (v6.2.0) — AI-assisted design, planning, and project management workflows
+- **Production client** — planned in Godot (protocol spec delivered, unblocked)
 
 **Key reference documents:**
-- `_bmad-output/planning-artifacts/architecture.md` — **Authoritative** architecture spec (structure, systems, data models, design decisions)
-- `_bmad-output/planning-artifacts/epic-16-tech-spec.md` — **Epic 16** detailed tech spec (1760+ lines, 14 stories, 7 ADRs, adversarial-hardened)
-- `_bmad-output/implementation-artifacts/tech-spec-energy-system-combat-rebalance.md` — **Epic 18** tech spec (530+ lines, 33 tasks, 15 ADRs, 7 adversarial review rounds)
+- `_bmad-output/planning-artifacts/architecture.md` — **Authoritative** architecture spec
 - `_bmad-output/project-context.md` — AI agent rules and implementation patterns
-- `THE_AGES_SERVER_PLAN.md` — Original file-by-file blueprint (superseded by architecture.md where conflicts arise)
+- `_bmad-output/implementation-artifacts/tech-spec-energy-system-combat-rebalance.md` — Epic 18 tech spec
+- `_bmad-output/planning-artifacts/epic-16-tech-spec.md` — Epic 16 tech spec
+- `THE_AGES_SERVER_PLAN.md` — Original blueprint (superseded by architecture.md where conflicts arise)
 
-## BMAD System Architecture
+## Development Principles
 
-### Core Concepts
+These principles govern all development decisions. Follow them in every session.
 
-- **Agents**: Persona-based AI roles (Architect, PM, Developer, QA, Tech Writer, Scrum Master) defined in `_bmad/*/agents/` as Markdown files with menus and capabilities
-- **Skills**: 100+ structured task definitions in `.claude/skills/`, `.gemini/skills/`, `.github/skills/` — each with a `SKILL.md` metadata file
-- **Workflows**: Tri-modal (Create/Edit/Validate) step-file sequences in `_bmad/*/workflows/` that enforce strict LLM compliance through small sequential MD files
-- **Configuration Tokens**: Pathless tokens like `{project-root}`, `{user_name}`, `{communication_language}` signal relative paths to consuming agents
+1. **Web demo is proof-of-concept only** — `web-demo/` must NOT contain any game logic. It is a thin client that renders server state and sends user actions via WebSocket. All game rules, validation, and state management live on the server.
 
-### Installed Modules
+2. **Server codebase is well organized and structured** — Maintain the existing modular architecture under `server/`: `core/`, `net/`, `player/`, `room/`, `combat/`, `items/`, `trade/`, `party/`. Each module has clear boundaries. Handlers are thin routing; business logic lives in service modules. Do not introduce cross-cutting concerns that bypass module boundaries.
 
-| Module | Version | Purpose |
-|--------|---------|---------|
-| core   | 6.2.0   | Base configuration and task system |
-| bmm    | 6.2.0   | Agent framework with personas |
-| bmb    | 1.1.0   | Workflow building with quality scanning |
-| cis    | 0.1.9   | Creative Intelligence (design thinking, innovation, storytelling) |
-| gds    | 0.2.2   | Game Dev Studio (game architecture, narrative, playtesting) |
-| tea    | 1.7.1   | Test Architecture Enterprise (ATDD, automation, CI, NFR) |
-| wds    | 0.3.0   | WDS Expansion (8-phase design workflow) |
+3. **Easy to add features and plugins** — New features should follow existing patterns: define data in `data/` JSON files, add handlers in `server/net/handlers/`, add services in the appropriate domain module, register effects via `EffectRegistry`. The `EventBus` enables cross-system communication without tight coupling.
 
-### Key Directories
+4. **Database-agnostic persistence** — All database access uses SQLAlchemy async ORM with repository pattern (`player_repo`, `room_repo`, `card_repo`, `spawn_repo`). Never write raw SQL. This ensures easy migration to PostgreSQL or any SQLAlchemy-supported backend. Alembic manages schema migrations (`make db-migrate`). See Architecture Constraints for specific DB access rules.
 
-- `_bmad/` — Core BMAD system (agents, skills, workflows, config)
-- `_bmad/_config/` — Installation manifest, agent/skill/task/workflow manifests (CSV + YAML)
-- `_bmad-output/` — Generated outputs: `planning-artifacts/`, `implementation-artifacts/`, `test-artifacts/`
-- `design-artifacts/` — Design phase outputs (A-Product-Brief through G-Product-Development)
-- `.claude/skills/` — Claude Code skill definitions (primary IDE integration)
+5. **Engine-agnostic client integration** — The server communicates via a well-defined JSON WebSocket protocol. Any client (Godot, Unity, Unreal, browser) can connect. Server must never assume client implementation details. Keep server responses self-contained with all data a client needs to render state.
 
-### Configuration
+6. **Well-defined network protocol** — 23 inbound Pydantic schemas (`server/net/schemas.py`), 41 outbound (`server/net/outbound_schemas.py`). Auto-generated spec: `make protocol-doc`. Validation: `make check-protocol`. Protocol version tracked in `server/core/constants.py` (`PROTOCOL_VERSION`). Bump version when adding/changing message types.
 
-- User config: `_bmad/core/config.yaml` (user_name: Kevin, language: English)
-- Module configs: `_bmad/<module>/config.yaml`
-- Project context: When created, `project-context.md` serves as the foundational reference for all agents
+7. **Chat supports markdown** — Chat messages include `"format": settings.CHAT_FORMAT` (default `"markdown"`). Server is format-agnostic; clients choose how to render.
+
+8. **Centralized configuration** — All game balance values, constants, and tuning parameters must reference `settings.*` from `server/core/config.py`. Cross-cutting constants live in `server/core/constants.py`. See Architecture Constraints for specific rules.
+
+## AI Assistant Rules
+
+Follow these rules in every interaction. They are non-negotiable.
+
+9. **Never assume — ask if you have questions.** Do not guess at intent, requirements, or implementation approach. If something is ambiguous, ask for clarification before proceeding.
+
+10. **Always show your thought process and logic.** Explain your reasoning, trade-offs considered, and why you chose a particular approach. Make your decision-making transparent.
+
+11. **Adversarial review loop for all analysis and evaluation.** Before presenting any analysis, review, or evaluation:
+    1. Read `.claude/skills/bmad-review-adversarial-general/workflow.md` for review criteria.
+    2. Perform a full adversarial pass — verify every claim, API reference, file path, and function name against actual code in the codebase. List every finding.
+    3. Fix all findings.
+    4. Repeat from step 2 on the corrected content. Each repeat must be a full pass against the codebase, not a re-read of your own edits.
+    5. Minimum 2 full passes. Print "Pass N: X findings" after each.
+    6. Exit only after a pass prints "0 findings."
+
+## BMAD System
+
+- **Agents**: Persona-based AI roles defined in `_bmad/*/agents/`
+- **Skills**: Structured task definitions in `.claude/skills/`, `.gemini/skills/`, `.github/skills/`
+- **Workflows**: Step-file sequences in `_bmad/*/workflows/` enforcing structured LLM task execution
+- **Config**: `_bmad/core/config.yaml` (user_name: Kevin, language: English)
+- **Outputs**: `_bmad-output/` — `planning-artifacts/`, `implementation-artifacts/`, `test-artifacts/`
 
 ## Game Server
 
 ### Tech Stack
-- **Python 3.11+**, FastAPI, WebSockets (real-time game communication)
-- **SQLAlchemy async** + SQLite (aiosqlite) for persistence
-- **Alembic** for schema migrations (`make db-migrate`); `create_all` still used at startup alongside Alembic
+- **Python 3.11+**, FastAPI, WebSockets
+- **SQLAlchemy async** + SQLite (aiosqlite); Alembic for migrations; `create_all` also runs at startup
 - **Pydantic** for message schemas and settings
 - **bcrypt** for password hashing
-- **pytest** + **pytest-asyncio** for testing (1083 tests)
+- **pytest** + **pytest-asyncio** for testing (~1083 tests)
 
 ### Commands
 ```bash
-make install                   # install with dev dependencies
-make server                    # start server on port 8000
-make test                      # run tests (uses .venv/bin/python)
-make test-verbose              # run tests with verbose output
-make db-migrate                # run Alembic migrations (alembic upgrade head)
-curl localhost:8000/health     # health check
-open http://localhost:8000     # web demo client (requires server running)
+make install          # Install with dev dependencies
+make server           # Start server on port 8000
+make test             # Run tests (uses .venv/bin/python)
+make test-verbose     # Run tests with verbose output
+make db-migrate       # Run Alembic migrations
+make protocol-doc     # Generate protocol spec
+make check-protocol   # Validate protocol spec is up to date
 ```
 
 > **Important**: Always use `make test` (or `.venv/bin/python -m pytest`) — never bare `pytest`. The system Python lacks project dependencies.
 
-### Server Architecture
+### Architecture
 
-`Game` class in `server/app.py` is the central orchestrator (thin delegation — business logic lives in service modules), owning all managers:
+`Game` class (`server/app.py`) is the central orchestrator with thin delegation — business logic lives in service modules.
 
-- **RoomManager** (`server/room/manager.py`) — loads tile-based rooms from JSON files → SQLite → memory
-- **CombatManager** (`server/combat/manager.py`) — creates/tracks `CombatInstance` objects for turn-based card combat (multi-player party combat complete in Epic 12)
-- **ConnectionManager** (`server/net/connection_manager.py`) — maps WebSocket connections ↔ player entity IDs + room tracking + name → entity_id index
-- **TradeManager** (`server/trade/manager.py`) — mutual exchange trade sessions with state machine, async locks, timeouts
-- **PlayerManager** (`server/player/manager.py`) — player session lifecycle (create, lookup, remove, iterate) + disconnect cleanup orchestration
-- **PartyManager** (`server/party/manager.py`) — in-memory party groups with leader/member tracking, invite system (state on manager, handler is stateless), succession, party chat
-- **MessageRouter** (`server/net/message_router.py`) — routes incoming JSON by `action` field to handler modules in `server/net/handlers/`
-- **Scheduler** (`server/core/scheduler.py`) — async scheduling for mob respawns and rare spawn checks
-- **EventBus** (`server/core/events.py`) — global announcements, cross-system triggers (error-isolated: one failing subscriber doesn't crash the emit loop)
-- **EffectRegistry** (`server/core/effects/`) — shared card + item effect resolution (damage, heal, shield, dot, draw)
+**Managers:**
+| Manager | Location | Purpose |
+|---------|----------|---------|
+| RoomManager | `server/room/manager.py` | Tile-based rooms from JSON → SQLite → memory |
+| CombatManager | `server/combat/manager.py` | Turn-based card combat instances |
+| ConnectionManager | `server/net/connection_manager.py` | WebSocket ↔ player entity ID mapping |
+| PlayerManager | `server/player/manager.py` | Session lifecycle + disconnect cleanup |
+| PartyManager | `server/party/manager.py` | Party groups, invites, leader succession |
+| TradeManager | `server/trade/manager.py` | Trade sessions with state machine + locks |
+| MessageRouter | `server/net/message_router.py` | Routes JSON by `action` field to handlers |
+| Scheduler | `server/core/scheduler.py` | Async mob respawns + rare spawn checks |
+| EventBus | `server/core/events.py` | Cross-system triggers (error-isolated) |
+| EffectRegistry | `server/core/effects/registry.py` | Shared card + item effect resolution |
 
-### Key Server Features
+**Service Layer** (handlers are thin routing — logic lives here):
+| Service | Location | Key Functions |
+|---------|----------|---------------|
+| Player Service | `server/player/service.py` | `setup_full_session`, `build_stats_payload`, `kill_npc`, `respawn_player`, `find_spawn_point` |
+| Combat Service | `server/combat/service.py` | `initiate_combat`, `finalize_combat`, `cleanup_participant`, `handle_flee_outcome` |
+| Trade Service | `server/trade/service.py` | `execute_trade` |
+| XP Notifications | `server/net/xp_notifications.py` | `grant_xp`, `notify_xp`, `send_level_up_available` |
+| Heartbeat | `server/net/heartbeat.py` | `start_heartbeat`, `cancel_heartbeat` |
+| Errors | `server/net/errors.py` | `ErrorCode` (StrEnum), `send_error`, `sanitize_validation_error` |
 
-- **Combat**: Turn-based card combat with DoT effect ticking (poison/bleed tick each turn), shield absorption; multi-player party combat in-progress (Epic 12)
-- **Persistent Energy System** (Epic 18): Energy is a persistent player stat (like HP), derived from INT+WIS via `max_energy = DEFAULT_BASE_ENERGY + INT * INT_ENERGY_PER_POINT + WIS * WIS_ENERGY_PER_POINT`. Physical cards (`card_type: "physical"`) are free; magical cards (`card_type: "magical"`) consume energy. Combat energy regens per cycle via `compute_energy_regen()` based on INT+WIS. Out-of-combat HP/energy regen via `server/core/regen.py` (standalone module, not in Scheduler).
-- **Card Type Classification** (Epic 18): Cards have `card_type` field (`"physical"` or `"magical"`) on `CardDef` and in card JSON. Classification rubric: physical = ALL effects are physical-damage/shield/DoT-with-physical-damage; magical = ANY non-physical effect (elemental damage, heal, draw, standalone DoT).
-- **Persistence**: Player stats (`hp`, `max_hp`, `energy`, `max_energy`, `attack`, `xp`, 6 D&D abilities, level), position, inventory, and visited rooms saved on disconnect, room transition, combat end, and server shutdown
-- **Death & Respawn**: Defeated players respawn in `town_square` with full HP and full energy; `active_effects` cleared
-- **Duplicate Login Protection**: Old session kicked (state saved) when same account logs in from another connection
-- **Graceful Shutdown**: All player states saved, clients notified, WebSockets closed cleanly
+### Key Features
+
+- **Combat**: Turn-based card combat with DoT ticking (poison/bleed per turn), shield absorption, multi-player party combat
+- **Energy System**: Persistent player stat derived from INT+WIS (`max_energy = DEFAULT_BASE_ENERGY + INT * INT_ENERGY_PER_POINT + WIS * WIS_ENERGY_PER_POINT`). Cards have `card_type` field: `"physical"` (free) or `"magical"` (costs energy). Combat energy regens per cycle via `compute_energy_regen()` in `server/combat/instance.py`. Out-of-combat HP/energy regen via `server/core/regen.py` (standalone module). Energy potion uses `restore_energy` effect type (`server/core/effects/restore_energy.py`).
+- **Persistence**: Player stats (hp, max_hp, energy, max_energy, attack, xp, 6 D&D abilities, level), position, inventory, visited rooms — saved on disconnect, room transition, combat end, and shutdown
+- **Death & Respawn**: Defeated players respawn in `town_square` with full HP/energy; `active_effects` cleared
 - **NPC Spawning**: Three-tier system (persistent, timed, rare with chance roll + global announcements)
-- **Card Energy System** (Epic 18): Non-physical cards cost persistent energy; physical cards and items are free. Energy regens per combat cycle based on `compute_energy_regen(stats)` in `server/combat/instance.py`. `stats_update` message pushes HP/energy changes to client (regen ticks, item use).
-- **Vertical Exits**: Stairs tiles (`STAIRS_UP`/`STAIRS_DOWN`) with `"ascend"`/`"descend"` exit directions (distinct from movement `"up"`/`"down"`)
-- **Admin REST API**: Authenticated endpoints (`/admin/status`, `/admin/shutdown`, `/admin/restart`) protected by `ADMIN_SECRET` env var with `hmac.compare_digest`
-- **Centralized Config**: All game balance values must reference `settings.*` from `server/core/config.py` — never hardcode HP, attack, stat defaults, spawn room, auth lengths, etc.
-- **NPC Templates**: `game.npc_templates` is the single source of truth — no module-level global. Pass `templates` dict to `create_npc_from_template()`. NPC entity and template functions live in `server/room/npc.py` (not in `objects/`).
-- **Tile Modification**: Use `RoomInstance.set_tile(x, y, tile_type)` — never access `_grid` directly from outside `room.py`.
-- **SpawnCheckpoint Repo**: All spawn checkpoint DB access goes through `server/room/spawn_repo.py` (get_checkpoint, upsert_checkpoint, get_all_checkpoints) — never inline `select(SpawnCheckpoint)` in scheduler or elsewhere.
-- **Handler Auth Middleware**: All WebSocket handlers (except `handle_login`/`handle_register`) use `@requires_auth` decorator from `server/net/auth_middleware.py`. The decorator injects `entity_id: str` and `player_info: PlayerSession` as keyword arguments. Never duplicate the auth-check boilerplate manually.
-- **Party Invite State**: All invite tracking (pending, outgoing, timeouts, cooldowns) lives on `PartyManager` — the party handler (`server/net/handlers/party.py`) is stateless. `PartyManager` takes `connection_manager` via constructor injection. Never add module-level mutable state to handler files.
-- **Combat Turn Timeout**: `COMBAT_TURN_TIMEOUT_SECONDS: 30` enforced via `loop.call_later` timer (Story 16.10a).
-- **Service Layer Architecture** (Epic 17): Handlers are thin routing — business logic lives in service modules:
-  - `server/player/service.py` — auth session setup (`setup_full_session`, `build_stats_payload`), NPC kill, player respawn, spawn point resolution
-  - `server/combat/service.py` — combat end orchestration (`finalize_combat`), combat initiation (`initiate_combat`), participant cleanup (`cleanup_participant`), flee handling
-  - `server/trade/service.py` — atomic trade execution (`execute_trade`)
-  - `server/net/xp_notifications.py` — XP messaging (`grant_xp`, `notify_xp`, `send_level_up_available`); `core/xp.py` has zero net imports
-  - `server/net/heartbeat.py` — ping/pong connection health (`start_heartbeat`, `cancel_heartbeat`)
-  - `server/net/errors.py` — structured error codes (`ErrorCode` StrEnum, `send_error`, `sanitize_validation_error`)
-- **Centralized Constants** (Epic 17): `server/core/constants.py` holds cross-cutting constants (`STAT_NAMES`, `EffectType`, `SPAWN_PERSISTENT`, `SPAWN_RARE`, `PROTOCOL_VERSION`). Domain-specific constants stay in their modules (`TradeState` in `trade/session.py`, `BEHAVIOR_HOSTILE` in `room/npc.py`).
-- **StrEnum Pattern**: Type constants use `StrEnum` (ADR-17-1) — compares equal to plain strings, so JSON wire protocol is unchanged.
-- **Dual-Patch Test Pattern**: When a repo module (e.g., `player_repo`) is imported by both a handler and a service, tests must patch both import paths with the same mock object.
-- **Protocol**: 23 inbound Pydantic schemas in `server/net/schemas.py`, 41 outbound in `server/net/outbound_schemas.py` (+`StatsUpdate` in Epic 18). Auto-generated spec: `make protocol-doc`, `make check-protocol`. Protocol version: 1.1 (bumped in Epic 18).
-- **Chat**: Messages include `"format": settings.CHAT_FORMAT` (default "markdown") — server is client-agnostic per ADR-16-4.
-- **Session Tokens**: `TokenStore` in-memory, 300s TTL (Story 16.9). Grace period: `DISCONNECT_GRACE_SECONDS=120`, deferred cleanup (Story 16.10).
-- **Message Sequence Numbers**: `send_to_player_seq()` with per-player `_msg_seq` counter (Story 16.11).
+- **Duplicate Login Protection**: Old session kicked (state saved) when same account re-logs
+- **Graceful Shutdown**: All states saved, clients notified, WebSockets closed
+- **Vertical Exits**: Stairs tiles (`STAIRS_UP`/`STAIRS_DOWN`) with `"ascend"`/`"descend"` exit directions
+- **Admin REST API**: `/admin/status`, `/admin/shutdown`, `/admin/restart` — protected by `ADMIN_SECRET` env var with `hmac.compare_digest`
+- **Session Tokens**: `TokenStore` (`server/player/tokens.py`) in-memory, 300s TTL. Grace period: `DISCONNECT_GRACE_SECONDS=120`, deferred cleanup
+- **Message Sequence Numbers**: `send_to_player_seq()` on `ConnectionManager` with per-player `_msg_seq` counter
+- **Combat Turn Timeout**: `COMBAT_TURN_TIMEOUT_SECONDS: 30` enforced via `loop.call_later`
+
+### Architecture Constraints
+
+These are hard rules. Violating them causes regressions.
+
+- **Config**: All tunable values via `settings.*` from `server/core/config.py` — never hardcode
+- **NPC Templates**: `game.npc_templates` is the single source of truth — no module-level global. Pass `templates` dict to `create_npc_from_template()` in `server/room/npc.py`
+- **Tile Modification**: Use `RoomInstance.set_tile(x, y, tile_type)` — never access `_grid` directly
+- **Spawn Checkpoints**: All DB access via `server/room/spawn_repo.py` (`get_checkpoint`, `upsert_checkpoint`, `get_all_checkpoints`) — never inline queries
+- **Auth Middleware**: All WebSocket handlers (except `handle_login`, `handle_register`, and `handle_reconnect`) use `@requires_auth` from `server/net/auth_middleware.py`. It injects `entity_id` and `player_info` kwargs. Never duplicate auth-check boilerplate.
+- **Party Invite State**: Lives on `PartyManager` — party handler (`server/net/handlers/party.py`) is stateless. `PartyManager` takes `connection_manager` via constructor injection. No module-level mutable state in handlers.
+- **Database Access**: All queries go through repository modules (`player_repo`, `room_repo`, `card_repo`, `spawn_repo`). Never inline `select()` outside repositories.
+- **StrEnum Pattern**: Type constants use `StrEnum` — compares equal to plain strings, JSON wire protocol unchanged
+- **Dual-Patch Test Pattern**: When a repo module is imported by both handler and service, tests must patch both import paths with the same mock
+- **Constants**: Cross-cutting constants in `server/core/constants.py` (`STAT_NAMES`, `EffectType`, `SPAWN_PERSISTENT`, `SPAWN_RARE`, `PROTOCOL_VERSION`). Domain-specific constants stay in their modules (`TradeState` in `server/trade/session.py`, `BEHAVIOR_HOSTILE` in `server/room/npc.py`).
 
 ### Directory Structure
 ```
 server/
-├── core/          # Config, database, scheduler, event bus, shared effect registry, constants, xp (pure business logic)
-├── net/           # WebSocket connection manager, message router, auth middleware, heartbeat, xp notifications, errors
+├── core/          # Config, database, scheduler, event bus, effects, constants, xp, regen
+├── net/           # Connection manager, message router, auth middleware, heartbeat, xp notifications, errors
 │   └── handlers/  # auth, movement, chat, combat, inventory, interact, trade, party, admin, levelup, query
-├── player/        # Player model, repo, entity, auth (bcrypt), manager (session lifecycle + cleanup), service (session setup, respawn, NPC kill)
-├── room/          # Room model, repo, tile system, room instance, manager, provider, npc entity, spawn repo
+├── player/        # Player model, repo, entity, auth (bcrypt), manager, service, tokens
+├── room/          # Room model, repo, tile system, room instance, manager, provider, npc, spawn repo
 │   └── objects/   # Chest, lever, base classes, registry, state
-├── combat/        # Combat instance (DoT ticking, turn resolution), manager, service (initiation, finalization, flee, cleanup)
+├── combat/        # Combat instance, manager, service
 │   └── cards/     # Card definitions, hand management, card repo
-├── items/         # Item definitions, item repo, inventory (serialization)
-├── trade/         # TradeManager, trade session dataclass, state machine, service (trade execution)
-├── party/         # PartyManager, party dataclass, leader succession, invite tracking
+├── items/         # Item definitions, item repo, inventory
+├── trade/         # Trade manager, session, service
+├── party/         # Party manager, party dataclass, leader succession
 data/
-├── rooms/         # Room definitions (4 rooms: town_square, dark_cave, test_room, other_room)
+├── rooms/         # Room definitions (town_square, dark_cave, test_room, other_room)
 ├── cards/         # Card set definitions (JSON)
 ├── items/         # Item definitions (JSON)
 └── npcs/          # NPC template definitions (JSON)
-alembic/           # Alembic migrations (env.py, versions/)
-tests/             # pytest — 50+ test files (flat structure)
-web-demo/          # Browser-based test/demo client (vanilla HTML/CSS/JS)
-├── index.html     # Auth, game viewport, combat overlay
-├── css/style.css  # Dark theme, tiles, cards
-├── js/game.js     # WebSocket client, state, all UI
-└── jsconfig.json  # IDE type-checking
+alembic/           # Schema migrations
+tests/             # pytest test files (flat structure)
+web-demo/          # Browser-based demo client (vanilla HTML/CSS/JS)
 ```
+
+**Room Topology**: 4 rooms in circular loop — `town_square ↔ test_room ↔ other_room ↔ dark_cave ↔ town_square`. Default spawn: `town_square`.
 
 ### Endpoints
-- **Web Demo**: `GET /` — serves `web-demo/index.html` (test client)
-- **Static Assets**: `/static/*` — serves `web-demo/` directory
-- **WebSocket**: `/ws/game` — JSON messages with `action` field (login, register, move, chat, play_card, pass_turn, flee, use_item, use_item_combat, interact, inventory, look, who, stats, help, logout, trade, party, party_chat, map)
-- **Admin REST**: `/admin/status`, `/admin/shutdown`, `/admin/restart` — requires `Authorization: Bearer <ADMIN_SECRET>` header
-- **Health**: `GET /health` — basic health check
-
-### Room Topology
-4 rooms connected in a circular loop (each room has 2 exits):
-```
-town_square ←→ test_room ←→ other_room ←→ dark_cave ←→ town_square
-```
-Default player spawn room: `town_square` (100x100)
+- `GET /` — serves `web-demo/index.html`
+- `GET /health` — health check
+- `/static/*` — serves `web-demo/` directory
+- `/ws/game` — WebSocket (JSON with `action` field)
+- `/admin/status`, `/admin/shutdown`, `/admin/restart` — REST, requires `Authorization: Bearer <ADMIN_SECRET>`
 
 ## Working With This Project
 
 ### Skills & Slash Commands
 
-Invoke BMAD workflows through slash commands. Key workflows:
-
-- `/bmad-help` — Get guidance on which workflow or agent to use next
-- `/gds-create-game-brief` — Start game brief creation
-- `/gds-create-gdd` — Create Game Design Document
-- `/gds-game-architecture` — Design game architecture
+Invoke BMAD workflows through slash commands:
+- `/bmad-help` — Guidance on which workflow to use next
+- `/gds-create-game-brief` — Game brief creation
+- `/gds-create-gdd` — Game Design Document
+- `/gds-game-architecture` — Game architecture design
 - `/gds-create-epics-and-stories` — Break requirements into epics/stories
-- `/gds-dev-story` — Execute story implementation from a spec file
-- `/gds-quick-dev` — Flexible dev workflow for direct instructions or tech-specs
-- `/gds-code-review` — Thorough code review
-- `/gds-sprint-planning` — Generate sprint plans from epics
-- `/gds-sprint-status` — Check sprint progress and risks
+- `/gds-dev-story` — Execute story implementation from spec
+- `/gds-quick-dev` — Flexible dev workflow
+- `/gds-code-review` — Code review
+- `/gds-sprint-planning` — Sprint plans from epics
+- `/gds-sprint-status` — Sprint progress and risks
 
 ### Bug Fix Procedure (ISS)
 
 When fixing any bug, warning, or issue (whether found during testing, code review, or user report):
 
 1. **Document first**: Create `_bmad-output/implementation-artifacts/issues/ISS-NNN-<slug>.md` with severity, root cause, proposed fix, and impact. Find the next ISS number by checking existing files in that directory.
-2. **Review**: Verify the issue doc's claims (file paths, line numbers, root cause) against the actual codebase before implementing.
+2. **Review**: Verify the issue doc's claims (file paths, function names, root cause) against the actual codebase before implementing.
 3. **Fix**: Implement the fix.
-4. **Track**: Add entry to `sprint-status.yaml` with status `done`.
+4. **Track**: Add entry to `_bmad-output/implementation-artifacts/sprint-status.yaml` with status `done`.
 
-**Never fix a bug without creating the ISS doc first.** This applies even for trivial fixes like test warnings.
+**Never fix a bug without creating the ISS doc first.** This applies even for trivial fixes.
 
 ### Story Specification Guidelines
 
 When creating story files (via `/gds-create-story` or manually):
 
-- **Use function/class names as the primary code reference** — never line numbers alone. Line numbers shift as earlier stories modify files; function names are stable. Write `in _broadcast_combat_state()` rather than `at combat.py:41-50`.
-- Line numbers may be included parenthetically as supplementary context (e.g., `in _broadcast_combat_state() (~line 41)`) but should never be the **only** identifier for a code location.
+- **Use function/class names as the primary code reference** — never line numbers alone. Function names are stable; line numbers shift. Write `in _broadcast_combat_state()` rather than `at combat.py:41-50`.
+- Line numbers may be included parenthetically (e.g., `in _broadcast_combat_state() (~line 41)`) but never as the only identifier.
 - When creating story specs with adversarial review, verify all function name references exist in the current codebase.
-
-### Design Workflow Phases (WDS)
-
-The project follows an 8-phase design workflow:
-0. Project Setup → 1. Project Brief → 2. Trigger Mapping → 3. UX Scenarios → 4. UX Design → 5. Agentic Development → 6. Asset Generation → 7. Design System → 8. Product Evolution
