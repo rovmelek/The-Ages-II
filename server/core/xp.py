@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from server.core.config import settings
+from server.core.constants import STAT_NAMES
 from server.player import repo as player_repo
 
 
@@ -154,12 +155,7 @@ async def send_level_up_available(entity_id: str, player_entity: Any, game: Any)
         "new_level": new_level,
         "choose_stats": settings.LEVEL_UP_STAT_CHOICES,
         "current_stats": {
-            "strength": stats.get("strength", settings.DEFAULT_STAT_VALUE),
-            "dexterity": stats.get("dexterity", settings.DEFAULT_STAT_VALUE),
-            "constitution": stats.get("constitution", settings.DEFAULT_STAT_VALUE),
-            "intelligence": stats.get("intelligence", settings.DEFAULT_STAT_VALUE),
-            "wisdom": stats.get("wisdom", settings.DEFAULT_STAT_VALUE),
-            "charisma": stats.get("charisma", settings.DEFAULT_STAT_VALUE),
+            s: stats.get(s, settings.DEFAULT_STAT_VALUE) for s in STAT_NAMES
         },
         "stat_cap": settings.STAT_CAP,
         "xp_for_next_level": current_level * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,

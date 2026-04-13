@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from fastapi import WebSocket
 
 from server.core.config import settings
+from server.core.constants import EffectType
 from server.core.xp import grant_xp
 from server.net.auth_middleware import requires_auth
 from server.net.schemas import with_request_id
@@ -185,7 +186,7 @@ async def _handle_mob_encounter(
         if not card_defs:
             card_defs = [
                 CardDef(card_key=f"basic_attack_{i}", name="Basic Attack", cost=1,
-                        effects=[{"type": "damage", "value": 10}])
+                        effects=[{"type": EffectType.DAMAGE, "value": 10}])
                 for i in range(10)
             ]
 

@@ -7,6 +7,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from server.core.config import settings
+from server.core.constants import STAT_NAMES
+
+# Domain-local constant — only used within server/room/ (ADR-17-2)
+BEHAVIOR_HOSTILE = "hostile"
 
 
 @dataclass
@@ -74,17 +78,14 @@ def _derive_stats_from_hit_dice(tmpl: dict) -> dict:
         return dict(tmpl.get("stats", {}))
     hp_multiplier = tmpl.get("hp_multiplier", settings.NPC_DEFAULT_HP_MULTIPLIER)
     max_hp = hit_dice * hp_multiplier
-    return {
+    result = {
         "hp": max_hp,
         "max_hp": max_hp,
         "attack": hit_dice * settings.NPC_ATTACK_DICE_MULTIPLIER,
-        "strength": hit_dice,
-        "dexterity": hit_dice,
-        "constitution": hit_dice,
-        "intelligence": hit_dice,
-        "wisdom": hit_dice,
-        "charisma": hit_dice,
     }
+    for s in STAT_NAMES:
+        result[s] = hit_dice
+    return result
 
 
 def create_npc_from_template(
@@ -107,7 +108,7 @@ def create_npc_from_template(
         name=tmpl.get("name", npc_key),
         x=x,
         y=y,
-        behavior_type=tmpl.get("behavior_type", "hostile"),
+        behavior_type=tmpl.get("behavior_type", BEHAVIOR_HOSTILE),
         stats=_derive_stats_from_hit_dice(tmpl),
         loot_table=tmpl.get("loot_table", ""),
         spawn_config=dict(tmpl.get("spawn_config", {})),

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Coroutine
 
+from server.core.constants import EffectType
+
 
 EffectHandler = Callable[
     [dict, dict, dict, dict],
@@ -47,9 +49,9 @@ def create_default_registry() -> EffectRegistry:
     from server.core.effects.shield import handle_shield
 
     registry = EffectRegistry()
-    registry.register("damage", handle_damage)
-    registry.register("heal", handle_heal)
-    registry.register("shield", handle_shield)
-    registry.register("dot", handle_dot)
-    registry.register("draw", handle_draw)
+    registry.register(EffectType.DAMAGE, handle_damage)
+    registry.register(EffectType.HEAL, handle_heal)
+    registry.register(EffectType.SHIELD, handle_shield)
+    registry.register(EffectType.DOT, handle_dot)
+    registry.register(EffectType.DRAW, handle_draw)
     return registry

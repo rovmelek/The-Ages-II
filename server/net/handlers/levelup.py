@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from fastapi import WebSocket
 
 from server.core.config import settings
+from server.core.constants import STAT_NAMES
 from server.core.xp import get_pending_level_ups, send_level_up_available
 from server.net.auth_middleware import requires_auth
 from server.net.schemas import with_request_id
@@ -15,10 +16,7 @@ from server.player.session import PlayerSession
 if TYPE_CHECKING:
     from server.app import Game
 
-_VALID_LEVEL_UP_STATS = {
-    "strength", "dexterity", "constitution",
-    "intelligence", "wisdom", "charisma",
-}
+_VALID_LEVEL_UP_STATS = set(STAT_NAMES)
 
 
 @requires_auth

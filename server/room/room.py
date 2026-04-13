@@ -13,6 +13,8 @@ from server.room.tile import TileType, is_walkable
 if TYPE_CHECKING:
     from server.room.npc import NpcEntity
 
+from server.room.npc import BEHAVIOR_HOSTILE
+
 DIRECTION_DELTAS: dict[str, tuple[int, int]] = {
     "up": (0, -1),
     "down": (0, 1),
@@ -174,7 +176,7 @@ class RoomInstance:
 
         # NPC encounter detection
         for npc in self._npcs.values():
-            if npc.x == nx and npc.y == ny and npc.is_alive and not npc.in_combat and npc.behavior_type == "hostile":
+            if npc.x == nx and npc.y == ny and npc.is_alive and not npc.in_combat and npc.behavior_type == BEHAVIOR_HOSTILE:
                 result["mob_encounter"] = {"entity_id": npc.id, "name": npc.name}
                 break
 

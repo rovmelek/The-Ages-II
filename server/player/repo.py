@@ -4,6 +4,7 @@ from __future__ import annotations
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from server.core.constants import STAT_NAMES
 from server.player.models import Player
 
 
@@ -82,11 +83,7 @@ async def update_visited_rooms(
 
 
 # attack excluded -- derived from STR/INT at runtime, not independently persisted
-_STATS_WHITELIST = {
-    "hp", "max_hp", "xp", "level",
-    "strength", "dexterity", "constitution",
-    "intelligence", "wisdom", "charisma",
-}
+_STATS_WHITELIST = {"hp", "max_hp", "xp", "level", *STAT_NAMES}
 
 
 async def update_stats(

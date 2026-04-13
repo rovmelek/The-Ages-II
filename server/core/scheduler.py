@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from server.core.config import settings
+from server.core.constants import SPAWN_RARE
 from server.room import spawn_repo
 from server.room.npc import create_npc_from_template
 
@@ -127,7 +128,7 @@ class Scheduler:
 
         rare_templates = [
             t for t in self._game.npc_templates.values()
-            if t.get("spawn_type") == "rare"
+            if t.get("spawn_type") == SPAWN_RARE
         ]
         if not rare_templates:
             return

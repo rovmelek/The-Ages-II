@@ -8,6 +8,7 @@ import uuid
 from typing import TYPE_CHECKING, Callable
 
 from server.combat.cards.card_def import CardDef
+from server.core.constants import EffectType
 from server.combat.cards.card_hand import CardHand
 from server.core.config import settings
 
@@ -128,7 +129,7 @@ class CombatInstance:
         All others (damage, dot) return (player, mob).
         """
         player_stats = self.participant_stats[entity_id]
-        if effect_type in ("heal", "shield", "draw"):
+        if effect_type in (EffectType.HEAL, EffectType.SHIELD, EffectType.DRAW):
             return player_stats, player_stats
         return player_stats, self.mob_stats
 
@@ -154,7 +155,7 @@ class CombatInstance:
             results.append(result)
 
             # Handle draw effect: draw additional cards into hand
-            if effect_type == "draw":
+            if effect_type == EffectType.DRAW:
                 hand = self.hands.get(entity_id)
                 if hand:
                     draw_count = result.get("value", 1)
@@ -325,7 +326,7 @@ class CombatInstance:
         surviving: list[dict] = []
 
         for dot in active:
-            if dot.get("type") != "dot":
+            if dot.get("type") != EffectType.DOT:
                 surviving.append(dot)
                 continue
 

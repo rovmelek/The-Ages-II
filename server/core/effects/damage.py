@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 
 from server.core.config import settings
+from server.core.constants import EffectType
 
 
 async def handle_damage(
@@ -40,7 +41,7 @@ async def handle_damage(
     target["hp"] = max(0, target["hp"] - actual_damage)
 
     return {
-        "type": "damage",
+        "type": EffectType.DAMAGE,
         "value": actual_damage,
         "shield_absorbed": absorbed,
         "target_hp": target["hp"],

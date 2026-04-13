@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 
 from server.core.config import settings
+from server.core.constants import EffectType
 
 
 async def handle_heal(
@@ -20,7 +21,7 @@ async def handle_heal(
     target["hp"] = min(target["hp"] + value, target["max_hp"])
     actual_heal = target["hp"] - old_hp
     return {
-        "type": "heal",
+        "type": EffectType.HEAL,
         "value": actual_heal,
         "target_hp": target["hp"],
     }

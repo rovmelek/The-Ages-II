@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from fastapi import WebSocket
 
 from server.core.config import settings
+from server.core.constants import STAT_NAMES
 from server.net.auth_middleware import requires_auth
 from server.net.schemas import with_request_id
 from server.player.session import PlayerSession
@@ -103,12 +104,7 @@ async def handle_stats(
             "xp_for_next_level": level * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
             "xp_for_current_level": (level - 1) * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
             "level": level,
-            "strength": stats.get("strength", settings.DEFAULT_STAT_VALUE),
-            "dexterity": stats.get("dexterity", settings.DEFAULT_STAT_VALUE),
-            "constitution": stats.get("constitution", settings.DEFAULT_STAT_VALUE),
-            "intelligence": stats.get("intelligence", settings.DEFAULT_STAT_VALUE),
-            "wisdom": stats.get("wisdom", settings.DEFAULT_STAT_VALUE),
-            "charisma": stats.get("charisma", settings.DEFAULT_STAT_VALUE),
+            **{s: stats.get(s, settings.DEFAULT_STAT_VALUE) for s in STAT_NAMES},
         },
     }, data))
 

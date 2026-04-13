@@ -1,6 +1,8 @@
 """Damage-over-time effect handler."""
 from __future__ import annotations
 
+from server.core.constants import EffectType
+
 
 async def handle_dot(
     effect: dict, source: dict, target: dict, context: dict
@@ -14,14 +16,14 @@ async def handle_dot(
         target["active_effects"] = []
 
     target["active_effects"].append({
-        "type": "dot",
+        "type": EffectType.DOT,
         "subtype": subtype,
         "value": value,
         "remaining": duration,
     })
 
     return {
-        "type": "dot",
+        "type": EffectType.DOT,
         "subtype": subtype,
         "value": value,
         "duration": duration,

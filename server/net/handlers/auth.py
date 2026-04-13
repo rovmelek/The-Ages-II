@@ -6,13 +6,14 @@ from typing import TYPE_CHECKING
 
 from fastapi import WebSocket
 
+from server.core.config import settings
+from server.core.constants import STAT_NAMES
 from server.items import item_repo
 from server.items.inventory import Inventory
 from server.items.item_def import ItemDef
 from server.net.auth_middleware import requires_auth
 from server.net.schemas import with_request_id
 from server.player import repo as player_repo
-from server.core.config import settings
 from server.core.xp import get_pending_level_ups, send_level_up_available
 from server.player.auth import hash_password, verify_password
 from server.player.session import PlayerSession
@@ -36,13 +37,13 @@ def _default_stats() -> dict[str, int]:
     Function (not constant) to support test monkeypatching — reads settings.*
     on each call so patched values are always reflected (ADR-16-7).
     """
-    return {
+    result = {
         "hp": settings.DEFAULT_BASE_HP, "max_hp": settings.DEFAULT_BASE_HP,
         "attack": settings.DEFAULT_ATTACK, "xp": 0, "level": 1,
-        "strength": settings.DEFAULT_STAT_VALUE, "dexterity": settings.DEFAULT_STAT_VALUE,
-        "constitution": settings.DEFAULT_STAT_VALUE, "intelligence": settings.DEFAULT_STAT_VALUE,
-        "wisdom": settings.DEFAULT_STAT_VALUE, "charisma": settings.DEFAULT_STAT_VALUE,
     }
+    for s in STAT_NAMES:
+        result[s] = settings.DEFAULT_STAT_VALUE
+    return result
 
 
 async def _resolve_stats(player, session) -> dict:
@@ -119,12 +120,7 @@ def _build_login_response(
             "level": stats.get("level", 1),
             "xp_for_next_level": stats.get("level", 1) * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
             "xp_for_current_level": (stats.get("level", 1) - 1) * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
-            "strength": stats.get("strength", settings.DEFAULT_STAT_VALUE),
-            "dexterity": stats.get("dexterity", settings.DEFAULT_STAT_VALUE),
-            "constitution": stats.get("constitution", settings.DEFAULT_STAT_VALUE),
-            "intelligence": stats.get("intelligence", settings.DEFAULT_STAT_VALUE),
-            "wisdom": stats.get("wisdom", settings.DEFAULT_STAT_VALUE),
-            "charisma": stats.get("charisma", settings.DEFAULT_STAT_VALUE),
+            **{s: stats.get(s, settings.DEFAULT_STAT_VALUE) for s in STAT_NAMES},
         },
     }
     if session_token is not None:
@@ -207,12 +203,7 @@ async def handle_register(websocket: WebSocket, data: dict, *, game: Game) -> No
                     "level": 1,
                     "xp_for_next_level": 1 * settings.XP_LEVEL_THRESHOLD_MULTIPLIER,
                     "xp_for_current_level": 0,
-                    "strength": settings.DEFAULT_STAT_VALUE,
-                    "dexterity": settings.DEFAULT_STAT_VALUE,
-                    "constitution": settings.DEFAULT_STAT_VALUE,
-                    "intelligence": settings.DEFAULT_STAT_VALUE,
-                    "wisdom": settings.DEFAULT_STAT_VALUE,
-                    "charisma": settings.DEFAULT_STAT_VALUE,
+                    **{s: settings.DEFAULT_STAT_VALUE for s in STAT_NAMES},
                 },
             }, data)
         )
